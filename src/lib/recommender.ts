@@ -259,7 +259,30 @@ export async function getTasteProfile() {
     .from(listenEvents)
     .orderBy(desc(listenEvents.createdAt))
     .limit(400);
+  
+  // Also load explicit preferences to ensure they appear in the taste profile UI
+  const preferenceRows = await db
+    .select()
+    .from(settings)
+    .where(eq(settings.key, "music_preferences"));
+  
+  let preferredGenres: string[] = [];
+  if (preferenceRows.length > 0) {
+    try {
+      const prefs = JSON.parse(preferenceRows[0].value);
+      preferredGenres = prefs.genres || [];
+    } catch (e) {
+      console.error("Failed to parse music_preferences:", e);
+    }
+  }
+
   const a = buildAffinity(events);
+  
+  // Boost explicitly preferred genres
+  for (const genre of preferredGenres) {
+    a.genre[genre.toLowerCase()] = (a.genre[genre.toLowerCase()] ?? 0) + 10;
+  }
+
   const topGenres = Object.entries(a.genre)
     .filter(([g]) => g !== "unknown")
     .sort((x, y) => y[1] - x[1])
@@ -269,7 +292,7 @@ export async function getTasteProfile() {
     .sort((x, y) => y[1] - x[1])
     .slice(0, 4)
     .map(([r, v]) => ({ region: r, score: Math.round(v) }));
-  return { topGenres, topRegions, totalEvents: a.totalEvents };
+  return { topGenres, topRegions, totalEvents: a.totalEvents + preferredGenres.length };
 }
 
 export async function fetchRecommendationCandidates(ids: number[]) {

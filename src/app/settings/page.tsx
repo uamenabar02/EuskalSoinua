@@ -15,15 +15,10 @@ import {
   Check,
   Waves,
   EyeOff,
-  Trash2,
-  HardDrive,
 } from "lucide-react";
 import { clsx } from "@/lib/utils";
 import { useTheme, THEMES } from "@/lib/theme-context";
 import ImportPlaylistModal from "@/components/import-playlist-modal";
-
-import { clearAllDownloads } from "@/lib/downloads";
-import { useToast } from "@/lib/toast";
 
 interface StreamingStatus {
   streamingConfigured: boolean;
@@ -146,7 +141,7 @@ export default function SettingsPage() {
         />
         {p.fullTrackMode ? (
           <div className="px-4 py-2 text-xs text-amber-300/80 leading-relaxed">
-            {"Full songs are streamed through YouTube's official player. This is the legal way to hear complete tracks — the trade-off is that YouTube may insert ads, and background/lock-screen playback is not supported on mobile. The on-device equalizer is also disabled in this mode."}
+            {"Full songs are streamed through YouTube's official player. This is the legal way to hear complete tracks — the trade-off is that YouTube may insert ads. The on-device equalizer is disabled in this mode."}
           </div>
         ) : null}
         <ToggleRow
@@ -167,9 +162,7 @@ export default function SettingsPage() {
           }}
         />
         {eqEnabled ? (
-          <div className="px-4 py-2 text-xs text-amber-300/80 leading-relaxed">
-            Note: On some mobile devices, enabling the Equalizer (Web Audio API) prevents music from playing while the screen is locked. Disable this if you want to listen with the screen off.
-            <br/><br/>
+          <div className="px-4 py-2 text-xs text-textfaint">
             Open the Now Playing view → Equalizer tab to tune bands & presets.
           </div>
         ) : null}
@@ -249,31 +242,6 @@ export default function SettingsPage() {
           <div className="mt-1 font-mono text-[10px]">
             PIPED_API_URLS, INVIDIOUS_API_URLS, SPONSORBLOCK_API_URL
           </div>
-        </div>
-      </Group>
-
-      {/* Storage */}
-      <Group title="Storage & Offline">
-        <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex-1">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-1.5">
-              <HardDrive size={16} className="text-textdim" /> Offline Downloads
-            </h3>
-            <p className="text-xs text-textdim mt-1">
-              Music downloaded to your device for offline playback. Clearing this will free up space but remove all downloaded songs.
-            </p>
-          </div>
-          <button
-            onClick={async () => {
-              if (window.confirm("Are you sure you want to clear all downloaded tracks?")) {
-                await clearAllDownloads();
-                window.location.reload();
-              }
-            }}
-            className="bg-red-500/10 text-red-500 border border-red-500/20 font-bold text-xs px-4 py-2.5 rounded-full hover:bg-red-500 hover:text-white transition self-start sm:self-center shrink-0 flex items-center gap-2"
-          >
-            <Trash2 size={14} /> Clear Downloads
-          </button>
         </div>
       </Group>
 

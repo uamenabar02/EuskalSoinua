@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Track, SponsorSegment, LyricLine } from "@/lib/types";
-import { getDownloadedUrl, isDownloaded } from "@/lib/downloads";
+import { getDownloadedUrl } from "@/lib/downloads";
 
 // 5-band equalizer centre frequencies (Hz).
 const EQ_FREQS = [60, 230, 910, 3600, 14000];
@@ -506,7 +506,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Play a track through the <audio> element (ad-free preview / extracted
   // stream). Pauses the YouTube engine if it was running.
   const loadTrackViaAudio = useCallback(
-    async (track: Track) => {
+    (track: Track) => {
       const audio = audioRef.current;
       if (!audio) return;
       dispatchRef.current.cancelCrossfade();
@@ -517,24 +517,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
       setState((p) => ({ ...p, engine: "audio" }));
 
-      // Check for a downloaded (offline) copy first — play from IndexedDB
-      // without hitting the network if available.
-      const downloadedUrl = await getDownloadedUrl(track.id).catch(() => null);
-      audio.src = downloadedUrl ?? `/api/stream?trackId=${track.id}`;
-      audio.load();
+      const playWithSrc = (src: string) => {
+        if (!audioRef.current) return;
+        audioRef.current.src = src;
+        audioRef.current.load();
+        if (stateRef.current.eqEnabled) {
+          ensureAudioGraph();
+          if (ctxRef.current?.state === "suspended") ctxRef.current.resume();
+        }
+        audioRef.current.play().catch(() => {
+          setState((p) => ({ ...p, isPlaying: false }));
+        });
+      };
 
-      // Only route through the Web Audio graph when the EQ is actually on.
-      // Otherwise play the <audio> element directly — this keeps audio immune
-      // to AudioContext suspension (which would otherwise silence it during
-      // navigation / tab switches). This is what keeps playback uninterrupted.
-      if (stateRef.current.eqEnabled) {
-        ensureAudioGraph();
-        if (ctxRef.current?.state === "suspended") ctxRef.current.resume();
-      }
-      try {
-        await audio.play();
-      } catch {
-        setState((p) => ({ ...p, isPlaying: false }));
+      // Crucial for iOS/Android background audio: we must call .play() synchronously.
+      // Therefore we DO NOT await IndexedDB here if we are online. We play the network stream instantly.
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        getDownloadedUrl(track.id)
+          .then((url) => playWithSrc(url ?? `/api/stream?trackId=${track.id}`))
+          .catch(() => playWithSrc(`/api/stream?trackId=${track.id}`));
+      } else {
+        playWithSrc(`/api/stream?trackId=${track.id}`);
       }
     },
     [ensureAudioGraph],
@@ -603,16 +606,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         radioStation: null,
       }));
 
-      // Lyrics always load (might fail offline, that's fine)
+      // Lyrics always load.
       loadTrackMeta(track);
 
-      // 1. If downloaded, bypass network calls and fullTrackMode completely.
-      const isLocal = await isDownloaded(track.id).catch(() => false);
-
-      if (isLocal) {
-        setState((p) => ({ ...p, provider: "demo", streamingConfigured: false }));
-        await loadTrackViaAudio(track);
-        return;
+      // Start audio immediately if we know we won't use YT
+      // This preserves iOS Safari's synchronous execution privilege across tracks
+      const isYTEnabled = stateRef.current.fullTrackMode;
+      let alreadyPlayingAudio = false;
+      if (!isYTEnabled) {
+        alreadyPlayingAudio = true;
+        loadTrackViaAudio(track);
       }
 
       // Resolve videoId + provider first (needed to choose the engine).
@@ -646,13 +649,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // THIS video hasn't previously refused embedding. Each track gets a fresh
       // attempt, so one un-embeddable upload no longer breaks full-track mode.
       const useYT =
-        stateRef.current.fullTrackMode &&
+        isYTEnabled &&
         !!videoId &&
         /^[\w-]{11}$/.test(videoId) &&
         !failedEmbedVideoIds.has(videoId);
       if (useYT && videoId) {
         await loadTrackViaYouTube(videoId);
-      } else {
+      } else if (!alreadyPlayingAudio) {
         await loadTrackViaAudio(track);
       }
     },
@@ -666,18 +669,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const isDummyA = !audioA.src || audioA.src.startsWith("data:");
       if (isDummyA) {
         audioA.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA";
-        audioA.play().then(() => {
-          if (audioA.src.startsWith("data:") && !audioA.paused) audioA.pause();
-        }).catch(() => {});
+        audioA.play().catch(() => {});
       }
     }
     if (audioB) {
       const isDummyB = !audioB.src || audioB.src.startsWith("data:");
       if (isDummyB) {
         audioB.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA";
-        audioB.play().then(() => {
-          if (audioB.src.startsWith("data:") && !audioB.paused) audioB.pause();
-        }).catch(() => {});
+        audioB.play().catch(() => {});
       }
     }
     if (ctxRef.current && ctxRef.current.state === "suspended") {
@@ -803,33 +802,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const goNext = useCallback(
     (auto = false) => {
-      setState((p) => {
-        const { queue, index, shuffle, repeat } = p;
-        if (repeat === "one" && auto) {
-          // replay current
-          const audio = audioRef.current;
-          if (audio) {
-            audio.currentTime = 0;
-            audio.play().catch(() => {});
-          }
-          return p;
+      const p = stateRef.current;
+      const { queue, index, shuffle, repeat } = p;
+      if (repeat === "one" && auto) {
+        // replay current
+        const audio = audioRef.current;
+        if (audio) {
+          audio.currentTime = 0;
+          audio.play().catch(() => {});
         }
-        let nextIndex = index + 1;
-        if (shuffle && queue.length > 1) {
-          nextIndex = Math.floor(Math.random() * queue.length);
+        return;
+      }
+      let nextIndex = index + 1;
+      if (shuffle && queue.length > 1) {
+        nextIndex = Math.floor(Math.random() * queue.length);
+      }
+      if (nextIndex >= queue.length) {
+        if (repeat === "all") nextIndex = 0;
+        else {
+          nextIndex = -1;
         }
-        if (nextIndex >= queue.length) {
-          if (repeat === "all") nextIndex = 0;
-          else {
-            nextIndex = -1;
-          }
-        }
-        if (nextIndex >= 0 && queue[nextIndex]) {
-          loadTrack(queue[nextIndex]);
-          return { ...p, index: nextIndex };
-        }
-        return { ...p, index: -1, isPlaying: false };
-      });
+      }
+      if (nextIndex >= 0 && queue[nextIndex]) {
+        loadTrack(queue[nextIndex]);
+        setState((prev) => ({ ...prev, index: nextIndex }));
+      } else {
+        setState((prev) => ({ ...prev, index: -1, isPlaying: false }));
+      }
     },
     [loadTrack],
   );
@@ -860,15 +859,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return;
     }
     flushListen(false, true);
-    setState((p) => {
-      const prevIndex = p.index - 1;
-      if (prevIndex >= 0 && p.queue[prevIndex]) {
-        loadTrack(p.queue[prevIndex]);
-        return { ...p, index: prevIndex };
-      }
+
+    const p = stateRef.current;
+    const prevIndex = p.index - 1;
+    if (prevIndex >= 0 && p.queue[prevIndex]) {
+      loadTrack(p.queue[prevIndex]);
+      setState((prev) => ({ ...prev, index: prevIndex }));
+    } else {
       if (audio) audio.currentTime = 0;
-      return p;
-    });
+    }
   }, [flushListen, loadTrack, preWarmAudio]);
 
   const seek = useCallback((time: number) => {
@@ -1245,13 +1244,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const ms = navigator.mediaSession;
       const c = state.current;
       if (c) {
+        const getAbsoluteUrl = (url: string) => {
+          if (!url) return "";
+          if (url.startsWith("http")) return url;
+          return window.location.origin + (url.startsWith("/") ? "" : "/") + url;
+        };
+        const artwork = [];
+        if (c.thumbnail) artwork.push({ src: getAbsoluteUrl(c.thumbnail), sizes: '512x512', type: 'image/jpeg' });
+        else if (c.artworkUrl) artwork.push({ src: getAbsoluteUrl(c.artworkUrl), sizes: '512x512', type: 'image/jpeg' });
+
         ms.metadata = new MediaMetadata({
           title: c.title,
           artist: c.artistName,
           album: c.albumName ?? "EuskalSoinua",
-          artwork: [],
+          artwork: artwork.length > 0 ? artwork : undefined,
         });
         ms.playbackState = state.isPlaying ? "playing" : "paused";
+
+        if ("setPositionState" in ms && state.duration > 0 && Number.isFinite(state.currentTime)) {
+          ms.setPositionState({
+            duration: state.duration,
+            playbackRate: 1,
+            position: Math.max(0, Math.min(state.currentTime, state.duration)),
+          });
+        }
       }
       ms.setActionHandler("play", () => togglePlay());
       ms.setActionHandler("pause", () => togglePlay());
@@ -1279,7 +1295,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       fetch(`/api/stream-info?trackId=${track.id}`).catch(() => {});
       fetch(`/api/lyrics?trackId=${track.id}`).catch(() => {});
     });
-  }, [state.current, state.queue, state.index]);
+
+    // Gapless pre-buffer: put the immediate next track's URL into the standby element
+    // so the browser OS media pipeline downloads it ahead of time.
+    if (next4[0] && state.crossfadeSeconds === 0) {
+      const shadow = activeSlotRef.current === "A" ? elBRef.current : elARef.current;
+      if (shadow) {
+        shadow.src = `/api/stream?trackId=${next4[0].id}`;
+        shadow.load();
+      }
+    }
+  }, [state.current, state.queue, state.index, state.crossfadeSeconds]);
 
   // keep audio volume in sync
   useEffect(() => {
@@ -1361,9 +1387,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         while the user browses. No `controls` => invisible; listeners wired via
         the callback ref above.
       */}
-      <audio ref={attachAudioRef} preload="auto" playsInline />
+      <audio ref={attachAudioRef} preload="auto" playsInline controls style={{ display: "none" }} />
       {/* Second audio element for crossfade transitions (overlapping A/B). */}
-      <audio ref={attachAudioBRef} preload="auto" playsInline />
+      <audio ref={attachAudioBRef} preload="auto" playsInline controls style={{ display: "none" }} />
       {/* Hidden host for the YouTube IFrame player (full-track mode). Kept
           off-screen rather than display:none so the browser doesn't throttle
           its audio. The inner div uses a ref (NOT an id) and the YT iframe is

@@ -164,21 +164,6 @@ export async function removeDownload(trackId: number): Promise<void> {
   });
 }
 
-/** Remove ALL downloaded tracks. */
-export async function clearAllDownloads(): Promise<void> {
-  for (const url of blobUrlCache.values()) {
-    URL.revokeObjectURL(url);
-  }
-  blobUrlCache.clear();
-  const db = await openDb();
-  return new Promise((resolve) => {
-    const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).clear();
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => resolve();
-  });
-}
-
 // Reset cache map on module reload (dev HMR)
 if (typeof window !== "undefined") {
   blobUrlCache = new Map();

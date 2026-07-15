@@ -239,7 +239,7 @@ export interface ResolveInput {
 // Short-lived in-memory memo so the info probe and the actual audio request
 // (which run a moment apart) don't each re-hit every proxy instance.
 const STREAM_MEMO = new Map<number, { result: StreamResult; expires: number }>();
-const STREAM_MEMO_TTL = 120_000;
+const STREAM_MEMO_TTL = 3600_000;
 
 async function computeStream(input: ResolveInput): Promise<StreamResult> {
   // 1) Full ad-free YouTube stream (works when a proxy instance is available).
