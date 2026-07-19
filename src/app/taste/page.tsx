@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import { usePlayer } from "@/lib/player-context";
+import { Track } from "@/lib/types";
 import { useToast } from "@/lib/toast";
 import { clsx } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
@@ -45,15 +47,7 @@ const REGIONS = [
   { id: "global", name: "Global / International", flag: "🌐" },
 ];
 
-interface Track {
-  id: number;
-  title: string;
-  artistName: string;
-  albumName?: string | null;
-  thumbnail?: string | null;
-  genre?: string | null;
-  region?: string | null;
-}
+
 
 interface SwipeTrack {
   track: Track;
@@ -80,11 +74,13 @@ export default function TasteTunerPage() {
   const [dislikesCount, setDislikesCount] = useState(0);
   const [history, setHistory] = useState<{ track: Track; liked: boolean }[]>([]);
 
-  // Preview Audio State
-  const [previewPlaying, setPreviewPlaying] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  // Preview Audio State (Synchronized with global player context)
   const [autoplayPreviews, setAutoplayPreviews] = useState(true);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const currentItem = swipePool[swipeIndex];
+  const previewPlaying = p.isPlaying && p.current?.id === currentItem?.track.id;
+  const previewLoading = p.buffering && p.current?.id === currentItem?.track.id;
+  const swiperMode = p.fullTrackMode ? "full" : "preview";
 
   // Functions declared first to prevent hoisting / access warnings
   const loadSwipePool = () => {
@@ -101,48 +97,29 @@ export default function TasteTunerPage() {
       .finally(() => setLoadingPool(false));
   };
 
-  const playTrackPreview = (track: Track) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    // Pause EuskalSoinua's main music player to prevent overlapping audio
-    if (p.isPlaying) {
+  const playTrackPreview = (track: Track, modeParam?: "preview" | "full") => {
+    const activeMode = modeParam || swiperMode;
+    p.setFullTrackMode(activeMode === "full");
+    if (p.current?.id !== track.id) {
+      p.playQueue([track], 0);
+    } else if (!p.isPlaying) {
       p.togglePlay();
-    }
-
-    try {
-      audio.src = `/api/stream?trackId=${track.id}`;
-      audio.load();
-      setPreviewLoading(true);
-      audio.play().catch((err) => {
-        console.warn("Auto-play blocked or streaming error:", err);
-        setPreviewPlaying(false);
-        setPreviewLoading(false);
-      });
-    } catch (e) {
-      console.error("Failed to play preview:", e);
     }
   };
 
   const stopTrackPreview = () => {
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      setPreviewPlaying(false);
-      setPreviewLoading(false);
+    if (p.isPlaying) {
+      p.togglePlay();
     }
   };
 
   const togglePreviewPlay = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (previewPlaying) {
-      audio.pause();
+    const currentTrack = currentItem?.track;
+    if (!currentTrack) return;
+    if (p.current?.id === currentTrack.id) {
+      p.togglePlay();
     } else {
-      if (swipePool[swipeIndex]) {
-        playTrackPreview(swipePool[swipeIndex].track);
-      }
+      p.playQueue([currentTrack], 0);
     }
   };
 
@@ -150,6 +127,25 @@ export default function TasteTunerPage() {
   useEffect(() => {
     let ignore = false;
     
+    // Load local history
+    const tHistory = setTimeout(() => {
+      try {
+        const storedHistory = localStorage.getItem("swipeHistory");
+        if (storedHistory) {
+          const hist = JSON.parse(storedHistory);
+          setHistory(hist);
+          
+          const likes = hist.filter((h: any) => h.liked).length;
+          const dislikes = hist.length - likes;
+          setLikesCount(likes);
+          setDislikesCount(dislikes);
+          setSwipedCount(hist.length);
+        }
+      } catch (e) {
+        console.error("Error loading local swipe history:", e);
+      }
+    }, 0);
+
     // 1. Fetch preferences
     fetch("/api/settings")
       .then((res) => res.json())
@@ -179,36 +175,9 @@ export default function TasteTunerPage() {
     };
     initSwipe();
 
-    // Setup local audio element
-    const audio = new Audio();
-    audioRef.current = audio;
-
-    const onPlaying = () => {
-      setPreviewPlaying(true);
-      setPreviewLoading(false);
-    };
-    const onPause = () => {
-      setPreviewPlaying(false);
-    };
-    const onWaiting = () => {
-      setPreviewLoading(true);
-    };
-    const onEnded = () => {
-      setPreviewPlaying(false);
-    };
-
-    audio.addEventListener("playing", onPlaying);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("waiting", onWaiting);
-    audio.addEventListener("ended", onEnded);
-
     return () => {
-      audio.pause();
-      audio.removeEventListener("playing", onPlaying);
-      audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("waiting", onWaiting);
-      audio.removeEventListener("ended", onEnded);
-      audioRef.current = null;
+      ignore = true;
+      clearTimeout(tHistory);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -220,13 +189,13 @@ export default function TasteTunerPage() {
       if (autoplayPreviews) {
         setTimeout(() => playTrackPreview(currentTrack), 0);
       } else {
-        stopTrackPreview();
+        setTimeout(() => stopTrackPreview(), 0);
       }
     } else {
-      stopTrackPreview();
+      setTimeout(() => stopTrackPreview(), 0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [swipeIndex, swipePool, autoplayPreviews]);
+  }, [swipeIndex, swipePool, autoplayPreviews, swiperMode]);
 
   // Toggle selections in form
   const toggleGenre = (genre: string) => {
@@ -284,7 +253,13 @@ export default function TasteTunerPage() {
     } else {
       setDislikesCount((prev) => prev + 1);
     }
-    setHistory((prev) => [{ track, liked }, ...prev].slice(0, 50));
+    const newHistory = [{ track, liked }, ...history].slice(0, 50);
+    setHistory(newHistory);
+    try {
+      localStorage.setItem("swipeHistory", JSON.stringify(newHistory));
+    } catch (e) {
+      console.error("Error saving swipe history to localStorage:", e);
+    }
 
     // Advance index
     setSwipeIndex((prev) => prev + 1);
@@ -304,7 +279,7 @@ export default function TasteTunerPage() {
     }
   };
 
-  const currentItem = swipePool[swipeIndex];
+
 
   return (
     <div className="px-4 sm:px-6 pt-6 max-w-4xl mx-auto pb-24">
@@ -616,6 +591,40 @@ export default function TasteTunerPage() {
                     </AnimatePresence>
                   </div>
 
+                  {/* Mode Selector Button Group */}
+                  <div className="w-full flex bg-white/5 p-1 rounded-xl border border-white/5 mb-5 mt-4 max-w-[280px]">
+                    <button
+                      onClick={() => {
+                        if (swipePool[swipeIndex]) {
+                          playTrackPreview(swipePool[swipeIndex].track, "preview");
+                        }
+                      }}
+                      className={clsx(
+                        "flex-1 text-center py-1.5 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer",
+                        swiperMode === "preview"
+                          ? "bg-accent text-black font-extrabold shadow"
+                          : "text-textdim hover:text-white"
+                      )}
+                    >
+                      ⏱️ 30s Preview
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (swipePool[swipeIndex]) {
+                          playTrackPreview(swipePool[swipeIndex].track, "full");
+                        }
+                      }}
+                      className={clsx(
+                        "flex-1 text-center py-1.5 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer",
+                        swiperMode === "full"
+                          ? "bg-accent text-black font-extrabold shadow"
+                          : "text-textdim hover:text-white"
+                      )}
+                    >
+                      🔥 Full Track
+                    </button>
+                  </div>
+
                   {/* Playback & Tinder Button Controls */}
                   <div className="flex items-center justify-between w-full px-6 gap-3">
                     {/* Thumbs Down Button */}
@@ -717,20 +726,31 @@ export default function TasteTunerPage() {
                   <h3 className="text-sm font-bold uppercase tracking-widest text-textfaint">
                     Swipe History
                   </h3>
-                  {history.length > 0 && (
-                    <button
-                      onClick={() => {
-                        setHistory([]);
-                        setLikesCount(0);
-                        setDislikesCount(0);
-                        setSwipedCount(0);
-                        toast("History cleared", "🗑️");
-                      }}
-                      className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 font-semibold"
+                  <div className="flex items-center gap-3">
+                    <Link
+                      href="/taste/history"
+                      className="text-[10px] text-accent hover:underline font-bold"
                     >
-                      <Trash2 size={10} /> Clear
-                    </button>
-                  )}
+                      View & Edit
+                    </Link>
+                    {history.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setHistory([]);
+                          setLikesCount(0);
+                          setDislikesCount(0);
+                          setSwipedCount(0);
+                          try {
+                            localStorage.removeItem("swipeHistory");
+                          } catch (e) {}
+                          toast("History cleared", "🗑️");
+                        }}
+                        className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 font-semibold cursor-pointer"
+                      >
+                        <Trash2 size={10} /> Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {history.length === 0 ? (
@@ -769,6 +789,8 @@ export default function TasteTunerPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+
     </div>
   );
 }

@@ -30,6 +30,7 @@ async function tryFetch(url: string, headers: Record<string, string>): Promise<R
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const trackId = Number(searchParams.get("trackId"));
+  const mode = searchParams.get("mode") as "full" | "preview" | null;
   if (!trackId) {
     return new Response(JSON.stringify({ error: "trackId required" }), {
       status: 400,
@@ -37,10 +38,24 @@ export async function GET(request: Request) {
     });
   }
 
-  const resolution = await resolveTrackForPlayback(trackId);
+  const resolution = await resolveTrackForPlayback(trackId, mode || undefined);
   if (!resolution) {
     return new Response(JSON.stringify({ error: "not found" }), {
       status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const jsonParam = searchParams.get("json");
+  if (jsonParam === "1") {
+    return new Response(JSON.stringify({
+      trackId: resolution.trackId,
+      title: resolution.title,
+      artist: resolution.artist,
+      videoId: resolution.videoId,
+      previewUrl: resolution.previewUrl,
+      previewUrlAlt: resolution.previewUrlAlt,
+    }), {
       headers: { "content-type": "application/json" },
     });
   }
@@ -49,13 +64,23 @@ export async function GET(request: Request) {
   const upstreamHeaders: Record<string, string> = {};
   if (range) upstreamHeaders.range = range;
 
-  // Build a deduplicated candidate list in reliability order: iTunes (stable)
-  // first, then Deezer, then any extracted YouTube stream.
-  const candidates = [
-    resolution.previewUrlAlt, // iTunes — stable CDN
-    resolution.result.url, // resolved primary (may equal one of the above)
-    resolution.previewUrl, // Deezer — token, may expire
-  ].filter((u, i, arr): u is string => !!u && arr.indexOf(u) === i);
+  // Build candidate list based on mode to prioritize correctly
+  let candidates: string[] = [];
+  if (mode === "preview") {
+    candidates = [
+      resolution.previewUrlAlt, // iTunes — stable CDN
+      resolution.result.url,    // resolved stream URL
+      resolution.previewUrl,    // Deezer — token
+    ].filter((u): u is string => !!u);
+  } else {
+    candidates = [
+      resolution.result.url,    // full stream URL (e.g. YouTube/Piped)
+      resolution.previewUrlAlt, // iTunes fallback
+      resolution.previewUrl,    // Deezer fallback
+    ].filter((u): u is string => !!u);
+  }
+  // Deduplicate candidates list
+  candidates = candidates.filter((u, i, arr) => arr.indexOf(u) === i);
 
   // 1) try cached candidates
   let upstream: Response | null = null;

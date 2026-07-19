@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Section,
   SectionCard,
@@ -39,33 +39,39 @@ export default function HomePage() {
     totalEvents: number;
   }>({ topGenres: [], totalEvents: 0 });
   const [loadingRecs, setLoadingRecs] = useState(true);
+  const [loadingDiscover, setLoadingDiscover] = useState(false);
   const [radios, setRadios] = useState<Playlist[]>([]);
   const [discover, setDiscover] = useState<(Track & { reason?: string })[]>([]);
   const [feedback, setFeedback] = useState<Record<number, "like" | "discharge" | "dislike">>({});
   const { toast } = useToast();
 
+  const recsRef = useRef<Recommendation[]>([]);
+  const discoverRef = useRef<(Track & { reason?: string })[]>([]);
+
   useEffect(() => {
-    fetch("/api/catalog")
-      .then((r) => {
-        if (!r.ok) throw new Error();
-        return r.json();
-      })
-      .then(setCatalog)
-      .catch(() => setCatalogError(true));
-    // load song radios + discover for the home sections
-    fetch("/api/library")
-      .then((r) => r.json())
-      .then((d) => setRadios(d.radios ?? []))
-      .catch(() => {});
-    fetch("/api/discover")
+    recsRef.current = recs;
+  }, [recs]);
+
+  useEffect(() => {
+    discoverRef.current = discover;
+  }, [discover]);
+
+  const loadDiscover = useCallback((excludeCurrent = false) => {
+    setLoadingDiscover(true);
+    const excludeIds = excludeCurrent ? discoverRef.current.map((d) => d.id).join(",") : "";
+    const url = `/api/discover` + (excludeIds ? `?exclude=${excludeIds}` : "");
+    fetch(url)
       .then((r) => r.json())
       .then((d) => setDiscover(d.tracks ?? []))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoadingDiscover(false));
   }, []);
 
-  const loadRecs = useCallback(() => {
+  const loadRecs = useCallback((excludeCurrent = false) => {
     setLoadingRecs(true);
-    fetch(`/api/recommendations?limit=20&basqueBooster=${p.basqueBooster}`)
+    const excludeIds = excludeCurrent ? recsRef.current.map((r) => r.track.id).join(",") : "";
+    const url = `/api/recommendations?limit=20&basqueBooster=${p.basqueBooster}` + (excludeIds ? `&exclude=${excludeIds}` : "");
+    fetch(url)
       .then((r) => r.json())
       .then((d) => {
         setRecs(d.recommendations ?? []);
@@ -74,12 +80,46 @@ export default function HomePage() {
       .finally(() => setLoadingRecs(false));
   }, [p.basqueBooster]);
 
+  const initialLoadedRef = useRef(false);
+
   useEffect(() => {
-    const t = setTimeout(() => {
+    if (initialLoadedRef.current) return;
+    initialLoadedRef.current = true;
+
+    fetch("/api/catalog")
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then(setCatalog)
+      .catch(() => setCatalogError(true));
+    // load song radios for the home sections
+    fetch("/api/library")
+      .then((r) => r.json())
+      .then((d) => setRadios(d.radios ?? []))
+      .catch(() => {});
+    
+    loadDiscover();
+    loadRecs();
+  }, [loadDiscover, loadRecs]);
+
+  // Load recommendations specifically when basqueBooster changes value
+  const lastBoosterRef = useRef(p.basqueBooster);
+  useEffect(() => {
+    if (p.basqueBooster !== lastBoosterRef.current) {
+      lastBoosterRef.current = p.basqueBooster;
       loadRecs();
-    }, 0);
-    return () => clearTimeout(t);
-  }, [loadRecs]);
+    }
+  }, [p.basqueBooster, loadRecs]);
+
+  useEffect(() => {
+    const handleChanged = () => {
+      loadRecs();
+      loadDiscover();
+    };
+    window.addEventListener("playlists-changed", handleChanged);
+    return () => window.removeEventListener("playlists-changed", handleChanged);
+  }, [loadRecs, loadDiscover]);
 
   // Computed in an effect (not during render) to avoid a server/client time
   // hydration mismatch that can destabilize the session.
@@ -168,7 +208,7 @@ export default function HomePage() {
               <button
                 onClick={() => {
                   toast("Refreshing recommendations…", "🔄");
-                  loadRecs();
+                  loadRecs(true);
                 }}
                 disabled={loadingRecs}
                 title="Reload recommendations"
@@ -243,6 +283,18 @@ export default function HomePage() {
                     Fresh releases matched to your taste
                   </p>
                 </div>
+                <button
+                  onClick={() => {
+                    toast("Refreshing discovery tracks…", "🔮");
+                    loadDiscover(true);
+                  }}
+                  disabled={loadingDiscover}
+                  title="Reload discovery tracks"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-accent bg-accent/10 hover:bg-accent/20 px-3 py-1.5 rounded-full transition disabled:opacity-50 cursor-pointer"
+                >
+                  <RotateCw size={14} className={loadingDiscover ? "animate-spin-slow" : ""} />
+                  <span className="hidden sm:inline">Reload</span>
+                </button>
               </div>
               <div className="rounded-xl bg-white/[0.02] p-2 sm:p-3">
                 {discover.slice(0, 8).map((t, i) => (

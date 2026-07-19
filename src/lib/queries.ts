@@ -24,27 +24,27 @@ import {
 import { mapTrack, mapArtist, mapAlbum } from "@/lib/mappers";
 import type { Track, Artist, Album } from "@/lib/types";
 
-export async function isLiked(trackId: number): Promise<boolean> {
+export async function isLiked(trackId: number, syncKey: string = "default"): Promise<boolean> {
   const r = await db
     .select()
     .from(likedTracks)
-    .where(eq(likedTracks.trackId, trackId))
+    .where(and(eq(likedTracks.trackId, trackId), eq(likedTracks.syncKey, syncKey)))
     .limit(1);
   return r.length > 0;
 }
 
-export async function likedIds(): Promise<Set<number>> {
-  const rows = await db.select().from(likedTracks);
+export async function likedIds(syncKey: string = "default"): Promise<Set<number>> {
+  const rows = await db.select().from(likedTracks).where(eq(likedTracks.syncKey, syncKey));
   return new Set(rows.map((r: any) => r.trackId));
 }
 
-export async function followedIds(): Promise<Set<number>> {
-  const rows = await db.select().from(followedArtists);
+export async function followedIds(syncKey: string = "default"): Promise<Set<number>> {
+  const rows = await db.select().from(followedArtists).where(eq(followedArtists.syncKey, syncKey));
   return new Set(rows.map((r: any) => r.artistId));
 }
 
-export async function savedAlbumIds(): Promise<Set<number>> {
-  const rows = await db.select().from(savedAlbums);
+export async function savedAlbumIds(syncKey: string = "default"): Promise<Set<number>> {
+  const rows = await db.select().from(savedAlbums).where(eq(savedAlbums.syncKey, syncKey));
   return new Set(rows.map((r: any) => r.albumId));
 }
 
@@ -53,10 +53,10 @@ export async function getTrack(id: number): Promise<Track | null> {
   return row ? mapTrack(row) : null;
 }
 
-export async function getTrackWithLike(id: number): Promise<(Track & { liked: boolean }) | null> {
+export async function getTrackWithLike(id: number, syncKey: string = "default"): Promise<(Track & { liked: boolean }) | null> {
   const t = await getTrack(id);
   if (!t) return null;
-  return { ...t, liked: await isLiked(id) };
+  return { ...t, liked: await isLiked(id, syncKey) };
 }
 
 /** Cache a resolved YouTube videoId onto a track so we never re-search it. */
@@ -198,8 +198,8 @@ export async function getAlbum(id: number) {
   };
 }
 
-export async function getLikedTracks() {
-  const likedSet = await likedIds();
+export async function getLikedTracks(syncKey: string = "default") {
+  const likedSet = await likedIds(syncKey);
   if (likedSet.size === 0) return [];
   const rows = await db
     .select()
@@ -209,26 +209,26 @@ export async function getLikedTracks() {
   return rows.map((t: any) => ({ ...mapTrack(t), liked: true }));
 }
 
-export async function getPlaylists() {
+export async function getPlaylists(syncKey: string = "default") {
   return db
     .select()
     .from(playlists)
-    .where(eq(playlists.type, "user"))
+    .where(and(eq(playlists.type, "user"), eq(playlists.syncKey, syncKey)))
     .orderBy(desc(playlists.createdAt));
 }
 
-export async function getRadioPlaylists() {
+export async function getRadioPlaylists(syncKey: string = "default") {
   return db
     .select()
     .from(playlists)
-    .where(eq(playlists.type, "radio"))
+    .where(and(eq(playlists.type, "radio"), eq(playlists.syncKey, syncKey)))
     .orderBy(desc(playlists.createdAt));
 }
 
-export async function getPlaylist(id: number) {
+export async function getPlaylist(id: number, syncKey: string = "default") {
   const [pl] = await db.select().from(playlists).where(eq(playlists.id, id)).limit(1);
   if (!pl) return null;
-  const likedSet = await likedIds();
+  const likedSet = await likedIds(syncKey);
   const joins = await db
     .select()
     .from(playlistTracks)
@@ -241,8 +241,8 @@ export async function getPlaylist(id: number) {
   };
 }
 
-export async function getFollowedArtists() {
-  const followedSet = await followedIds();
+export async function getFollowedArtists(syncKey: string = "default") {
+  const followedSet = await followedIds(syncKey);
   if (followedSet.size === 0) return [];
   const rows = await db
     .select()
@@ -252,8 +252,8 @@ export async function getFollowedArtists() {
   return rows.map((a: any) => ({ ...mapArtist(a), followed: true }));
 }
 
-export async function getSavedAlbums() {
-  const savedSet = await savedAlbumIds();
+export async function getSavedAlbums(syncKey: string = "default") {
+  const savedSet = await savedAlbumIds(syncKey);
   if (savedSet.size === 0) return [];
   const rows = await db
     .select()
@@ -265,47 +265,59 @@ export async function getSavedAlbums() {
 
 // ---- mutations ----
 
-export async function toggleLike(trackId: number): Promise<boolean> {
-  if (await isLiked(trackId)) {
-    await db.delete(likedTracks).where(eq(likedTracks.trackId, trackId));
+export async function setLikeState(trackId: number, liked: boolean, syncKey: string = "default"): Promise<void> {
+  if (liked) {
+    const already = await isLiked(trackId, syncKey);
+    if (!already) {
+      await db.insert(likedTracks).values({ syncKey, trackId }).catch(() => {});
+    }
+  } else {
+    await db.delete(likedTracks).where(and(eq(likedTracks.trackId, trackId), eq(likedTracks.syncKey, syncKey))).catch(() => {});
+  }
+}
+
+export async function toggleLike(trackId: number, syncKey: string = "default"): Promise<boolean> {
+  if (await isLiked(trackId, syncKey)) {
+    await db.delete(likedTracks).where(and(eq(likedTracks.trackId, trackId), eq(likedTracks.syncKey, syncKey)));
     return false;
   }
-  await db.insert(likedTracks).values({ trackId });
+  await db.insert(likedTracks).values({ syncKey, trackId });
   return true;
 }
 
-export async function toggleFollow(artistId: number): Promise<boolean> {
+export async function toggleFollow(artistId: number, syncKey: string = "default"): Promise<boolean> {
   const existing = await db
     .select()
     .from(followedArtists)
-    .where(eq(followedArtists.artistId, artistId))
+    .where(and(eq(followedArtists.artistId, artistId), eq(followedArtists.syncKey, syncKey)))
     .limit(1);
   if (existing.length) {
-    await db.delete(followedArtists).where(eq(followedArtists.artistId, artistId));
+    await db.delete(followedArtists).where(and(eq(followedArtists.artistId, artistId), eq(followedArtists.syncKey, syncKey)));
     return false;
   }
-  await db.insert(followedArtists).values({ artistId });
+  await db.insert(followedArtists).values({ syncKey, artistId });
   return true;
 }
 
-export async function toggleSaveAlbum(albumId: number): Promise<boolean> {
+export async function toggleSaveAlbum(albumId: number, syncKey: string = "default"): Promise<boolean> {
   const existing = await db
     .select()
     .from(savedAlbums)
-    .where(eq(savedAlbums.albumId, albumId))
+    .where(and(eq(savedAlbums.albumId, albumId), eq(savedAlbums.syncKey, syncKey)))
     .limit(1);
   if (existing.length) {
-    await db.delete(savedAlbums).where(eq(savedAlbums.albumId, albumId));
+    await db.delete(savedAlbums).where(and(eq(savedAlbums.albumId, albumId), eq(savedAlbums.syncKey, syncKey)));
     return false;
   }
-  await db.insert(savedAlbums).values({ albumId });
+  await db.insert(savedAlbums).values({ syncKey, albumId });
   return true;
 }
 
-export async function createPlaylist(name: string, description?: string, type: string = "user") {
+export async function createPlaylist(name: string, description?: string, type: string = "user", syncKey: string = "default") {
   const [row] = await db
     .insert(playlists)
     .values({
+      syncKey,
       name,
       description,
       type,

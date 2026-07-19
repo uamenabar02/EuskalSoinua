@@ -15,6 +15,11 @@ import {
   Check,
   Waves,
   EyeOff,
+  Trash2,
+  Edit2,
+  Laptop,
+  Smartphone,
+  Monitor,
 } from "lucide-react";
 import { clsx } from "@/lib/utils";
 import { useTheme, THEMES } from "@/lib/theme-context";
@@ -26,6 +31,12 @@ interface StreamingStatus {
   sponsorblockBase: string;
 }
 
+function setCookie(name: string, value: string) {
+  if (typeof document !== "undefined") {
+    document.cookie = `${name}=${value}; path=/; max-age=31536000; SameSite=Strict`;
+  }
+}
+
 export default function SettingsPage() {
   const p = usePlayer();
   const { theme, setTheme } = useTheme();
@@ -33,10 +44,200 @@ export default function SettingsPage() {
   const [eqEnabled, setEqEnabled] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
 
+  const [currentKey, setCurrentKey] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("euskalsoinua-sync-key") || "";
+      } catch (e) {}
+    }
+    return "";
+  });
+  const [inputKey, setInputKey] = useState<string>("");
+  const [syncError, setSyncError] = useState<string>("");
+  const [syncSuccess, setSyncSuccess] = useState<boolean>(false);
+  const [syncing, setSyncing] = useState<boolean>(false);
+
+  interface Device {
+    deviceId: string;
+    deviceName: string;
+    lastActiveAt: string;
+    userAgent?: string;
+  }
+
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string>("");
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
+  const [editName, setEditName] = useState<string>("");
+
+  const handleRenameDevice = async (deviceId: string, newName: string) => {
+    if (!newName.trim()) return;
+    try {
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "rename", deviceId, name: newName.trim() }),
+      });
+      if (res.ok) {
+        setDevices(prev =>
+          prev.map(d => (d.deviceId === deviceId ? { ...d, deviceName: newName.trim() } : d))
+        );
+        setEditingDeviceId(null);
+
+        if (deviceId === currentDeviceId) {
+          try {
+            localStorage.setItem("euskalsoinua-device-name", newName.trim());
+          } catch (e) {}
+          setCookie("device_name", encodeURIComponent(newName.trim()));
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleUnlinkDevice = async (deviceId: string) => {
+    const isCurrent = deviceId === currentDeviceId;
+    const msg = isCurrent
+      ? "Are you sure you want to unlink this current device? It will be removed from the list of synchronized devices, and you will need to reconnect it later."
+      : "Are you sure you want to unlink this device? Its connection to this Sync Code will be forgotten.";
+    
+    if (!window.confirm(msg)) return;
+
+    try {
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unlink", deviceId }),
+      });
+      if (res.ok) {
+        setDevices(prev => prev.filter(d => d.deviceId !== deviceId));
+        
+        if (isCurrent) {
+          handleReset(true);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const getDeviceIcon = (name: string, ua?: string) => {
+    const lower = (ua || name || "").toLowerCase();
+    if (lower.includes("phone") || lower.includes("android") || lower.includes("ios") || lower.includes("iphone") || lower.includes("mobile")) {
+      return <Smartphone size={16} className="text-accent" />;
+    }
+    if (lower.includes("mac") || lower.includes("win") || lower.includes("linux") || lower.includes("desktop") || lower.includes("chrome") || lower.includes("safari") || lower.includes("firefox")) {
+      return <Monitor size={16} className="text-accent" />;
+    }
+    return <Laptop size={16} className="text-accent" />;
+  };
+
+  const handleSync = async () => {
+    const target = inputKey.trim().toUpperCase();
+    if (!target) {
+      setSyncError("Please enter a valid Device Sync Code.");
+      return;
+    }
+    if (target === currentKey) {
+      setSyncError("This is already your current Device Sync Code.");
+      return;
+    }
+    if (!target.startsWith("S-") || target.length !== 8) {
+      setSyncError("Invalid Sync Code format. It should look like 'S-XXXXXX'.");
+      return;
+    }
+
+    setSyncError("");
+    setSyncing(true);
+
+    try {
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "merge", fromKey: currentKey, toKey: target }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        setSyncError(data.error || "Failed to synchronize device libraries.");
+        setSyncing(false);
+        return;
+      }
+
+      // Success! Update local storage & cookie, and reload!
+      try {
+        localStorage.setItem("euskalsoinua-sync-key", target);
+      } catch (e) {}
+      setCookie("sync_key", target);
+      setSyncSuccess(true);
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err) {
+      setSyncError("Network error. Please try again.");
+      setSyncing(false);
+    }
+  };
+
+  const handleReset = async (skipConfirm: boolean = false) => {
+    if (!skipConfirm && !window.confirm("Are you sure you want to desynchronize this device and generate a new Sync Code? This device will keep its current library, liked songs, and playlists, but future changes won't affect the other devices.")) {
+      return;
+    }
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const target = `S-${code}`;
+
+    const oldKey = currentKey || "default";
+    const deviceId = currentDeviceId || "";
+    let deviceName = "Browser Device";
+    try {
+      deviceName = localStorage.getItem("euskalsoinua-device-name") || "Browser Device";
+    } catch (e) {}
+    const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
+
+    // Clone the old library onto the new key so that they keep all their liked songs, playlists, etc.
+    try {
+      await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "clone",
+          fromKey: oldKey,
+          toKey: target,
+          deviceId,
+          deviceName,
+          userAgent,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to clone database during reset:", err);
+    }
+
+    try {
+      localStorage.setItem("euskalsoinua-sync-key", target);
+    } catch (e) {}
+    setCookie("sync_key", target);
+    window.location.reload();
+  };
+
   useEffect(() => {
     fetch("/api/status")
       .then((r) => r.json())
       .then(setStatus)
+      .catch(() => {});
+
+    fetch("/api/sync")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.devices) {
+          setDevices(data.devices);
+        }
+        if (data.currentDeviceId) {
+          setCurrentDeviceId(data.currentDeviceId);
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -241,6 +442,158 @@ export default function SettingsPage() {
           <code className="text-textdim">.env</code>:
           <div className="mt-1 font-mono text-[10px]">
             PIPED_API_URLS, INVIDIOUS_API_URLS, SPONSORBLOCK_API_URL
+          </div>
+        </div>
+      </Group>
+
+      {/* Multi-Device Synchronization */}
+      <Group title="Device Synchronization">
+        <div className="p-4 flex flex-col gap-4">
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-1.5">
+              <Server size={16} className="text-accent" /> Device Sync Code
+            </h3>
+            <p className="text-xs text-textdim mt-1 leading-relaxed">
+              Every device connected to EuskalSoinua is completely separate by default. Your library, liked songs, playlists, and taste profile are stored under your unique Device Sync Code.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+            <span className="text-xs font-semibold text-textdim uppercase tracking-wider">Your Code:</span>
+            <span className="text-base font-mono font-bold text-accent select-all">{currentKey || "Loading..."}</span>
+          </div>
+
+          {/* Synchronized Devices List */}
+          {devices.length > 0 && (
+            <div className="mt-2 pt-4 border-t border-white/5">
+              <h4 className="text-xs font-semibold text-white mb-2 flex items-center gap-1.5">
+                <Check size={14} className="text-accent" /> Synchronized Devices ({devices.length})
+              </h4>
+              <p className="text-[11px] text-textdim mb-3 leading-relaxed">
+                The following devices are currently synchronized with this Sync Code. They share your entire library, taste profile, and active history in real-time.
+              </p>
+              
+              <div className="flex flex-col gap-2">
+                {devices.map((device) => {
+                  const isCurrent = device.deviceId === currentDeviceId;
+                  const isEditing = editingDeviceId === device.deviceId;
+
+                  return (
+                    <div
+                      key={device.deviceId}
+                      className="flex items-center justify-between gap-3 bg-white/[0.02] border border-white/5 rounded-xl px-3.5 py-2.5 hover:bg-white/[0.04] transition"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className="shrink-0">
+                          {getDeviceIcon(device.deviceName, device.userAgent)}
+                        </div>
+                        
+                        <div className="min-w-0 flex-1">
+                          {isEditing ? (
+                            <div className="flex gap-2 max-w-xs">
+                              <input
+                                type="text"
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                className="bg-white/10 border border-white/20 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleRenameDevice(device.deviceId, editName);
+                                  if (e.key === "Escape") setEditingDeviceId(null);
+                                }}
+                              />
+                              <button
+                                onClick={() => handleRenameDevice(device.deviceId, editName)}
+                                className="bg-accent text-black text-[10px] font-bold px-2 py-1 rounded hover:bg-accent/90"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-medium text-white truncate">
+                                {device.deviceName}
+                              </span>
+                              {isCurrent && (
+                                <span className="text-[9px] bg-accent/20 text-accent px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider scale-90">
+                                  Current
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <span className="block text-[10px] text-textdim mt-0.5">
+                            Last active: {new Date(device.lastActiveAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!isEditing && (
+                          <button
+                            onClick={() => {
+                              setEditingDeviceId(device.deviceId);
+                              setEditName(device.deviceName);
+                            }}
+                            className="p-1.5 text-textfaint hover:text-white transition rounded-lg hover:bg-white/5"
+                            title="Rename device"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleUnlinkDevice(device.deviceId)}
+                          className="p-1.5 text-textfaint hover:text-red-400 transition rounded-lg hover:bg-white/5"
+                          title={isCurrent ? "Unlink this device (generate new code)" : "Disconnect this device"}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-2 pt-2 border-t border-white/5">
+            <h4 className="text-xs font-semibold text-white mb-2">Connect to Another Device</h4>
+            <p className="text-[11px] text-textdim mb-3 leading-relaxed">
+              Enter the Device Sync Code of the device you want to synchronize with. This will link this device and merge all your music preferences, likes, and playlists.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g. S-A4B7D2"
+                value={inputKey}
+                onChange={(e) => setInputKey(e.target.value)}
+                className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-textfaint focus:outline-none focus:border-accent/50 flex-1 font-mono uppercase"
+                disabled={syncing || syncSuccess}
+              />
+              <button
+                onClick={handleSync}
+                disabled={syncing || syncSuccess || !inputKey.trim()}
+                className="bg-accent hover:bg-accent/90 disabled:opacity-50 text-black font-bold text-xs px-4 py-2.5 rounded-xl transition shrink-0"
+              >
+                {syncing ? "Syncing..." : syncSuccess ? "Synced!" : "Sync Device"}
+              </button>
+            </div>
+
+            {syncError && (
+              <p className="text-xs text-red-400 mt-2 font-medium">{syncError}</p>
+            )}
+            {syncSuccess && (
+              <p className="text-xs text-accent mt-2 font-medium">Successfully synchronized! Reloading page...</p>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+            <span className="text-[11px] text-textfaint">Want separate libraries on this device?</span>
+            <button
+              onClick={() => handleReset(false)}
+              className="text-white/40 hover:text-white/80 text-[10px] uppercase tracking-wider font-semibold hover:underline"
+            >
+              Generate New Code
+            </button>
           </div>
         </div>
       </Group>

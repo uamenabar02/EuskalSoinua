@@ -21,7 +21,7 @@ export interface PlaybackResolution {
  * is memoized). Returns the provider so the UI can honestly indicate whether a
  * real live stream was obtained or a royalty-free fallback is playing.
  */
-export async function resolveTrackForPlayback(trackId: number): Promise<PlaybackResolution | null> {
+export async function resolveTrackForPlayback(trackId: number, mode?: "full" | "preview"): Promise<PlaybackResolution | null> {
   const track = await getTrack(trackId);
   if (!track) return null;
 
@@ -58,8 +58,19 @@ export async function resolveTrackForPlayback(trackId: number): Promise<Playback
     }
   }
 
+  // Force resolution depending on mode
+  let finalVideoId = videoId;
+  if (mode === "preview") {
+    // If we want a preview and we actually have a preview URL, we bypass videoId (YouTube)
+    // to guarantee we play the fast, ad-free, 30s preview first.
+    // If we don't have a preview URL, we still allow videoId as a fallback.
+    if (previewUrl || previewUrlAlt) {
+      finalVideoId = null;
+    }
+  }
+
   const result = await resolveStream({
-    videoId,
+    videoId: finalVideoId,
     trackId: track.id,
     duration: track.duration,
     previewUrl,
@@ -70,7 +81,7 @@ export async function resolveTrackForPlayback(trackId: number): Promise<Playback
     trackId: track.id,
     title: track.title,
     artist: track.artistName,
-    videoId,
+    videoId: finalVideoId,
     resolvedViaSearch,
     previewUrl,
     previewUrlAlt,

@@ -96,6 +96,7 @@ export const tracks = pgTable(
 
 export const playlists = pgTable("playlists", {
   id: serial("id").primaryKey(),
+  syncKey: text("sync_key").notNull().default("default"),
   name: text("name").notNull(),
   description: text("description"),
   coverSeed: text("cover_seed"), // deterministic gradient seed
@@ -127,34 +128,37 @@ export const playlistTracks = pgTable(
 export const likedTracks = pgTable(
   "liked_tracks",
   {
+    syncKey: text("sync_key").notNull().default("default"),
     trackId: integer("track_id")
       .notNull()
       .references(() => tracks.id, { onDelete: "cascade" }),
     likedAt: timestamp("liked_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [primaryKey({ columns: [t.trackId] })],
+  (t) => [primaryKey({ columns: [t.syncKey, t.trackId] })],
 );
 
 export const followedArtists = pgTable(
   "followed_artists",
   {
+    syncKey: text("sync_key").notNull().default("default"),
     artistId: integer("artist_id")
       .notNull()
       .references(() => artists.id, { onDelete: "cascade" }),
     followedAt: timestamp("followed_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [primaryKey({ columns: [t.artistId] })],
+  (t) => [primaryKey({ columns: [t.syncKey, t.artistId] })],
 );
 
 export const savedAlbums = pgTable(
   "saved_albums",
   {
+    syncKey: text("sync_key").notNull().default("default"),
     albumId: integer("album_id")
       .notNull()
       .references(() => albums.id, { onDelete: "cascade" }),
     savedAt: timestamp("saved_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [primaryKey({ columns: [t.albumId] })],
+  (t) => [primaryKey({ columns: [t.syncKey, t.albumId] })],
 );
 
 // ---------------------------------------------------------------------------
@@ -165,6 +169,7 @@ export const listenEvents = pgTable(
   "listen_events",
   {
     id: serial("id").primaryKey(),
+    syncKey: text("sync_key").notNull().default("default"),
     trackId: integer("track_id")
       .notNull()
       .references(() => tracks.id, { onDelete: "cascade" }),
@@ -178,6 +183,7 @@ export const listenEvents = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    index("le_sync_track_idx").on(t.syncKey, t.trackId),
     index("le_track_idx").on(t.trackId),
     index("le_genre_idx").on(t.genre),
     index("le_region_idx").on(t.region),
@@ -188,10 +194,32 @@ export const listenEvents = pgTable(
 // Key/value client settings (Basque booster toggle, eq presets, etc.)
 // ---------------------------------------------------------------------------
 
-export const settings = pgTable("settings", {
-  key: text("key").primaryKey(),
-  value: text("value").notNull(),
-});
+export const settings = pgTable(
+  "settings",
+  {
+    syncKey: text("sync_key").notNull().default("default"),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.syncKey, t.key] })],
+);
+
+// ---------------------------------------------------------------------------
+// Devices utilizing a sync key
+// ---------------------------------------------------------------------------
+
+export const syncDevices = pgTable(
+  "sync_devices",
+  {
+    syncKey: text("sync_key").notNull(),
+    deviceId: text("device_id").notNull(),
+    deviceName: text("device_name").notNull(),
+    userAgent: text("user_agent"),
+    lastActiveAt: timestamp("last_active_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.syncKey, t.deviceId] })],
+);
 
 // ---------------------------------------------------------------------------
 // Equalizer presets (user-tunable)

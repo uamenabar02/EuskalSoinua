@@ -84,6 +84,7 @@ interface PlayerActions {
   toggleShuffle: () => void;
   toggleBooster: () => void;
   toggleFullTrack: () => void;
+  setFullTrackMode: (val: boolean) => void;
   playRadio: (trackId: number) => Promise<number | null>;
   playLiveRadio: (station: { id: string; name: string; streamUrl: string; category: string }) => void;
   cycleRepeat: () => void;
@@ -152,12 +153,12 @@ const EMPTY_STATE: PlayerState = {
 // Dispatch hooks — the element's listeners call these; the provider updates
 // them so they always reference fresh state/closures.
 const audioDispatch = {
-  onTime: (_t: number) => {},
-  onPlay: () => {},
-  onPause: () => {},
-  onWaiting: () => {},
-  onPlaying: () => {},
-  onEnded: () => {},
+  onTime: (_el: HTMLAudioElement, _t: number) => {},
+  onPlay: (_el: HTMLAudioElement) => {},
+  onPause: (_el: HTMLAudioElement) => {},
+  onWaiting: (_el: HTMLAudioElement) => {},
+  onPlaying: (_el: HTMLAudioElement) => {},
+  onEnded: (_el: HTMLAudioElement) => {},
 };
 
 // YouTube videos that refuse to embed (error 101/150). Tracked PER VIDEO so one
@@ -168,12 +169,12 @@ const failedEmbedVideoIds = new Set<string>();
 function wireAudioListeners(audio: HTMLAudioElement) {
   if (audio.dataset.wired === "1") return;
   audio.dataset.wired = "1";
-  audio.addEventListener("timeupdate", () => audioDispatch.onTime(audio.currentTime));
-  audio.addEventListener("play", () => audioDispatch.onPlay());
-  audio.addEventListener("pause", () => audioDispatch.onPause());
-  audio.addEventListener("waiting", () => audioDispatch.onWaiting());
-  audio.addEventListener("playing", () => audioDispatch.onPlaying());
-  audio.addEventListener("ended", () => audioDispatch.onEnded());
+  audio.addEventListener("timeupdate", () => audioDispatch.onTime(audio, audio.currentTime));
+  audio.addEventListener("play", () => audioDispatch.onPlay(audio));
+  audio.addEventListener("pause", () => audioDispatch.onPause(audio));
+  audio.addEventListener("waiting", () => audioDispatch.onWaiting(audio));
+  audio.addEventListener("playing", () => audioDispatch.onPlaying(audio));
+  audio.addEventListener("ended", () => audioDispatch.onEnded(audio));
 }
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
@@ -199,6 +200,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const [state, setState] = useState<PlayerState>(EMPTY_STATE);
   const stateRef = useRef(state);
+
+  // Cache for preloaded track stream info to allow synchronous track switching in background/lock screen
+  const streamInfoCacheRef = useRef<Map<number, { provider: string; videoId: string | null }>>(new Map());
 
   // listen-event tracking
   const listenRef = useRef<{ trackId: number; maxPos: number } | null>(null);
@@ -368,12 +372,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         onStateChange: (e: { data: number }) => {
           const st = e.data;
           // 0 ENDED, 1 PLAYING, 2 PAUSED, 3 BUFFERING, 5 CUED
-          if (st === 1) setState((p) => ({ ...p, isPlaying: true, buffering: false }));
-          else if (st === 2) setState((p) => ({ ...p, isPlaying: false }));
-          else if (st === 3) setState((p) => ({ ...p, buffering: true }));
+          if (st === 1) {
+            setState((p) => ({ ...p, isPlaying: true, buffering: false }));
+            try {
+              if (audioRef.current) {
+                const currentSrc = audioRef.current.src;
+                const dummyWav = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA";
+                if (!currentSrc || !currentSrc.startsWith("data:")) {
+                  audioRef.current.src = dummyWav;
+                }
+                audioRef.current.loop = true;
+                audioRef.current.play().catch(() => {});
+              }
+            } catch {}
+          }
+          else if (st === 2) {
+            setState((p) => ({ ...p, isPlaying: false }));
+            try {
+              audioRef.current?.pause();
+            } catch {}
+          }
+          else if (st === 3) {
+            setState((p) => ({ ...p, buffering: true }));
+          }
           else if (st === 0) {
             dispatchRef.current.flushListen(true, false);
             dispatchRef.current.goNext(true);
+            try {
+              audioRef.current?.pause();
+            } catch {}
           }
         },
         onError: () => {
@@ -419,9 +446,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     // Point the dispatch hooks at fresh closures. These run for the life of the
     // app; updating the object each render keeps them referencing latest state.
-    audioDispatch.onTime = (t: number) => {
-      const activeEl = audioRef.current;
-      const dur = activeEl?.duration || 0;
+    audioDispatch.onTime = (el: HTMLAudioElement, t: number) => {
+      if (el !== audioRef.current) return;
+      if (stateRef.current.engine === "youtube") return;
+      if (el?.src?.startsWith("data:")) return;
+
+      const dur = el?.duration || 0;
       setState((p) => ({ ...p, currentTime: t, duration: dur }));
       // keep the (optional) EQ audio context alive — resume if the browser
       // suspended it (e.g. after the tab was backgrounded)
@@ -434,7 +464,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           (s) => t >= s.start && t < s.end - 0.3,
         );
         if (seg) {
-          if (activeEl) activeEl.currentTime = seg.end;
+          el.currentTime = seg.end;
           setState((p) => ({ ...p, activeSegment: seg, currentTime: seg.end }));
           return;
         }
@@ -443,11 +473,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // Crossfade trigger: when approaching the end of a track
       dispatchRef.current.triggerCrossfade(t, dur);
     };
-    audioDispatch.onPlay = () => setState((p) => ({ ...p, isPlaying: true, buffering: false }));
-    audioDispatch.onPause = () => setState((p) => ({ ...p, isPlaying: false }));
-    audioDispatch.onWaiting = () => setState((p) => ({ ...p, buffering: true }));
-    audioDispatch.onPlaying = () => setState((p) => ({ ...p, buffering: false }));
-    audioDispatch.onEnded = () => {
+    audioDispatch.onPlay = (el: HTMLAudioElement) => {
+      if (el !== audioRef.current) return;
+      if (stateRef.current.engine === "youtube") return;
+      if (el?.src?.startsWith("data:")) return;
+      setState((p) => ({ ...p, isPlaying: true, buffering: false }));
+    };
+    audioDispatch.onPause = (el: HTMLAudioElement) => {
+      if (el !== audioRef.current) return;
+      if (stateRef.current.engine === "youtube") return;
+      if (el?.src?.startsWith("data:")) return;
+      setState((p) => ({ ...p, isPlaying: false }));
+    };
+    audioDispatch.onWaiting = (el: HTMLAudioElement) => {
+      if (el !== audioRef.current) return;
+      if (stateRef.current.engine === "youtube") return;
+      if (el?.src?.startsWith("data:")) return;
+      setState((p) => ({ ...p, buffering: true }));
+    };
+    audioDispatch.onPlaying = (el: HTMLAudioElement) => {
+      if (el !== audioRef.current) return;
+      if (stateRef.current.engine === "youtube") return;
+      if (el?.src?.startsWith("data:")) return;
+      setState((p) => ({ ...p, buffering: false }));
+    };
+    audioDispatch.onEnded = (el: HTMLAudioElement) => {
+      if (el !== audioRef.current) return;
+      if (stateRef.current.engine === "youtube") return;
+      if (el?.src?.startsWith("data:")) return;
+
       // If a crossfade is active, complete it (swap elements) instead of goNext
       if (crossfadeRef.current.active) {
         dispatchRef.current.completeCrossfade();
@@ -520,6 +574,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const playWithSrc = (src: string) => {
         if (!audioRef.current) return;
         audioRef.current.src = src;
+        audioRef.current.loop = false;
         audioRef.current.load();
         if (stateRef.current.eqEnabled) {
           ensureAudioGraph();
@@ -532,12 +587,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
       // Crucial for iOS/Android background audio: we must call .play() synchronously.
       // Therefore we DO NOT await IndexedDB here if we are online. We play the network stream instantly.
+      const mode = stateRef.current.fullTrackMode ? "full" : "preview";
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         getDownloadedUrl(track.id)
-          .then((url) => playWithSrc(url ?? `/api/stream?trackId=${track.id}`))
-          .catch(() => playWithSrc(`/api/stream?trackId=${track.id}`));
+          .then((url) => playWithSrc(url ?? `/api/stream?trackId=${track.id}&mode=${mode}`))
+          .catch(() => playWithSrc(`/api/stream?trackId=${track.id}&mode=${mode}`));
       } else {
-        playWithSrc(`/api/stream?trackId=${track.id}`);
+        playWithSrc(`/api/stream?trackId=${track.id}&mode=${mode}`);
       }
     },
     [ensureAudioGraph],
@@ -549,9 +605,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     async (videoId: string) => {
       ytVideoIdRef.current = videoId;
       setState((p) => ({ ...p, engine: "youtube" }));
-      // pause the audio element so engines don't overlap
+      // play silent audio to bind MediaSession to parent window
       try {
-        audioRef.current?.pause();
+        if (audioRef.current) {
+          audioRef.current.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA";
+          audioRef.current.loop = true;
+          audioRef.current.play().catch(() => {});
+        }
       } catch {
         /* noop */
       }
@@ -618,9 +678,62 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         loadTrackViaAudio(track);
       }
 
+      const cached = streamInfoCacheRef.current.get(track.id);
+      let videoId = cached ? cached.videoId : track.externalId;
+      let provider = cached ? cached.provider : "demo";
+
+      if (cached) {
+        setState((p) => ({ ...p, provider, streamingConfigured: true }));
+        if (
+          stateRef.current.sponsorblockEnabled &&
+          videoId &&
+          /^[\w-]{11}$/.test(videoId)
+        ) {
+          fetch(`/api/sponsorblock?videoId=${videoId}`)
+            .then((r) => r.json())
+            .then((d: { segments: SponsorSegment[] }) =>
+              setState((p) => ({ ...p, segments: d.segments ?? [] })),
+            )
+            .catch(() => {});
+        }
+
+        const useYT =
+          isYTEnabled &&
+          !!videoId &&
+          /^[\w-]{11}$/.test(videoId) &&
+          !failedEmbedVideoIds.has(videoId);
+
+        if (useYT && videoId) {
+          const player = ytRef.current;
+          if (player) {
+            ytVideoIdRef.current = videoId;
+            setState((p) => ({ ...p, engine: "youtube" }));
+            try {
+              if (audioRef.current) {
+                audioRef.current.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA";
+                audioRef.current.loop = true;
+                audioRef.current.play().catch(() => {});
+              }
+            } catch {}
+            if (ytReadyRef.current) {
+              try {
+                player.loadVideoById(videoId);
+              } catch {
+                loadTrackViaAudio(track);
+              }
+            } else {
+              ytPendingVideoId.current = videoId;
+            }
+          } else {
+            loadTrackViaYouTube(videoId);
+          }
+        } else if (!alreadyPlayingAudio) {
+          loadTrackViaAudio(track);
+        }
+        return;
+      }
+
       // Resolve videoId + provider first (needed to choose the engine).
-      let videoId = track.externalId;
-      let provider = "demo";
       try {
         const info = await fetch(`/api/stream-info?trackId=${track.id}`).then((r) => r.json()) as {
           provider: string;
@@ -628,6 +741,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         };
         videoId = info.videoId ?? videoId;
         provider = info.provider;
+        // Populate cache for any future replays of this song
+        streamInfoCacheRef.current.set(track.id, { provider, videoId });
         setState((p) => ({ ...p, provider, streamingConfigured: true }));
         if (
           stateRef.current.sponsorblockEnabled &&
@@ -761,6 +876,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // (most radio streams are HTTP-only; the app is HTTPS).
       const proxyUrl = `/api/radio-stream?url=${encodeURIComponent(station.streamUrl)}&name=${encodeURIComponent(station.name)}`;
       audio.src = proxyUrl;
+      audio.loop = false;
       audio.load();
       if (stateRef.current.eqEnabled) {
         ensureAudioGraph();
@@ -956,6 +1072,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setTimeout(() => loadTrack(p.current!), 0);
       }
       return { ...p, fullTrackMode };
+    });
+  }, [loadTrack]);
+
+  const setFullTrackMode = useCallback((val: boolean) => {
+    setState((p) => {
+      if (p.fullTrackMode === val) return p;
+      fetch("/api/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ full_track: val }),
+      }).catch(() => {});
+      // reload current track through the new engine
+      if (p.current) {
+        setTimeout(() => loadTrack(p.current!), 0);
+      }
+      return { ...p, fullTrackMode: val };
     });
   }, [loadTrack]);
 
@@ -1180,6 +1312,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const downloadedUrl = await getDownloadedUrl(nextTrack.id).catch(() => null);
         if (!crossfadeRef.current.active) return; // cancelled while loading
         shadow.src = downloadedUrl ?? `/api/stream?trackId=${nextTrack.id}`;
+        shadow.loop = false;
         shadow.volume = 0;
         shadow.play().catch(() => {});
       })();
@@ -1269,8 +1402,31 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           });
         }
       }
-      ms.setActionHandler("play", () => togglePlay());
-      ms.setActionHandler("pause", () => togglePlay());
+      ms.setActionHandler("play", () => {
+        preWarmAudio();
+        const s = stateRef.current;
+        if (s.eqEnabled) {
+          ensureAudioGraph();
+          if (ctxRef.current?.state === "suspended") ctxRef.current.resume().catch(() => {});
+        }
+        if (s.engine === "youtube" && ytRef.current) {
+          try {
+            ytRef.current.playVideo();
+          } catch {}
+        } else {
+          audioRef.current?.play().catch(() => {});
+        }
+      });
+      ms.setActionHandler("pause", () => {
+        const s = stateRef.current;
+        if (s.engine === "youtube" && ytRef.current) {
+          try {
+            ytRef.current.pauseVideo();
+          } catch {}
+        } else {
+          audioRef.current?.pause();
+        }
+      });
       ms.setActionHandler("previoustrack", () => previous());
       ms.setActionHandler("nexttrack", () => goNext(false));
       ms.setActionHandler("seekto", (d) => {
@@ -1291,8 +1447,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     next4.forEach((track) => {
       if (!track) return;
       // Fetch stream-info (which resolves and database-caches the video ID and preview urls on the server)
-      // and lyrics in the background so they are ready instantly.
-      fetch(`/api/stream-info?trackId=${track.id}`).catch(() => {});
+      // and lyrics in the background so they are ready instantly. We also cache it on the client
+      // for synchronous background/lock-screen song transitions.
+      fetch(`/api/stream-info?trackId=${track.id}`)
+        .then((r) => r.json())
+        .then((info) => {
+          if (info && typeof info === "object" && "provider" in info) {
+            streamInfoCacheRef.current.set(track.id, {
+              provider: info.provider,
+              videoId: info.videoId ?? null,
+            });
+          }
+        })
+        .catch(() => {});
       fetch(`/api/lyrics?trackId=${track.id}`).catch(() => {});
     });
 
@@ -1302,6 +1469,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const shadow = activeSlotRef.current === "A" ? elBRef.current : elARef.current;
       if (shadow) {
         shadow.src = `/api/stream?trackId=${next4[0].id}`;
+        shadow.loop = false;
         shadow.load();
       }
     }
@@ -1363,6 +1531,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     toggleShuffle,
     toggleBooster,
     toggleFullTrack,
+    setFullTrackMode,
     playRadio,
     playLiveRadio,
     cycleRepeat,

@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { DetailHeader, PlayAllButton, CenterLoader } from "@/components/detail";
 import { TrackList } from "@/components/track-row";
 import { DownloadAllButton } from "@/components/download-button";
-import { Trash2 } from "lucide-react";
+import { Trash2, RotateCw } from "lucide-react";
 import type { Track, Playlist } from "@/lib/types";
+import { useToast } from "@/lib/toast";
 
 interface Data {
   playlist: Playlist;
@@ -14,9 +15,11 @@ interface Data {
 }
 
 export default function PlaylistPage({ params }: { params: Promise<{ id: string }> }) {
+  const { toast } = useToast();
   const [id, setId] = useState<number | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -37,6 +40,27 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
     load(id);
   }, [id]);
 
+  const syncPlaylist = async () => {
+    if (!id || syncing) return;
+    setSyncing(true);
+    toast("Syncing playlist with origin platform…", "🔄");
+    try {
+      const res = await fetch(`/api/playlists/${id}/sync`, { method: "POST" });
+      const resData = await res.json();
+      if (res.ok && resData.success) {
+        await load(id);
+        window.dispatchEvent(new Event("playlists-changed"));
+        toast(`Playlist synced successfully! Loaded ${resData.addedCount} tracks.`, "✅");
+      } else {
+        toast(resData.error || "Failed to sync playlist", "❌");
+      }
+    } catch (err) {
+      toast("Error syncing playlist", "❌");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const removePlaylist = async () => {
     if (!data) return;
     if (!window.confirm(`Delete playlist “${data.playlist.name}”?`)) return;
@@ -50,6 +74,10 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
   if (!data) return <CenterLoader />;
 
   const { playlist, tracks } = data;
+  const isSyncedPlaylist =
+    playlist.description?.toLowerCase().includes("synced") ||
+    playlist.description?.toLowerCase().includes("spotify.com") ||
+    playlist.description?.toLowerCase().includes("playlist");
 
   return (
     <div>
@@ -73,6 +101,17 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
           <>
             <PlayAllButton tracks={tracks} />
             <DownloadAllButton tracks={tracks} />
+            {isSyncedPlaylist && (
+              <button
+                onClick={syncPlaylist}
+                disabled={syncing}
+                className="flex items-center gap-1.5 h-11 px-5 rounded-full bg-accent hover:bg-accent/80 text-black font-extrabold text-xs transition disabled:opacity-50 cursor-pointer"
+                title="Sync playlist with origin platform"
+              >
+                <RotateCw size={14} className={syncing ? "animate-spin" : ""} />
+                <span>{syncing ? "Syncing…" : "Sync now"}</span>
+              </button>
+            )}
             <button
               onClick={removePlaylist}
               className="grid place-items-center h-11 w-11 rounded-full bg-white/10 hover:bg-red-500/20 text-textdim hover:text-red-400 transition"

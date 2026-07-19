@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { searchCatalog } from "@/lib/queries";
+import { searchCatalog, likedIds } from "@/lib/queries";
 import { ensureSeed } from "@/lib/seed";
 import { ingestOnlineTracks, ingestDiscography } from "@/lib/sources/online";
 import { mapTrack, mapArtist } from "@/lib/mappers";
 import { db } from "@/db";
-import { tracks, artists } from "@/db/schema";
+import { artists } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -26,9 +26,10 @@ export async function GET(request: Request) {
   }
 
   // Run local + online concurrently. Online results are saved to the DB.
-  const [local, online] = await Promise.all([
+  const [local, online, likedSet] = await Promise.all([
     searchCatalog(q),
     ingestOnlineTracks(q).catch(() => []),
+    likedIds(),
   ]);
 
   // Detect a dominant artist in the online results and pull their FULL
@@ -55,12 +56,11 @@ export async function GET(request: Request) {
 
   // Merge online + discography tracks into the list (dedupe by id).
   const seenIds = new Set(local.tracks.map((t: any) => t.id));
-  const likedIds = new Set(local.tracks.filter((t: any) => t.liked).map((t: any) => t.id));
   const mergedTracks = [...local.tracks];
   for (const t of [...online, ...discography]) {
     if (!seenIds.has(t.id)) {
       seenIds.add(t.id);
-      mergedTracks.push({ ...t, liked: likedIds.has(t.id) });
+      mergedTracks.push({ ...t, liked: likedSet.has(t.id) });
     }
   }
 
