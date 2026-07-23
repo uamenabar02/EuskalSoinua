@@ -13,11 +13,28 @@ export default function LikedPage() {
   useEffect(() => {
     fetch("/api/library")
       .then((r) => {
-        if (!r.ok) throw new Error();
+        if (!r.ok) throw new Error("Failed to fetch");
         return r.json();
       })
-      .then((d) => setLiked(d.liked ?? []))
-      .catch(() => setError(true));
+      .then((d) => {
+        if (!d || d.error || !Array.isArray(d.liked)) {
+          throw new Error("Offline or invalid data");
+        }
+        setLiked(d.liked);
+      })
+      .catch(() => {
+        try {
+          const cached = localStorage.getItem("euskalsoinua-library-cache");
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed?.liked)) {
+              setLiked(parsed.liked);
+              return;
+            }
+          }
+        } catch (e) {}
+        setError(true);
+      });
   }, []);
 
   if (error)

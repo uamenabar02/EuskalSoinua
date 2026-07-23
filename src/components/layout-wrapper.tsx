@@ -6,6 +6,7 @@ import { Sidebar, MobileNav } from "@/components/nav";
 import { PlayerBar } from "@/components/player-bar";
 import { NowPlaying } from "@/components/now-playing";
 import { Eye, ShieldAlert } from "lucide-react";
+import { AccessGate } from "@/components/access-gate";
 
 export function LayoutWrapper({ children }: { children: ReactNode }) {
   const p = usePlayer();
@@ -90,7 +91,7 @@ export function LayoutWrapper({ children }: { children: ReactNode }) {
   }
 
   return (
-    <>
+    <AccessGate>
       <div className="flex flex-col md:flex-row h-dvh overflow-hidden">
         <Sidebar />
         <main
@@ -113,6 +114,6 @@ export function LayoutWrapper({ children }: { children: ReactNode }) {
           <Eye size={22} />
         </button>
       )}
-    </>
+    </AccessGate>
   );
 }

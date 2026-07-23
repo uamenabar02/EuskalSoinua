@@ -98,11 +98,15 @@ const bootScript = `(function(){
     document.cookie='device_name='+encodeURIComponent(dn)+'; path=/; max-age=31536000; SameSite=Strict';
   }catch(e){}
   try{
-    if('serviceWorker' in navigator){
-      navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(x){x.unregister();});}).catch(function(){});
-    }
-    if('caches' in window){
-      caches.keys().then(function(k){k.forEach(function(x){caches.delete(x);});}).catch(function(){});
+    var swV = localStorage.getItem('euskalsoinua-sw-version');
+    if (swV !== '7') {
+      if('serviceWorker' in navigator){
+        navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(x){x.unregister();});}).catch(function(){});
+      }
+      if('caches' in window){
+        caches.keys().then(function(k){k.forEach(function(x){caches.delete(x);});}).catch(function(){});
+      }
+      localStorage.setItem('euskalsoinua-sw-version', '7');
     }
   }catch(e){}
 })();`;

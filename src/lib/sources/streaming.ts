@@ -47,6 +47,8 @@ const DEFAULT_PIPED = [
 ];
 
 const DEFAULT_INVIDIOUS = [
+  "https://yt.chocolatemoo53.com",
+  "https://inv.zoomerville.com",
   "https://inv.nadeko.net",
   "https://invidious.nerdvpn.de",
   "https://yewtu.be",
@@ -107,6 +109,22 @@ function pickBestPiped(streams: PipedAudioStream[]): PipedAudioStream | null {
   return pool.reduce((best, cur) => (cur.bitrate > best.bitrate ? cur : best));
 }
 
+function proxyGooglevideoUrl(url: string, proxyBase?: string): string {
+  try {
+    const u = new URL(url);
+    if (u.hostname.endsWith("googlevideo.com")) {
+      const targetBase = proxyBase || (INVIDIOUS_INSTANCES.length > 0 ? INVIDIOUS_INSTANCES[0] : null);
+      if (targetBase) {
+        const baseParsed = new URL(targetBase);
+        u.protocol = baseParsed.protocol;
+        u.host = baseParsed.host;
+        return u.toString();
+      }
+    }
+  } catch {}
+  return url;
+}
+
 async function fetchPipedInstance(base: string, videoId: string): Promise<StreamResult | null> {
   try {
     const controller = new AbortController();
@@ -121,8 +139,10 @@ async function fetchPipedInstance(base: string, videoId: string): Promise<Stream
     // 1) preferred: a true audio-only stream
     const best = data.audioStreams ? pickBestPiped(data.audioStreams) : null;
     if (best?.url) {
+      const proxiedUrl = proxyGooglevideoUrl(best.url, base);
       return {
-        url: best.url,
+        url: proxiedUrl,
+        originalUrl: best.url,
         contentType: best.mimeType || "audio/mp4",
         duration: data.duration ?? 0,
         provider: "piped",
@@ -136,8 +156,10 @@ async function fetchPipedInstance(base: string, videoId: string): Promise<Stream
       ? data.videoStreams.filter((s) => !s.videoOnly && s.url)
       : [];
     if (combined.length) {
+      const proxiedUrl = proxyGooglevideoUrl(combined[0].url, base);
       return {
-        url: combined[0].url,
+        url: proxiedUrl,
+        originalUrl: combined[0].url,
         contentType: combined[0].mimeType || "audio/mp4",
         duration: data.duration ?? 0,
         provider: "lbry",
@@ -173,8 +195,13 @@ async function fetchInvidiousInstance(base: string, videoId: string): Promise<St
     const data = (await res.json()) as InvidiousVideoResponse;
     const best = data.adaptiveFormats ? pickBestInvidious(data.adaptiveFormats) : null;
     if (best?.url) {
+      const withLocalParam = best.url.includes("?")
+        ? `${best.url}&local=true`
+        : `${best.url}?local=true`;
+      const proxyUrl = proxyGooglevideoUrl(withLocalParam, base);
       return {
-        url: best.url,
+        url: proxyUrl,
+        originalUrl: best.url,
         contentType: best.mimeType || `audio/${best.container ?? "mp4"}`,
         duration: data.lengthSeconds ?? 0,
         provider: "invidious",
@@ -229,6 +256,7 @@ export interface ResolveInput {
   duration?: number;
   previewUrl?: string | null;
   previewUrlAlt?: string | null;
+  mode?: "full" | "preview" | null;
 }
 
 /**
@@ -238,7 +266,7 @@ export interface ResolveInput {
  */
 // Short-lived in-memory memo so the info probe and the actual audio request
 // (which run a moment apart) don't each re-hit every proxy instance.
-const STREAM_MEMO = new Map<number, { result: StreamResult; expires: number }>();
+const STREAM_MEMO = new Map<string, { result: StreamResult; expires: number }>();
 const STREAM_MEMO_TTL = 3600_000;
 
 async function computeStream(input: ResolveInput): Promise<StreamResult> {
@@ -246,6 +274,15 @@ async function computeStream(input: ResolveInput): Promise<StreamResult> {
   if (input.videoId) {
     const real = await resolveFromAllInstances(input.videoId);
     if (real) return real;
+  }
+  if (input.mode === "full") {
+    return {
+      url: "",
+      contentType: "audio/mp4",
+      duration: 0,
+      provider: "demo",
+      sponsorblockAvailable: false,
+    };
   }
   // 2) Real ~30s preview of the ACTUAL song. Prefer iTunes (stable CDN URLs
   //    that never expire) over Deezer (token URLs that expire after a while),
@@ -263,8 +300,9 @@ async function computeStream(input: ResolveInput): Promise<StreamResult> {
 }
 
 export async function resolveStream(input: ResolveInput): Promise<StreamResult> {
-  if (input.trackId != null) {
-    const hit = STREAM_MEMO.get(input.trackId);
+  const cacheKey = input.trackId != null ? `${input.trackId}_${input.videoId || ""}` : null;
+  if (cacheKey != null) {
+    const hit = STREAM_MEMO.get(cacheKey);
     if (hit && hit.expires > Date.now()) return hit.result;
   }
   const result = await computeStream(input);
@@ -272,15 +310,20 @@ export async function resolveStream(input: ResolveInput): Promise<StreamResult> 
   // royalty-free "demo" fallback — otherwise a transient enrichment failure
   // would lock the track onto demo for the TTL even after a real preview is
   // later populated in the DB.
-  if (input.trackId != null && result.provider !== "demo") {
-    STREAM_MEMO.set(input.trackId, { result, expires: Date.now() + STREAM_MEMO_TTL });
+  if (cacheKey != null && result.provider !== "demo") {
+    STREAM_MEMO.set(cacheKey, { result, expires: Date.now() + STREAM_MEMO_TTL });
   }
   return result;
 }
 
 /** Drop the cached resolution for a track (e.g. when its preview URL 403'd). */
 export function clearStreamMemo(trackId: number) {
-  STREAM_MEMO.delete(trackId);
+  const prefix = `${trackId}_`;
+  for (const key of STREAM_MEMO.keys()) {
+    if (key.startsWith(prefix)) {
+      STREAM_MEMO.delete(key);
+    }
+  }
 }
 
 function previewResult(url: string, contentType: string, duration: number): StreamResult {
@@ -404,15 +447,43 @@ function scoreHit(hit: SearchHit, artist: string, title: string): number {
   const hTitle = norm(hit.title);
   const hAuthor = norm(hit.author);
   let score = 0;
-  if (a && hAuthor.includes(a)) score += 60;
-  if (a && hTitle.includes(a)) score += 20;
-  if (t && hTitle.includes(t)) score += 40;
+
+  let artistMatch = false;
+  if (a) {
+    if (hAuthor.includes(a)) {
+      score += 60;
+      artistMatch = true;
+    }
+    if (hTitle.includes(a)) {
+      score += 20;
+      artistMatch = true;
+    }
+  }
+
+  if (t && hTitle.includes(t)) {
+    score += 80;
+  }
+
+  // Penalize missing artist: if an artist was specified but does not appear in author or title, penalize heavily.
+  if (a && !artistMatch) {
+    score -= 100;
+  }
+
   // penalise obvious "live", "cover", "remix", "karaoke" unless that's the title
   if (!/live|cover|remix|karaoke|instrumental/.test(t)) {
     if (/live|cover|remix|karaoke|instrumental/.test(hTitle)) score -= 35;
   }
-  // duration closeness (within 15s is great)
   return score;
+}
+
+async function searchInvidious(query: string): Promise<SearchHit[]> {
+  const { invidious: invidiousInstances } = configuredInstances();
+  const producers = invidiousInstances.map((b) => async () => {
+    const r = await searchInvidiousInstance(b, query);
+    return r.length ? r : null;
+  });
+  const result = await raceFirst<SearchHit[]>(producers);
+  return result ?? [];
 }
 
 /**
@@ -437,18 +508,42 @@ export async function resolveVideoIdForTrack(input: {
   }
 
   for (const q of queries) {
-    const hits = await searchAudio(q);
-    if (!hits.length) continue;
+    let hits = await searchAudio(q);
     let best = hits[0];
-    let bestScore = scoreHit(best, input.artist, input.title);
-    for (const h of hits.slice(1, 8)) {
-      const s = scoreHit(h, input.artist, input.title);
-      if (s > bestScore) {
-        best = h;
-        bestScore = s;
+    let bestScore = best ? scoreHit(best, input.artist, input.title) : -999;
+
+    if (hits.length > 0) {
+      for (const h of hits.slice(1, 8)) {
+        const s = scoreHit(h, input.artist, input.title);
+        if (s > bestScore) {
+          best = h;
+          bestScore = s;
+        }
       }
     }
-    if (/^[\w-]{11}$/.test(best.videoId)) {
+
+    // Direct Invidious search fallback if no high-quality match was found
+    if (!best || bestScore < 95) {
+      const invHits = await searchInvidious(q);
+      if (invHits.length > 0) {
+        let invBest = invHits[0];
+        let invBestScore = scoreHit(invBest, input.artist, input.title);
+        for (const h of invHits.slice(1, 8)) {
+          const s = scoreHit(h, input.artist, input.title);
+          if (s > invBestScore) {
+            invBest = h;
+            invBestScore = s;
+          }
+        }
+        if (invBestScore > bestScore) {
+          best = invBest;
+          bestScore = invBestScore;
+          hits = invHits;
+        }
+      }
+    }
+
+    if (best && /^[\w-]{11}$/.test(best.videoId)) {
       return { videoId: best.videoId, title: best.title, author: best.author };
     }
   }

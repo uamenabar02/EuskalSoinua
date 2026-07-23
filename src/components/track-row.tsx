@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { Play, Pause, Heart, MoreHorizontal, Plus, Clock, Radio, Loader2, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Play, Pause, Heart, MoreHorizontal, Plus, Clock, Radio, Loader2, ThumbsUp, ThumbsDown, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { usePlayer } from "@/lib/player-context";
 import { useToast } from "@/lib/toast";
@@ -98,6 +98,12 @@ export function TrackRow({
           >
             {track.artistName}
           </Link>
+          {(track as any).reason ? (
+            <div className="text-[11px] text-accent/90 truncate flex items-center gap-1 mt-0.5 font-medium">
+              <Sparkles size={11} className="shrink-0 text-accent" />
+              <span className="truncate">{(track as any).reason}</span>
+            </div>
+          ) : null}
         </div>
       </div>
 

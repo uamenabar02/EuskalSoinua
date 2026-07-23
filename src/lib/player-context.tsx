@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Track, SponsorSegment, LyricLine } from "@/lib/types";
-import { getDownloadedUrl } from "@/lib/downloads";
+import { getDownloadedUrl, getDownloadedUrlSync } from "@/lib/downloads";
 
 // 5-band equalizer centre frequencies (Hz).
 const EQ_FREQS = [60, 230, 910, 3600, 14000];
@@ -588,10 +588,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // Crucial for iOS/Android background audio: we must call .play() synchronously.
       // Therefore we DO NOT await IndexedDB here if we are online. We play the network stream instantly.
       const mode = stateRef.current.fullTrackMode ? "full" : "preview";
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
-        getDownloadedUrl(track.id)
-          .then((url) => playWithSrc(url ?? `/api/stream?trackId=${track.id}&mode=${mode}`))
-          .catch(() => playWithSrc(`/api/stream?trackId=${track.id}&mode=${mode}`));
+      const offlineUrl = getDownloadedUrlSync(track.id);
+      if (offlineUrl) {
+        playWithSrc(offlineUrl);
       } else {
         playWithSrc(`/api/stream?trackId=${track.id}&mode=${mode}`);
       }
@@ -646,8 +645,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const loadTrack = useCallback(
     async (track: Track) => {
-      const audio = audioRef.current;
-      if (!audio) return;
+      const currentAudio = audioRef.current;
+      if (!currentAudio) return;
       // record previous track outcome
       flushListen(false, listenRef.current ? true : false);
       listenRef.current = { trackId: track.id, maxPos: 0 };
@@ -666,14 +665,50 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         radioStation: null,
       }));
 
-      // Lyrics always load.
+      // Lyrics always load in background.
       loadTrackMeta(track);
 
-      // Start audio immediately if we know we won't use YT
-      // This preserves iOS Safari's synchronous execution privilege across tracks
       const isYTEnabled = stateRef.current.fullTrackMode;
+      const shadow = getShadowEl();
       let alreadyPlayingAudio = false;
-      if (!isYTEnabled) {
+
+      // Check if the standby audio element has ALREADY pre-buffered this exact track
+      if (
+        shadow &&
+        shadow.dataset.preloadedTrackId === String(track.id) &&
+        !isYTEnabled
+      ) {
+        try {
+          dispatchRef.current.cancelCrossfade();
+          try {
+            ytRef.current?.pauseVideo();
+          } catch {}
+
+          currentAudio.pause();
+          // Fast slot swap to pre-buffered standby element
+          activeSlotRef.current = activeSlotRef.current === "A" ? "B" : "A";
+          audioRef.current = shadow;
+          shadow.dataset.preloadedTrackId = "";
+          shadow.volume = stateRef.current.muted ? 0 : stateRef.current.volume;
+          shadow.muted = stateRef.current.muted;
+          shadow.currentTime = 0;
+
+          if (stateRef.current.eqEnabled) {
+            ensureAudioGraph();
+            if (ctxRef.current?.state === "suspended") ctxRef.current.resume().catch(() => {});
+          }
+
+          alreadyPlayingAudio = true;
+          shadow.play().catch(() => {
+            loadTrackViaAudio(track);
+          });
+        } catch {
+          alreadyPlayingAudio = false;
+        }
+      }
+
+      // If not pre-buffered on standby, start audio immediately if YT is off
+      if (!alreadyPlayingAudio && !isYTEnabled) {
         alreadyPlayingAudio = true;
         loadTrackViaAudio(track);
       }
@@ -719,7 +754,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               try {
                 player.loadVideoById(videoId);
               } catch {
-                loadTrackViaAudio(track);
+                if (!alreadyPlayingAudio) loadTrackViaAudio(track);
               }
             } else {
               ytPendingVideoId.current = videoId;
@@ -733,48 +768,51 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Resolve videoId + provider first (needed to choose the engine).
-      try {
-        const info = await fetch(`/api/stream-info?trackId=${track.id}`).then((r) => r.json()) as {
-          provider: string;
-          videoId: string | null;
-        };
-        videoId = info.videoId ?? videoId;
-        provider = info.provider;
-        // Populate cache for any future replays of this song
-        streamInfoCacheRef.current.set(track.id, { provider, videoId });
-        setState((p) => ({ ...p, provider, streamingConfigured: true }));
-        if (
-          stateRef.current.sponsorblockEnabled &&
-          info.videoId &&
-          /^[\w-]{11}$/.test(info.videoId)
-        ) {
-          fetch(`/api/sponsorblock?videoId=${info.videoId}`)
-            .then((r) => r.json())
-            .then((d: { segments: SponsorSegment[] }) =>
-              setState((p) => ({ ...p, segments: d.segments ?? [] })),
-            )
-            .catch(() => {});
-        }
-      } catch {
-        /* keep defaults */
+      // Start audio immediately while stream-info fetches in background to eliminate initial delay
+      if (!alreadyPlayingAudio) {
+        loadTrackViaAudio(track);
+        alreadyPlayingAudio = true;
       }
 
-      // Choose engine: full-track YouTube when enabled + we have a real id +
-      // THIS video hasn't previously refused embedding. Each track gets a fresh
-      // attempt, so one un-embeddable upload no longer breaks full-track mode.
-      const useYT =
-        isYTEnabled &&
-        !!videoId &&
-        /^[\w-]{11}$/.test(videoId) &&
-        !failedEmbedVideoIds.has(videoId);
-      if (useYT && videoId) {
-        await loadTrackViaYouTube(videoId);
-      } else if (!alreadyPlayingAudio) {
-        await loadTrackViaAudio(track);
-      }
+      // Fetch videoId + provider in background (non-blocking for audio start)
+      fetch(`/api/stream-info?trackId=${track.id}`)
+        .then((r) => r.json())
+        .then((info: { provider?: string; videoId?: string | null }) => {
+          if (!info || typeof info !== "object") return;
+          const resolvedVideoId = info.videoId ?? videoId;
+          const resolvedProvider = info.provider ?? "demo";
+          streamInfoCacheRef.current.set(track.id, { provider: resolvedProvider, videoId: resolvedVideoId });
+
+          if (stateRef.current.current?.id === track.id) {
+            setState((p) => ({ ...p, provider: resolvedProvider, streamingConfigured: true }));
+
+            if (
+              stateRef.current.sponsorblockEnabled &&
+              resolvedVideoId &&
+              /^[\w-]{11}$/.test(resolvedVideoId)
+            ) {
+              fetch(`/api/sponsorblock?videoId=${resolvedVideoId}`)
+                .then((r) => r.json())
+                .then((d: { segments: SponsorSegment[] }) =>
+                  setState((p) => ({ ...p, segments: d.segments ?? [] })),
+                )
+                .catch(() => {});
+            }
+
+            const useYT =
+              isYTEnabled &&
+              !!resolvedVideoId &&
+              /^[\w-]{11}$/.test(resolvedVideoId) &&
+              !failedEmbedVideoIds.has(resolvedVideoId);
+
+            if (useYT && resolvedVideoId) {
+              loadTrackViaYouTube(resolvedVideoId);
+            }
+          }
+        })
+        .catch(() => {});
     },
-    [flushListen, loadTrackMeta, loadTrackViaAudio, loadTrackViaYouTube],
+    [ensureAudioGraph, flushListen, getShadowEl, loadTrackMeta, loadTrackViaAudio, loadTrackViaYouTube],
   );
 
   const preWarmAudio = useCallback(() => {
@@ -1308,8 +1346,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const targetVol = s.muted ? 0 : s.volume;
 
       // Load the next track on the shadow element (async, non-blocking)
-      (async () => {
-        const downloadedUrl = await getDownloadedUrl(nextTrack.id).catch(() => null);
+      (() => {
+        const downloadedUrl = getDownloadedUrlSync(nextTrack.id);
         if (!crossfadeRef.current.active) return; // cancelled while loading
         shadow.src = downloadedUrl ?? `/api/stream?trackId=${nextTrack.id}`;
         shadow.loop = false;
@@ -1440,26 +1478,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.current, state.isPlaying]);
 
-  // Preload next 4 tracks in the queue when active song changes to eliminate buffering wait
+  // Preload next 4 tracks + previous track in the queue when active song changes to eliminate buffering wait
   useEffect(() => {
     if (state.queue.length === 0 || state.index < 0) return;
     const next4 = state.queue.slice(state.index + 1, state.index + 5);
-    next4.forEach((track) => {
-      if (!track) return;
+    const prevTrack = state.index > 0 ? state.queue[state.index - 1] : null;
+    const adjacent = [...next4, prevTrack].filter((t): t is Track => Boolean(t));
+
+    adjacent.forEach((track) => {
       // Fetch stream-info (which resolves and database-caches the video ID and preview urls on the server)
       // and lyrics in the background so they are ready instantly. We also cache it on the client
       // for synchronous background/lock-screen song transitions.
-      fetch(`/api/stream-info?trackId=${track.id}`)
-        .then((r) => r.json())
-        .then((info) => {
-          if (info && typeof info === "object" && "provider" in info) {
-            streamInfoCacheRef.current.set(track.id, {
-              provider: info.provider,
-              videoId: info.videoId ?? null,
-            });
-          }
-        })
-        .catch(() => {});
+      if (!streamInfoCacheRef.current.has(track.id)) {
+        fetch(`/api/stream-info?trackId=${track.id}`)
+          .then((r) => r.json())
+          .then((info) => {
+            if (info && typeof info === "object" && "provider" in info) {
+              streamInfoCacheRef.current.set(track.id, {
+                provider: info.provider,
+                videoId: info.videoId ?? null,
+              });
+            }
+          })
+          .catch(() => {});
+      }
       fetch(`/api/lyrics?trackId=${track.id}`).catch(() => {});
     });
 
@@ -1468,12 +1510,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (next4[0] && state.crossfadeSeconds === 0) {
       const shadow = activeSlotRef.current === "A" ? elBRef.current : elARef.current;
       if (shadow) {
-        shadow.src = `/api/stream?trackId=${next4[0].id}`;
-        shadow.loop = false;
-        shadow.load();
+        const targetSrc = `/api/stream?trackId=${next4[0].id}&mode=${state.fullTrackMode ? "full" : "preview"}`;
+        if (shadow.dataset.preloadedTrackId !== String(next4[0].id)) {
+          shadow.dataset.preloadedTrackId = String(next4[0].id);
+          shadow.src = targetSrc;
+          shadow.loop = false;
+          shadow.preload = "auto";
+          shadow.load();
+        }
       }
     }
-  }, [state.current, state.queue, state.index, state.crossfadeSeconds]);
+  }, [state.queue, state.index, state.crossfadeSeconds, state.fullTrackMode]);
 
   // keep audio volume in sync
   useEffect(() => {

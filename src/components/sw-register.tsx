@@ -20,24 +20,21 @@ export function ServiceWorkerRegister() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
-    if (process.env.NODE_ENV !== "production") return;
 
     (async () => {
       try {
-        // 1) Destroy ALL existing service workers (old versions with
-        //    interfering fetch handlers).
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(registrations.map((r) => r.unregister()));
-
-        // 2) Clear all caches left by old SWs.
-        if ("caches" in window) {
-          const cacheKeys = await caches.keys();
-          await Promise.all(cacheKeys.map((k) => caches.delete(k)));
+        const swV = localStorage.getItem("euskalsoinua-sw-version");
+        if (swV !== "7") {
+          // Clean up old service workers and caches once
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((r) => r.unregister()));
+          if ("caches" in window) {
+            const cacheKeys = await caches.keys();
+            await Promise.all(cacheKeys.map((k) => caches.delete(k)));
+          }
+          localStorage.setItem("euskalsoinua-sw-version", "7");
         }
-
-        // 3) Register the new safe SW (empty fetch handler — never interferes).
-        //    Cache-busting query param forces the browser to fetch the new file.
-        await navigator.serviceWorker.register("/sw.js?v=5");
+        await navigator.serviceWorker.register("/sw.js?v=7");
       } catch {
         /* registration failures are non-fatal */
       }

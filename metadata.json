@@ -1,0 +1,6 @@
+{
+  "name": "EuskalSoinua",
+  "description": "Ad-free open-source music streaming client with AI recommendations",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

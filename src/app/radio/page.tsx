@@ -34,12 +34,61 @@ export default function RadioPage() {
   const [country, setCountry] = useState("");
   const [browse, setBrowse] = useState<RadioStation[]>([]);
   const [browsing, setBrowsing] = useState(false);
+  const [isOffline, setIsOffline] = useState(() => {
+    if (typeof navigator !== "undefined") {
+      return !navigator.onLine;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      const onOnline = () => setIsOffline(false);
+      const onOffline = () => setIsOffline(true);
+      window.addEventListener("online", onOnline);
+      window.addEventListener("offline", onOffline);
+      return () => {
+        window.removeEventListener("online", onOnline);
+        window.removeEventListener("offline", onOffline);
+      };
+    }
+  }, []);
 
   useEffect(() => {
     fetch("/api/radio-stations")
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => {});
+      .then((r) => {
+        if (!r.ok) throw new Error("Network response was not ok");
+        return r.json();
+      })
+      .then((res) => {
+        if (!res || res.error || !Array.isArray(res.curated)) {
+          throw new Error("Invalid or offline response");
+        }
+        const safeData = {
+          curated: Array.isArray(res.curated) ? res.curated : [],
+          browse: Array.isArray(res.browse) ? res.browse : [],
+        };
+        setData(safeData);
+        try {
+          localStorage.setItem("euskalsoinua-radio-cache", JSON.stringify(safeData));
+        } catch (e) {}
+      })
+      .catch(() => {
+        try {
+          const cached = localStorage.getItem("euskalsoinua-radio-cache");
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            setData({
+              curated: Array.isArray(parsed?.curated) ? parsed.curated : [],
+              browse: Array.isArray(parsed?.browse) ? parsed.browse : [],
+            });
+          } else {
+            setData({ curated: [], browse: [] });
+          }
+        } catch (e) {
+          setData({ curated: [], browse: [] });
+        }
+      });
   }, []);
 
   const runBrowse = useCallback(() => {
@@ -82,6 +131,17 @@ export default function RadioPage() {
           </div>
         </div>
       </header>
+
+      {isOffline && (
+        <div className="mb-6 rounded-xl bg-amber-500/10 border border-amber-500/20 p-4 text-sm text-amber-200 animate-fade-up">
+          <p className="font-semibold flex items-center gap-1.5">
+            ⚠️ Live Radio is unavailable offline
+          </p>
+          <p className="mt-1 text-xs text-textdim">
+            Connect to the internet to search and stream live radio stations.
+          </p>
+        </div>
+      )}
 
       {/* Now playing radio banner */}
       {isLiveRadio && radioStation ? (
@@ -275,9 +335,11 @@ function StationCard({
 }
 
 function groupByRegion(stations: RadioStation[]) {
+  if (!stations || !Array.isArray(stations)) return [];
   const order = ["Euskadi", "España", "France", "United Kingdom"];
   const map = new Map<string, RadioStation[]>();
   for (const s of stations) {
+    if (!s) continue;
     const key = s.region || s.country || "Other";
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(s);

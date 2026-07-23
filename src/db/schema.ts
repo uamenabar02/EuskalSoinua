@@ -232,3 +232,41 @@ export const eqPresets = pgTable("eq_presets", {
   bands: text("bands").notNull(), // JSON array
   isDefault: boolean("is_default").default(false).notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// Device Access Control & Admin Management
+// ---------------------------------------------------------------------------
+
+export const deviceAccessRequests = pgTable(
+  "device_access_requests",
+  {
+    id: serial("id").primaryKey(),
+    deviceId: text("device_id").notNull().unique(),
+    deviceName: text("device_name").notNull(),
+    userName: text("user_name"),
+    userEmail: text("user_email"),
+    requestNote: text("request_note"),
+    ipAddress: text("ip_address").notNull(),
+    country: text("country"),
+    city: text("city"),
+    regionName: text("region_name"),
+    locationCoords: text("location_coords"),
+    timezone: text("timezone"),
+    userAgent: text("user_agent"),
+    status: text("status").notNull().default("pending"), // "pending" | "accepted" | "rejected"
+    adminNotes: text("admin_notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("dar_device_idx").on(t.deviceId),
+    index("dar_status_idx").on(t.status),
+    index("dar_ip_idx").on(t.ipAddress),
+  ],
+);
+
+export const adminConfig = pgTable("admin_config", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

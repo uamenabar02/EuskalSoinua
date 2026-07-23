@@ -35,6 +35,12 @@ function NavItem({
   return (
     <Link
       href={href}
+      onClick={(e) => {
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          e.preventDefault();
+          window.location.href = href;
+        }
+      }}
       className={clsx(
         "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-semibold",
         active ? "bg-white/10 text-ink" : "text-textdim hover:text-ink hover:bg-white/5",
@@ -109,6 +115,12 @@ export function Sidebar() {
         <div className="flex items-center justify-between px-2 py-1">
           <Link
             href="/library"
+            onClick={(e) => {
+              if (typeof navigator !== "undefined" && !navigator.onLine) {
+                e.preventDefault();
+                window.location.href = "/library";
+              }
+            }}
             className="flex items-center gap-2 text-textfaint text-xs font-bold uppercase tracking-wide hover:text-ink"
           >
             <Library size={14} /> Your Library
@@ -123,6 +135,12 @@ export function Sidebar() {
         </div>
         <Link
           href="/library/liked"
+          onClick={(e) => {
+            if (typeof navigator !== "undefined" && !navigator.onLine) {
+              e.preventDefault();
+              window.location.href = "/library/liked";
+            }
+          }}
           className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5 text-textdim hover:text-ink text-sm"
         >
           <span
@@ -141,6 +159,12 @@ export function Sidebar() {
             <Link
               key={pl.id}
               href={`/playlist/${pl.id}`}
+              onClick={(e) => {
+                if (typeof navigator !== "undefined" && !navigator.onLine) {
+                  e.preventDefault();
+                  window.location.href = `/playlist/${pl.id}`;
+                }
+              }}
               className={clsx(
                 "flex items-center gap-3 px-2 py-2 rounded-lg text-sm transition-colors",
                 pathname === `/playlist/${pl.id}`
@@ -173,7 +197,26 @@ export function Sidebar() {
           </button>
         )}
         <Link
+          href="/admin"
+          onClick={(e) => {
+            if (typeof navigator !== "undefined" && !navigator.onLine) {
+              e.preventDefault();
+              window.location.href = "/admin";
+            }
+          }}
+          className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-accent/10 text-textdim hover:text-accent text-sm font-semibold"
+        >
+          <span className="grid place-items-center h-8 w-8 rounded-md bg-accent/20 text-accent">🛡️</span>
+          Admin Access
+        </Link>
+        <Link
           href="/settings"
+          onClick={(e) => {
+            if (typeof navigator !== "undefined" && !navigator.onLine) {
+              e.preventDefault();
+              window.location.href = "/settings";
+            }
+          }}
           className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5 text-textdim hover:text-ink text-sm"
         >
           <span className="grid place-items-center h-8 w-8 rounded-md bg-white/5">⚙</span>
@@ -201,6 +244,12 @@ export function MobileNav() {
           <Link
             key={n.href}
             href={n.href}
+            onClick={(e) => {
+              if (typeof navigator !== "undefined" && !navigator.onLine) {
+                e.preventDefault();
+                window.location.href = n.href;
+              }
+            }}
             className={clsx(
               "flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg flex-1",
               active ? "text-ink" : "text-textdim",

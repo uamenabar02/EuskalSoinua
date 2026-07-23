@@ -33,6 +33,7 @@ export default function HomePage() {
   const p = usePlayer();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [catalogError, setCatalogError] = useState(false);
+  const [reloadingSection, setReloadingSection] = useState<Record<string, boolean>>({});
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [taste, setTaste] = useState<{
     topGenres: { genre: string; score: number }[];
@@ -44,6 +45,23 @@ export default function HomePage() {
   const [discover, setDiscover] = useState<(Track & { reason?: string })[]>([]);
   const [feedback, setFeedback] = useState<Record<number, "like" | "discharge" | "dislike">>({});
   const { toast } = useToast();
+
+  const reloadCatalogSection = useCallback((sectionKey: keyof Catalog, sectionName: string) => {
+    setReloadingSection((prev) => ({ ...prev, [sectionKey]: true }));
+    toast(`AI Agent is tailoring ${sectionName.toLowerCase()}…`, "🤖");
+    const randomSeed = `${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+    fetch(`/api/catalog?section=${sectionKey}&seed=${randomSeed}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.items) {
+          setCatalog((prev) => (prev ? { ...prev, [sectionKey]: d.items } : null));
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setReloadingSection((prev) => ({ ...prev, [sectionKey]: false }));
+      });
+  }, [toast]);
 
   const recsRef = useRef<Recommendation[]>([]);
   const discoverRef = useRef<(Track & { reason?: string })[]>([]);
@@ -62,7 +80,15 @@ export default function HomePage() {
     const url = `/api/discover` + (excludeIds ? `?exclude=${excludeIds}` : "");
     fetch(url)
       .then((r) => r.json())
-      .then((d) => setDiscover(d.tracks ?? []))
+      .then((d) => {
+        const fetchedTracks = d.tracks ?? [];
+        setDiscover(fetchedTracks);
+        if (typeof window !== "undefined" && fetchedTracks.length > 0) {
+          try {
+            sessionStorage.setItem("euskalsoinua_discover_cache", JSON.stringify(fetchedTracks));
+          } catch (e) {}
+        }
+      })
       .catch(() => {})
       .finally(() => setLoadingDiscover(false));
   }, []);
@@ -99,7 +125,21 @@ export default function HomePage() {
       .then((d) => setRadios(d.radios ?? []))
       .catch(() => {});
     
-    loadDiscover();
+    // Discover Now cache check: only load from API if no cached discovery tracks exist
+    let cachedDiscover: any = null;
+    if (typeof window !== "undefined") {
+      try {
+        const stored = sessionStorage.getItem("euskalsoinua_discover_cache");
+        if (stored) cachedDiscover = JSON.parse(stored);
+      } catch (e) {}
+    }
+
+    if (cachedDiscover && Array.isArray(cachedDiscover) && cachedDiscover.length > 0) {
+      setDiscover(cachedDiscover);
+    } else {
+      loadDiscover();
+    }
+
     loadRecs();
   }, [loadDiscover, loadRecs]);
 
@@ -115,11 +155,10 @@ export default function HomePage() {
   useEffect(() => {
     const handleChanged = () => {
       loadRecs();
-      loadDiscover();
     };
     window.addEventListener("playlists-changed", handleChanged);
     return () => window.removeEventListener("playlists-changed", handleChanged);
-  }, [loadRecs, loadDiscover]);
+  }, [loadRecs]);
 
   // Computed in an effect (not during render) to avoid a server/client time
   // hydration mismatch that can destabilize the session.
@@ -171,7 +210,12 @@ export default function HomePage() {
         </div>
       ) : (
         <>
-          <Section title="Trending now" subtitle="Most played across your catalog">
+          <Section
+            title="Trending now"
+            subtitle="AI-tailored popular tracks based on your taste"
+            onReload={() => reloadCatalogSection("trending", "Trending now")}
+            reloading={reloadingSection["trending"]}
+          >
             {catalog.trending.map((t) => (
               <SectionCard key={t.id}>
                 <TrackCard track={t} />
@@ -181,8 +225,10 @@ export default function HomePage() {
 
           <Section
             title="Basque highlights"
-            subtitle="Euskal musika — rock, folk, trikitia"
+            subtitle="AI-tailored Euskal musika — rock, folk, trikitia"
             action={<BasqueBadge />}
+            onReload={() => reloadCatalogSection("basqueHighlights", "Basque highlights")}
+            reloading={reloadingSection["basqueHighlights"]}
           >
             {catalog.basqueHighlights.map((t) => (
               <SectionCard key={t.id}>
@@ -272,43 +318,54 @@ export default function HomePage() {
             )}
           </section>
 
-          {discover.length > 0 ? (
-            <section className="mb-8">
-              <div className="flex items-end justify-between mb-3 px-1">
-                <div>
-                  <h2 className="text-lg sm:text-2xl font-bold tracking-tight flex items-center gap-2">
-                    🔮 Discover New
-                  </h2>
-                  <p className="text-textdim text-xs sm:text-sm mt-0.5">
-                    Fresh releases matched to your taste
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    toast("Refreshing discovery tracks…", "🔮");
-                    loadDiscover(true);
-                  }}
-                  disabled={loadingDiscover}
-                  title="Reload discovery tracks"
-                  className="flex items-center gap-1.5 text-xs font-semibold text-accent bg-accent/10 hover:bg-accent/20 px-3 py-1.5 rounded-full transition disabled:opacity-50 cursor-pointer"
-                >
-                  <RotateCw size={14} className={loadingDiscover ? "animate-spin-slow" : ""} />
-                  <span className="hidden sm:inline">Reload</span>
-                </button>
+          <section className="mb-8">
+            <div className="flex items-end justify-between mb-3 px-1">
+              <div>
+                <h2 className="text-lg sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+                  🤖 Discover Now <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-accent/20 text-accent">AI Agent</span>
+                </h2>
+                <p className="text-textdim text-xs sm:text-sm mt-0.5">
+                  10 fresh recommendations (published &lt; 5 years) curated by Gemini AI based on your Swipes, Liked Songs, Albums, Synced Playlists &amp; Artists
+                </p>
               </div>
+              <button
+                onClick={() => {
+                  toast("Gemini AI is curating 10 new recommendations…", "🤖");
+                  loadDiscover(true);
+                }}
+                disabled={loadingDiscover}
+                title="Reload 10 new AI recommendations"
+                className="flex items-center gap-1.5 text-xs font-semibold text-accent bg-accent/10 hover:bg-accent/20 px-3 py-1.5 rounded-full transition disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                <RotateCw size={14} className={loadingDiscover ? "animate-spin-slow" : ""} />
+                <span className="hidden sm:inline">Reload</span>
+              </button>
+            </div>
+            {loadingDiscover && discover.length === 0 ? (
+              <div className="py-12 grid place-items-center text-textdim rounded-xl bg-white/[0.02]">
+                <div className="flex items-center gap-2 text-xs text-accent">
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>Gemini AI Agent is analyzing your taste signals…</span>
+                </div>
+              </div>
+            ) : discover.length > 0 ? (
               <div className="rounded-xl bg-white/[0.02] p-2 sm:p-3">
-                {discover.slice(0, 8).map((t, i) => (
+                {discover.slice(0, 10).map((t, i) => (
                   <TrackRow
                     key={`${t.id}-disc-${i}`}
                     track={{ ...t, liked: false }}
                     index={i}
-                    queue={discover}
+                    queue={discover.slice(0, 10)}
                     showAlbum
                   />
                 ))}
               </div>
-            </section>
-          ) : null}
+            ) : (
+              <div className="py-8 text-center text-xs text-textdim rounded-xl bg-white/[0.02]">
+                No discovery recommendations found at the moment. Click Reload to generate new recommendations.
+              </div>
+            )}
+          </section>
 
           {radios.length > 0 ? (
             <Section
@@ -323,7 +380,12 @@ export default function HomePage() {
             </Section>
           ) : null}
 
-          <Section title="Top artists" subtitle="Follow your favorites">
+          <Section
+            title="Top artists"
+            subtitle="AI-tailored favorite & recommended artists"
+            onReload={() => reloadCatalogSection("topArtists", "Top artists")}
+            reloading={reloadingSection["topArtists"]}
+          >
             {catalog.topArtists.map((a) => (
               <SectionCard key={a.id}>
                 <ArtistCard artist={a} />
@@ -331,7 +393,12 @@ export default function HomePage() {
             ))}
           </Section>
 
-          <Section title="Basque artists" subtitle="Discover regional talent">
+          <Section
+            title="Basque artists"
+            subtitle="AI-tailored Euskal Herria regional talent"
+            onReload={() => reloadCatalogSection("basqueArtists", "Basque artists")}
+            reloading={reloadingSection["basqueArtists"]}
+          >
             {catalog.basqueArtists.map((a) => (
               <SectionCard key={a.id}>
                 <ArtistCard artist={a} />
@@ -339,7 +406,12 @@ export default function HomePage() {
             ))}
           </Section>
 
-          <Section title="New & notable albums">
+          <Section
+            title="New & notable albums"
+            subtitle="AI-tailored recent album releases"
+            onReload={() => reloadCatalogSection("newReleases", "New & notable albums")}
+            reloading={reloadingSection["newReleases"]}
+          >
             {catalog.newReleases.map((a) => (
               <SectionCard key={a.id}>
                 <AlbumCard album={a} />

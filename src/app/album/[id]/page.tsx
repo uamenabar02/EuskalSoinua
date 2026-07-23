@@ -22,15 +22,36 @@ export default function AlbumPage({ params }: { params: Promise<{ id: string }> 
     params.then((p) => setId(Number(p.id)));
   }, [params]);
 
-  useEffect(() => {
-    if (id == null) return;
-    fetch(`/api/album/${id}`)
+  const load = (aid: number) => {
+    fetch(`/api/album/${aid}`)
       .then((r) => {
         if (!r.ok) throw new Error();
         return r.json();
       })
-      .then(setData)
-      .catch(() => setError(true));
+      .then((resData) => {
+        setData(resData);
+        try {
+          localStorage.setItem(`euskalsoinua-album-cache-${aid}`, JSON.stringify(resData));
+        } catch (e) {}
+      })
+      .catch(() => {
+        try {
+          const cached = localStorage.getItem(`euskalsoinua-album-cache-${aid}`);
+          if (cached) {
+            setData(JSON.parse(cached));
+            setError(false);
+          } else {
+            setError(true);
+          }
+        } catch (e) {
+          setError(true);
+        }
+      });
+  };
+
+  useEffect(() => {
+    if (id == null) return;
+    load(id);
   }, [id]);
 
   if (error)

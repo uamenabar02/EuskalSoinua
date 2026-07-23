@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createPlaylist, addTrackToPlaylist } from "@/lib/queries";
 import { ingestOnlineTracks } from "@/lib/sources/online";
+import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 45; // Ingesting tracks can take some seconds
@@ -69,6 +70,9 @@ async function fetchSpotifyPlaylistTracks(playlistId: string): Promise<{ name: s
 
 export async function POST(request: Request) {
   try {
+    const cookieStore = await cookies();
+    const syncKey = cookieStore.get("sync_key")?.value || "default";
+
     const body = await request.json().catch(() => ({}));
     const { playlistName, platform, playlistUrl, customTracks } = body as {
       playlistName?: string;
@@ -114,7 +118,12 @@ export async function POST(request: Request) {
     const name = (resolvedPlaylistName || `My ${platform || "External"} Playlist`).trim();
     
     // Create the playlist in our database
-    const playlist = await createPlaylist(name, `Synced from ${platform || "external source"} (${playlistUrl || "direct import"})`);
+    const playlist = await createPlaylist(
+      name,
+      `Synced from ${platform || "external source"} (${playlistUrl || "direct import"})`,
+      "user",
+      syncKey
+    );
     
     // Limit to max 100 tracks to support full Top 50 and larger custom playlists
     const finalQueries = trackQueries.slice(0, 100);

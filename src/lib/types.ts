@@ -75,6 +75,7 @@ export interface SponsorSegment {
 
 export interface StreamResult {
   url: string;
+  originalUrl?: string;
   contentType: string;
   duration: number;
   provider: "piped" | "invidious" | "lbry" | "preview" | "demo";

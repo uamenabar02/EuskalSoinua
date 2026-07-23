@@ -33,15 +33,15 @@ function buildAffinity(
 ): Affinity {
   const a: Affinity = { genre: {}, artist: {}, region: {}, totalEvents: events.length + likedTracksData.length };
   
-  // 1. Process explicit Liked Songs with strong positive weights
+  // 1. Process explicit Liked Songs with balanced positive weights
   for (const t of likedTracksData) {
     const g = (t.genre ?? "unknown").toLowerCase();
-    a.genre[g] = (a.genre[g] ?? 0) + 5.0;
+    a.genre[g] = (a.genre[g] ?? 0) + 3.0;
     if (t.artistId) {
-      a.artist[t.artistId] = (a.artist[t.artistId] ?? 0) + 8.0;
+      a.artist[t.artistId] = Math.min((a.artist[t.artistId] ?? 0) + 3.0, 6.0);
     }
     const r = (t.region ?? "global").toLowerCase();
-    a.region[r] = (a.region[r] ?? 0) + 3.0;
+    a.region[r] = (a.region[r] ?? 0) + 2.0;
   }
 
   // 2. Process listen events

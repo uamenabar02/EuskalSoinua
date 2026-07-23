@@ -4,6 +4,7 @@ import { createPlaylist, addTrackToPlaylist } from "@/lib/queries";
 import { db } from "@/db";
 import { tracks as tracksTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -19,6 +20,9 @@ export const maxDuration = 30;
  * NOTE: This is distinct from LIVE RADIO stations (/api/radio-stations).
  */
 export async function GET(request: Request) {
+  const cookieStore = await cookies();
+  const syncKey = cookieStore.get("sync_key")?.value || "default";
+
   const { searchParams } = new URL(request.url);
   const trackId = Number(searchParams.get("trackId"));
   if (!trackId) {
@@ -40,6 +44,7 @@ export async function GET(request: Request) {
     `📻 Song Radio · ${seedTitle}`,
     `Generated from "${seedTitle}" — a mix of similar tracks and related artists.`,
     "radio",
+    syncKey,
   );
 
   // Add every track to it

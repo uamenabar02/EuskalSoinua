@@ -36,9 +36,13 @@ export function DownloadMenuItem({ track }: { track: Track }) {
         await downloadTrack(track);
         setState("downloaded");
         toast("Downloaded for offline play", "✅");
-      } catch {
+      } catch (err: any) {
         setState("idle");
-        toast("Download failed", "⚠️");
+        if (err.message === "Full track unavailable") {
+          toast("Failed: Full track unavailable from provider", "⚠️");
+        } else {
+          toast("Download failed", "⚠️");
+        }
       }
     },
     [track, state, toast],
@@ -76,16 +80,25 @@ export function DownloadAllButton({
     setDownloading(true);
     toast(`Downloading ${tracks.length} songs…`, "⬇️");
     let done = 0;
+    let unavailable = 0;
     for (const t of tracks) {
       try {
         await downloadTrack(t);
         done++;
-      } catch {
-        /* skip failed */
+      } catch (err: any) {
+        if (err.message === "Full track unavailable") {
+          unavailable++;
+        }
       }
     }
     setDownloading(false);
-    toast(`Downloaded ${done}/${tracks.length} songs`, "✅");
+    if (unavailable > 0 && done === 0) {
+      toast(`Failed: Full tracks unavailable`, "⚠️");
+    } else if (unavailable > 0) {
+      toast(`Downloaded ${done}/${tracks.length} (${unavailable} unavailable)`, "⚠️");
+    } else {
+      toast(`Downloaded ${done}/${tracks.length} songs`, "✅");
+    }
   }, [tracks, toast]);
 
   return (

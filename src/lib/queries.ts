@@ -75,46 +75,221 @@ export async function clearTrackPreview(trackId: number) {
     .where(eq(tracks.id, trackId));
 }
 
-export async function getHomeSections() {
+import { GoogleGenAI, Type } from "@google/genai";
+
+async function curateWithGemini<T extends { id: number }>(
+  items: T[],
+  sectionName: string,
+  userTaste: { genres: string[]; artists: string[]; likedCount: number },
+  userInteractedSet: Set<number>,
+  seed?: string
+): Promise<T[]> {
+  if (items.length <= 10) return items;
+
+  const randomSeed = seed || `${Date.now()}_${Math.random()}`;
+  // Shuffle full candidate list
+  const shuffledCandidates = [...items].sort(() => Math.random() - 0.5);
+  // Pick a fresh slice of 35 candidates for Gemini to curate
+  const poolToUse = shuffledCandidates.slice(0, 35);
+
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const poolSummary = poolToUse.map((item: any) => ({
+        id: item.id,
+        title: item.title || item.name || "Untitled",
+        artist: item.artistName || item.name || "Unknown Artist",
+        genre: item.genre || "Music",
+        isLikedByUser: userInteractedSet.has(item.id),
+      }));
+
+      const prompt = `You are an AI Music Curation Agent for EuskalSoinua.
+Your mission is to curate and select EXACTLY 10 items from the CANDIDATE POOL for the section "${sectionName}".
+
+USER TASTE PROFILE:
+- Preferred Genres: ${JSON.stringify(userTaste.genres)}
+- Favorite Artists: ${JSON.stringify(userTaste.artists)}
+- Total Liked Items: ${userTaste.likedCount}
+
+CRITICAL VARIETY & DISCOVERY RULES:
+1. FRESH VARIETY: You MUST choose a DIFFERENT set and ordering of 10 items every time (Seed Nonce: ${randomSeed}). Do NOT repeat the exact same top items as previous runs.
+2. UNLIKED DISCOVERY REQUIREMENT: At least 5 to 7 of your 10 selected items MUST be items that the user HAS NOT explicitly liked/followed yet (where 'isLikedByUser' = false), but closely match their musical taste (matching preferred genres/styles/vibe).
+3. ARTIST DIVERSITY: Choose MAX 1 item per artist/band.
+4. Output EXACTLY 10 item IDs in order of recommendation.
+
+CANDIDATE POOL:
+${JSON.stringify(poolSummary, null, 2)}`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: prompt,
+        config: {
+          temperature: 1.0,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              selectedIds: {
+                type: Type.ARRAY,
+                items: { type: Type.NUMBER },
+                description: "Array of exactly 10 selected candidate IDs in order of recommendation",
+              },
+            },
+            required: ["selectedIds"],
+          },
+        },
+      });
+
+      const jsonText = response.text ?? "{}";
+      const parsed = JSON.parse(jsonText);
+      const selectedIds: number[] = parsed.selectedIds || [];
+
+      const itemMap = new Map<number, T>();
+      poolToUse.forEach((it) => itemMap.set(it.id, it));
+
+      const curated: T[] = [];
+      const usedIds = new Set<number>();
+
+      for (const id of selectedIds) {
+        const found = itemMap.get(id);
+        if (found && !usedIds.has(id)) {
+          usedIds.add(id);
+          curated.push(found);
+        }
+      }
+
+      if (curated.length >= 10) {
+        return curated.slice(0, 10);
+      }
+
+      // Fill remaining from poolToUse if Gemini selected fewer than 10
+      for (const it of poolToUse) {
+        if (!usedIds.has(it.id)) {
+          usedIds.add(it.id);
+          curated.push(it);
+          if (curated.length >= 10) break;
+        }
+      }
+      return curated.slice(0, 10);
+    } catch (e) {
+      console.error(`Gemini curation error for section ${sectionName}:`, e);
+    }
+  }
+
+  // Fallback: shuffle and return
+  return poolToUse.slice(0, 10);
+}
+
+export async function getHomeSections(syncKey: string = "default", requestedSection?: string, seed?: string) {
   const [liked, followed, saved] = await Promise.all([
-    likedIds(),
-    followedIds(),
-    savedAlbumIds(),
+    likedIds(syncKey),
+    followedIds(syncKey),
+    savedAlbumIds(syncKey),
   ]);
 
-  const trending = (
-    await db.select().from(tracks).orderBy(desc(tracks.playCount)).limit(10)
-  ).map(mapTrack);
+  // Extract taste signals
+  const [userLikedTracks, userFollowedArtists, userSavedAlbums] = await Promise.all([
+    db
+      .select({ genre: tracks.genre, artistName: tracks.artistName })
+      .from(likedTracks)
+      .innerJoin(tracks, eq(likedTracks.trackId, tracks.id))
+      .where(eq(likedTracks.syncKey, syncKey)),
+    db
+      .select({ genre: artists.genre, name: artists.name })
+      .from(followedArtists)
+      .innerJoin(artists, eq(followedArtists.artistId, artists.id))
+      .where(eq(followedArtists.syncKey, syncKey)),
+    db
+      .select({ genre: albums.genre, artistName: albums.artistName })
+      .from(savedAlbums)
+      .innerJoin(albums, eq(savedAlbums.albumId, albums.id))
+      .where(eq(savedAlbums.syncKey, syncKey)),
+  ]);
 
-  const basqueHighlights = (
-    await db
-      .select()
-      .from(tracks)
-      .where(eq(tracks.region, "eu"))
-      .orderBy(desc(tracks.createdAt))
-      .limit(10)
-  ).map(mapTrack);
+  const preferredGenres = new Set<string>();
+  const preferredArtists = new Set<string>();
 
-  const topArtists = (
-    await db.select().from(artists).orderBy(desc(artists.monthlyListeners)).limit(10)
-  ).map((a: any) => ({ ...mapArtist(a), followed: followed.has(a.id) }));
+  userLikedTracks.forEach((t: any) => {
+    if (t.genre) preferredGenres.add(t.genre.toLowerCase());
+    if (t.artistName) preferredArtists.add(t.artistName.toLowerCase());
+  });
+  userFollowedArtists.forEach((a: any) => {
+    if (a.genre) preferredGenres.add(a.genre.toLowerCase());
+    if (a.name) preferredArtists.add(a.name.toLowerCase());
+  });
+  userSavedAlbums.forEach((alb: any) => {
+    if (alb.genre) preferredGenres.add(alb.genre.toLowerCase());
+    if (alb.artistName) preferredArtists.add(alb.artistName.toLowerCase());
+  });
 
-  const newReleases = (
-    await db.select().from(albums).orderBy(desc(albums.year)).limit(10)
-  ).map((a: any) => ({ ...mapAlbum(a), saved: saved.has(a.id) }));
+  const tasteProfile = {
+    genres: Array.from(preferredGenres),
+    artists: Array.from(preferredArtists),
+    likedCount: userLikedTracks.length,
+  };
 
-  const basqueArtists = (
-    await db
-      .select()
-      .from(artists)
-      .where(eq(artists.region, "eu"))
-      .orderBy(desc(artists.monthlyListeners))
-      .limit(10)
-  ).map((a: any) => ({ ...mapArtist(a), followed: followed.has(a.id) }));
+  const getTrending = async () => {
+    const rows = await db.select().from(tracks).orderBy(sql`RANDOM()`).limit(80);
+    const mapped = rows.map(mapTrack);
+    const curated = await curateWithGemini(mapped, "Trending now", tasteProfile, liked, seed);
+    return curated.map((t: any) => ({ ...t, liked: liked.has(t.id) }));
+  };
+
+  const getBasqueHighlights = async () => {
+    const rows = await db.select().from(tracks).where(eq(tracks.region, "eu")).orderBy(sql`RANDOM()`).limit(80);
+    const mapped = rows.map(mapTrack);
+    const curated = await curateWithGemini(mapped, "Basque highlights", tasteProfile, liked, seed);
+    return curated.map((t: any) => ({ ...t, liked: liked.has(t.id) }));
+  };
+
+  const getTopArtists = async () => {
+    const rows = await db.select().from(artists).orderBy(sql`RANDOM()`).limit(60);
+    const mapped = rows.map(mapArtist);
+    const curated = await curateWithGemini(mapped, "Top artists", tasteProfile, followed, seed);
+    return curated.map((a: any) => ({ ...a, followed: followed.has(a.id) }));
+  };
+
+  const getBasqueArtists = async () => {
+    const rows = await db.select().from(artists).where(eq(artists.region, "eu")).orderBy(sql`RANDOM()`).limit(60);
+    const mapped = rows.map(mapArtist);
+    const curated = await curateWithGemini(mapped, "Basque artists", tasteProfile, followed, seed);
+    return curated.map((a: any) => ({ ...a, followed: followed.has(a.id) }));
+  };
+
+  const getNewReleases = async () => {
+    const rows = await db.select().from(albums).orderBy(sql`RANDOM()`).limit(60);
+    const mapped = rows.map(mapAlbum);
+    const curated = await curateWithGemini(mapped, "New & notable albums", tasteProfile, saved, seed);
+    return curated.map((a: any) => ({ ...a, saved: saved.has(a.id) }));
+  };
+
+  if (requestedSection === "trending") {
+    return { section: "trending", items: await getTrending() };
+  }
+  if (requestedSection === "basqueHighlights") {
+    return { section: "basqueHighlights", items: await getBasqueHighlights() };
+  }
+  if (requestedSection === "topArtists") {
+    return { section: "topArtists", items: await getTopArtists() };
+  }
+  if (requestedSection === "basqueArtists") {
+    return { section: "basqueArtists", items: await getBasqueArtists() };
+  }
+  if (requestedSection === "newReleases") {
+    return { section: "newReleases", items: await getNewReleases() };
+  }
+
+  const [trending, basqueHighlights, topArtists, newReleases, basqueArtists] = await Promise.all([
+    getTrending(),
+    getBasqueHighlights(),
+    getTopArtists(),
+    getNewReleases(),
+    getBasqueArtists(),
+  ]);
 
   return {
-    trending: trending.map((t: any) => ({ ...t, liked: liked.has(t.id) })),
-    basqueHighlights: basqueHighlights.map((t: any) => ({ ...t, liked: liked.has(t.id) })),
+    trending,
+    basqueHighlights,
     topArtists,
     newReleases,
     basqueArtists,

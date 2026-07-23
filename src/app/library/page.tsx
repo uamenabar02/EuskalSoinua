@@ -21,9 +21,43 @@ export default function LibraryPage() {
 
   const load = () =>
     fetch("/api/library")
-      .then((r) => r.json())
-      .then(setLib)
-      .catch(() => {});
+      .then((r) => {
+        if (!r.ok) throw new Error("Network response was not ok");
+        return r.json();
+      })
+      .then((data) => {
+        if (!data || data.error || !Array.isArray(data.liked)) {
+          throw new Error("Invalid or offline response");
+        }
+        const safeData: Lib = {
+          liked: Array.isArray(data.liked) ? data.liked : [],
+          playlists: Array.isArray(data.playlists) ? data.playlists : [],
+          followed: Array.isArray(data.followed) ? data.followed : [],
+          albums: Array.isArray(data.albums) ? data.albums : [],
+        };
+        setLib(safeData);
+        try {
+          localStorage.setItem("euskalsoinua-library-cache", JSON.stringify(safeData));
+        } catch (e) {}
+      })
+      .catch(() => {
+        try {
+          const cached = localStorage.getItem("euskalsoinua-library-cache");
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            setLib({
+              liked: Array.isArray(parsed?.liked) ? parsed.liked : [],
+              playlists: Array.isArray(parsed?.playlists) ? parsed.playlists : [],
+              followed: Array.isArray(parsed?.followed) ? parsed.followed : [],
+              albums: Array.isArray(parsed?.albums) ? parsed.albums : [],
+            });
+          } else {
+            setLib({ liked: [], playlists: [], followed: [], albums: [] });
+          }
+        } catch (e) {
+          setLib({ liked: [], playlists: [], followed: [], albums: [] });
+        }
+      });
 
   useEffect(() => {
     load();
@@ -74,6 +108,12 @@ export default function LibraryPage() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-2">
         <Link
           href="/library/liked"
+          onClick={(e) => {
+            if (typeof navigator !== "undefined" && !navigator.onLine) {
+              e.preventDefault();
+              window.location.href = "/library/liked";
+            }
+          }}
           className="flex items-center gap-4 bg-white/5 hover:bg-white/10 rounded-lg p-2 pr-4 transition"
         >
           <span
@@ -91,6 +131,12 @@ export default function LibraryPage() {
         </Link>
         <Link
           href="/library/downloaded"
+          onClick={(e) => {
+            if (typeof navigator !== "undefined" && !navigator.onLine) {
+              e.preventDefault();
+              window.location.href = "/library/downloaded";
+            }
+          }}
           className="flex items-center gap-4 bg-white/5 hover:bg-white/10 rounded-lg p-2 pr-4 transition"
         >
           <span
@@ -108,6 +154,12 @@ export default function LibraryPage() {
           <Link
             key={pl.id}
             href={`/playlist/${pl.id}`}
+            onClick={(e) => {
+              if (typeof navigator !== "undefined" && !navigator.onLine) {
+                e.preventDefault();
+                window.location.href = `/playlist/${pl.id}`;
+              }
+            }}
             className="flex items-center gap-4 bg-white/5 hover:bg-white/10 rounded-lg p-2 pr-4 transition"
           >
             <div

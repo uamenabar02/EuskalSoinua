@@ -32,8 +32,25 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
         if (!r.ok) throw new Error();
         return r.json();
       })
-      .then(setData)
-      .catch(() => setError(true));
+      .then((resData) => {
+        setData(resData);
+        try {
+          localStorage.setItem(`euskalsoinua-playlist-cache-${pid}`, JSON.stringify(resData));
+        } catch (e) {}
+      })
+      .catch(() => {
+        try {
+          const cached = localStorage.getItem(`euskalsoinua-playlist-cache-${pid}`);
+          if (cached) {
+            setData(JSON.parse(cached));
+            setError(false);
+          } else {
+            setError(true);
+          }
+        } catch (e) {
+          setError(true);
+        }
+      });
 
   useEffect(() => {
     if (id == null) return;
