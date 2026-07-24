@@ -14,6 +14,7 @@ import {
   Info,
   ExternalLink
 } from "lucide-react";
+import { AiPlaylistGenerator } from "@/components/ai-playlist-generator";
 
 interface ImportPlaylistModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ const SUPPORTED_PLATFORMS = [
 ];
 
 export default function ImportPlaylistModal({ isOpen, onClose, onSuccess }: ImportPlaylistModalProps) {
+  const [modalTab, setModalTab] = useState<"ai" | "import">("ai");
   const [platform, setPlatform] = useState("Spotify");
   const [playlistName, setPlaylistName] = useState("");
   const [playlistUrl, setPlaylistUrl] = useState("");
@@ -116,7 +118,7 @@ export default function ImportPlaylistModal({ isOpen, onClose, onSuccess }: Impo
         <div className="p-5 border-b border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="text-accent" size={20} />
-            <h2 className="text-lg font-bold text-white">Import External Playlist</h2>
+            <h2 className="text-lg font-bold text-white">Create & Sync Playlist</h2>
           </div>
           <button 
             onClick={onClose}
@@ -126,7 +128,31 @@ export default function ImportPlaylistModal({ isOpen, onClose, onSuccess }: Impo
           </button>
         </div>
 
-        {status === "idle" && (
+        {/* Modal Tabs */}
+        <div className="flex border-b border-white/5 bg-black/20">
+          <button
+            onClick={() => setModalTab("ai")}
+            className={`flex-1 py-3 text-xs font-bold transition flex items-center justify-center gap-1.5 border-b-2 ${
+              modalTab === "ai" ? "border-accent text-accent bg-white/5" : "border-transparent text-textdim hover:text-white"
+            }`}
+          >
+            <Sparkles size={14} /> Gemini AI Curator
+          </button>
+          <button
+            onClick={() => setModalTab("import")}
+            className={`flex-1 py-3 text-xs font-bold transition flex items-center justify-center gap-1.5 border-b-2 ${
+              modalTab === "import" ? "border-accent text-accent bg-white/5" : "border-transparent text-textdim hover:text-white"
+            }`}
+          >
+            <Link2 size={14} /> Sync External App
+          </button>
+        </div>
+
+        {modalTab === "ai" ? (
+          <div className="p-5">
+            <AiPlaylistGenerator />
+          </div>
+        ) : status === "idle" && (
           <form onSubmit={handleImport} className="p-5 space-y-4">
             {/* Platform Selection */}
             <div>

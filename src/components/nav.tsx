@@ -134,6 +134,18 @@ export function Sidebar() {
           </button>
         </div>
         <Link
+          href="/taste?tab=ai"
+          className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5 text-accent font-semibold text-sm"
+        >
+          <span className="grid place-items-center h-9 w-9 rounded-md shrink-0 bg-accent/15 text-accent">
+            <Sparkles size={16} />
+          </span>
+          <div className="min-w-0">
+            <div className="font-bold truncate text-xs">AI Playlist Curator</div>
+            <div className="text-[10px] text-textdim truncate">Generate with Gemini</div>
+          </div>
+        </Link>
+        <Link
           href="/library/liked"
           onClick={(e) => {
             if (typeof navigator !== "undefined" && !navigator.onLine) {

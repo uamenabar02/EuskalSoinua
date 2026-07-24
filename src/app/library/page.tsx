@@ -8,6 +8,10 @@ import { Section, SectionCard } from "@/components/sections";
 import type { Track, Artist, Album, Playlist } from "@/lib/types";
 import ImportPlaylistModal from "@/components/import-playlist-modal";
 
+import { SocialRoom } from "@/components/social-room";
+import { ImportExportManager } from "@/components/import-export";
+import { AiPlaylistGenerator } from "@/components/ai-playlist-generator";
+
 interface Lib {
   liked: (Track & { liked?: boolean })[];
   playlists: Playlist[];
@@ -18,6 +22,7 @@ interface Lib {
 export default function LibraryPage() {
   const [lib, setLib] = useState<Lib | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [showAiCurator, setShowAiCurator] = useState(true);
 
   const load = () =>
     fetch("/api/library")
@@ -88,16 +93,22 @@ export default function LibraryPage() {
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
           Your Library
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setShowAiCurator((prev) => !prev)}
+            className="flex items-center gap-2 bg-accent text-black font-extrabold text-sm px-4 py-2 rounded-full hover:scale-105 transition shadow-md shadow-accent/15 cursor-pointer"
+          >
+            <Sparkles size={16} /> {showAiCurator ? "AI Curator Active" : "✨ Gemini AI Curator"}
+          </button>
           <button
             onClick={() => setIsImportOpen(true)}
-            className="flex items-center gap-2 bg-accent text-black font-bold text-sm px-4 py-2 rounded-full hover:scale-105 transition"
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/15 text-white font-semibold text-sm px-4 py-2 rounded-full hover:scale-105 transition cursor-pointer"
           >
-            <Sparkles size={16} /> Sync Playlist
+            Sync / Import
           </button>
           <button
             onClick={createPlaylist}
-            className="flex items-center gap-2 bg-white/10 hover:bg-white/15 text-white font-semibold text-sm px-4 py-2 rounded-full hover:scale-105 transition"
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/15 text-white font-semibold text-sm px-4 py-2 rounded-full hover:scale-105 transition cursor-pointer"
           >
             <Plus size={18} /> Create
           </button>
@@ -216,6 +227,12 @@ export default function LibraryPage() {
         </Link>
       </div>
 
+      {showAiCurator && (
+        <div className="mb-8">
+          <AiPlaylistGenerator />
+        </div>
+      )}
+
       <Section title="Playlists">
         {lib.playlists.length === 0 ? (
           <div className="text-textdim text-sm px-1">
@@ -266,6 +283,11 @@ export default function LibraryPage() {
             ))
           )}
         </Section>
+      </div>
+
+      <div className="my-10 space-y-6">
+        <SocialRoom />
+        <ImportExportManager />
       </div>
 
       <ImportPlaylistModal

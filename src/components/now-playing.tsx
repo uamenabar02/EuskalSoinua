@@ -20,6 +20,14 @@ import {
   Disc3,
   Music4,
   Timer,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  Gauge,
+  Share2,
+  Wand2,
+  Info,
+  Loader2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/lib/toast";
@@ -265,6 +273,27 @@ function PlayerTab() {
         )}
       </div>
 
+      {/* Speed control row */}
+      <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
+        <span className="text-[11px] text-white/50 flex items-center gap-1 font-medium mr-1">
+          <Gauge size={12} /> Speed:
+        </span>
+        {[0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => (
+          <button
+            key={rate}
+            onClick={() => p.setPlaybackRate(rate)}
+            className={clsx(
+              "px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition",
+              (p.playbackRate || 1.0) === rate
+                ? "bg-accent text-black font-bold"
+                : "glass text-white/70 hover:text-white"
+            )}
+          >
+            {rate}x
+          </button>
+        ))}
+      </div>
+
       <div className="flex items-center justify-center gap-2 mt-3">
         {p.engine === "youtube" ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 text-accent px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide">
@@ -350,25 +379,97 @@ function LyricsTab() {
 
 function QueueTab() {
   const p = usePlayer();
+  const { toast } = useToast();
   const upcoming = p.queue.slice(p.index + 1);
   const history = p.queue.slice(Math.max(0, p.index - 3), p.index);
+
   return (
     <div className="max-w-2xl mx-auto pb-24">
-      <div className="text-xs uppercase tracking-widest text-white/40 mb-2 mt-2">Now playing</div>
+      <div className="flex items-center justify-between mb-2 mt-2">
+        <div className="text-xs uppercase tracking-widest text-white/40">Now playing</div>
+      </div>
       <QueueRow line={p.current} active />
-      {upcoming.length ? (
-        <>
-          <div className="text-xs uppercase tracking-widest text-white/40 mb-2 mt-5">Next up</div>
-          {upcoming.map((t, i) => (
-            <div key={t.id} onClick={() => p.playQueue(p.queue, p.index + 1 + i)}>
-              <QueueRow line={t} />
-            </div>
-          ))}
-        </>
-      ) : null}
+
+      <div className="flex items-center justify-between mt-6 mb-3">
+        <div className="text-xs uppercase tracking-widest text-white/40">
+          Up Next ({upcoming.length})
+        </div>
+        {upcoming.length > 0 ? (
+          <button
+            onClick={() => {
+              p.clearQueue();
+              toast("Upcoming queue cleared", "🧹");
+            }}
+            className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 font-semibold transition"
+          >
+            <Trash2 size={13} /> Clear
+          </button>
+        ) : null}
+      </div>
+
+      {upcoming.length > 0 ? (
+        <div className="space-y-1">
+          {upcoming.map((t, i) => {
+            const actualIndex = p.index + 1 + i;
+            return (
+              <div
+                key={`${t.id}-${actualIndex}`}
+                className="flex items-center justify-between gap-2 p-1 rounded-xl hover:bg-white/5 group"
+              >
+                <div
+                  className="flex-1 min-w-0 cursor-pointer"
+                  onClick={() => p.playQueue(p.queue, actualIndex)}
+                >
+                  <QueueRow line={t} />
+                </div>
+                <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 shrink-0">
+                  <button
+                    disabled={i === 0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      p.reorderQueue(actualIndex, actualIndex - 1);
+                    }}
+                    className="p-1.5 rounded-lg glass text-white/70 hover:text-white disabled:opacity-30"
+                    title="Move Up"
+                  >
+                    <ArrowUp size={14} />
+                  </button>
+                  <button
+                    disabled={i === upcoming.length - 1}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      p.reorderQueue(actualIndex, actualIndex + 1);
+                    }}
+                    className="p-1.5 rounded-lg glass text-white/70 hover:text-white disabled:opacity-30"
+                    title="Move Down"
+                  >
+                    <ArrowDown size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      p.removeFromQueue(actualIndex);
+                      toast("Removed from queue", "🗑️");
+                    }}
+                    className="p-1.5 rounded-lg glass text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    title="Remove from queue"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-center py-8 text-xs text-white/50 glass rounded-xl">
+          Queue is empty. Select "Add to Queue" or "Play Next" on any track!
+        </div>
+      )}
+
       {history.length ? (
         <>
-          <div className="text-xs uppercase tracking-widest text-white/40 mb-2 mt-5">Played</div>
+          <div className="text-xs uppercase tracking-widest text-white/40 mb-2 mt-6">Played</div>
           {history.map((t) => (
             <QueueRow key={t.id} line={t} dim />
           ))}

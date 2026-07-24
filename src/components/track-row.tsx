@@ -2,11 +2,12 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { Play, Pause, Heart, MoreHorizontal, Plus, Clock, Radio, Loader2, ThumbsUp, ThumbsDown, Sparkles } from "lucide-react";
+import { Play, Pause, Heart, MoreHorizontal, Plus, Clock, Radio, Loader2, ThumbsUp, ThumbsDown, Sparkles, ListPlus, ListMusic } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { usePlayer } from "@/lib/player-context";
 import { useToast } from "@/lib/toast";
 import { DownloadMenuItem } from "@/components/download-button";
+import { AiTrackInsightModal } from "@/components/ai-track-insight-modal";
 import { ToggleButton } from "@/components/like-button";
 import { CoverArt, EqualizerBars } from "@/components/cover";
 import { formatTime, clsx } from "@/lib/utils";
@@ -211,10 +212,11 @@ export function TrackList({
 }
 
 function TrackMenu({ track }: { track: Track }) {
-  const { playRadio } = usePlayer();
+  const { playRadio, playNext, addToQueue } = usePlayer();
   const { toast } = useToast();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [showInsight, setShowInsight] = useState(false);
   const [loadingRadio, setLoadingRadio] = useState(false);
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -257,6 +259,40 @@ function TrackMenu({ track }: { track: Track }) {
       </button>
       {open ? (
         <div className="absolute right-0 top-8 z-50 w-56 rounded-xl bg-elevated border border-white/10 shadow-2xl p-1.5 text-sm animate-fade-up">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(false);
+              setShowInsight(true);
+            }}
+            className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-accent font-semibold"
+          >
+            <Sparkles size={14} /> AI Track Insight
+          </button>
+          <div className="h-px bg-white/10 my-1" />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              playNext(track);
+              toast("Added to Up Next", "🎵");
+              setOpen(false);
+            }}
+            className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          >
+            <ListPlus size={14} className="text-accent" /> Play Next
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              addToQueue(track);
+              toast("Added to Queue", "➕");
+              setOpen(false);
+            }}
+            className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          >
+            <ListMusic size={14} /> Add to Queue
+          </button>
+          <div className="h-px bg-white/10 my-1" />
           <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-textfaint">
             Add to playlist
           </div>
@@ -331,6 +367,8 @@ function TrackMenu({ track }: { track: Track }) {
           <DownloadMenuItem track={track} />
         </div>
       ) : null}
+
+      <AiTrackInsightModal track={track} isOpen={showInsight} onClose={() => setShowInsight(false)} />
     </div>
   );
 }

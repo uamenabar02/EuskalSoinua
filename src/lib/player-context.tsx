@@ -70,16 +70,23 @@ interface PlayerState {
   sleepTimerMinutes: number | null;
   sleepTimerEnds: number | null;
   crossfadeSeconds: number;
+  playbackRate: number;
   playerHidden: boolean;
 }
 
 interface PlayerActions {
   playQueue: (tracks: Track[], startIndex?: number) => void;
+  addToQueue: (item: Track | Track[]) => void;
+  playNext: (item: Track | Track[]) => void;
+  removeFromQueue: (index: number) => void;
+  reorderQueue: (fromIndex: number, toIndex: number) => void;
+  clearQueue: () => void;
   togglePlay: () => void;
   next: (auto?: boolean) => void;
   previous: () => void;
   seek: (time: number) => void;
   setVolume: (v: number) => void;
+  setPlaybackRate: (rate: number) => void;
   toggleMute: () => void;
   toggleShuffle: () => void;
   toggleBooster: () => void;
@@ -132,6 +139,7 @@ const EMPTY_STATE: PlayerState = {
   sleepTimerMinutes: null,
   sleepTimerEnds: null,
   crossfadeSeconds: 0,
+  playbackRate: 1.0,
   playerHidden: false,
 };
 
@@ -575,6 +583,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (!audioRef.current) return;
         audioRef.current.src = src;
         audioRef.current.loop = false;
+        audioRef.current.playbackRate = stateRef.current.playbackRate || 1.0;
         audioRef.current.load();
         if (stateRef.current.eqEnabled) {
           ensureAudioGraph();
@@ -1213,6 +1222,115 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setState((p) => ({ ...p, sleepTimerMinutes: null, sleepTimerEnds: null }));
   }, []);
 
+  // Playback Speed
+  const setPlaybackRate = useCallback((rate: number) => {
+    setState((p) => ({ ...p, playbackRate: rate }));
+    if (audioRef.current) {
+      audioRef.current.playbackRate = rate;
+    }
+  }, []);
+
+  // Queue Management
+  const addToQueue = useCallback((item: Track | Track[]) => {
+    const newTracks = Array.isArray(item) ? item : [item];
+    if (!newTracks.length) return;
+    setState((p) => {
+      const updatedQueue = [...p.queue, ...newTracks];
+      if (p.index === -1 || !p.current) {
+        const nextTrack = updatedQueue[0];
+        setTimeout(() => loadTrack(nextTrack), 0);
+        return {
+          ...p,
+          queue: updatedQueue,
+          index: 0,
+          current: nextTrack,
+          isPlaying: true,
+        };
+      }
+      return { ...p, queue: updatedQueue };
+    });
+  }, [loadTrack]);
+
+  const playNext = useCallback((item: Track | Track[]) => {
+    const newTracks = Array.isArray(item) ? item : [item];
+    if (!newTracks.length) return;
+    setState((p) => {
+      if (p.index === -1 || !p.current) {
+        setTimeout(() => loadTrack(newTracks[0]), 0);
+        return {
+          ...p,
+          queue: newTracks,
+          index: 0,
+          current: newTracks[0],
+          isPlaying: true,
+        };
+      }
+      const updatedQueue = [
+        ...p.queue.slice(0, p.index + 1),
+        ...newTracks,
+        ...p.queue.slice(p.index + 1),
+      ];
+      return { ...p, queue: updatedQueue };
+    });
+  }, [loadTrack]);
+
+  const removeFromQueue = useCallback((removeIdx: number) => {
+    setState((p) => {
+      if (removeIdx < 0 || removeIdx >= p.queue.length) return p;
+      const updatedQueue = p.queue.filter((_, i) => i !== removeIdx);
+      let newIdx = p.index;
+      if (removeIdx < p.index) {
+        newIdx -= 1;
+      } else if (removeIdx === p.index) {
+        if (updatedQueue.length > 0) {
+          const nextIdx = Math.min(removeIdx, updatedQueue.length - 1);
+          const nextTrack = updatedQueue[nextIdx];
+          setTimeout(() => loadTrack(nextTrack), 0);
+          return { ...p, queue: updatedQueue, index: nextIdx, current: nextTrack };
+        } else {
+          return { ...p, queue: [], index: -1, current: null, isPlaying: false };
+        }
+      }
+      return { ...p, queue: updatedQueue, index: newIdx };
+    });
+  }, [loadTrack]);
+
+  const reorderQueue = useCallback((fromIdx: number, toIdx: number) => {
+    setState((p) => {
+      if (
+        fromIdx < 0 ||
+        fromIdx >= p.queue.length ||
+        toIdx < 0 ||
+        toIdx >= p.queue.length ||
+        fromIdx === toIdx
+      ) {
+        return p;
+      }
+      const newQueue = [...p.queue];
+      const [moved] = newQueue.splice(fromIdx, 1);
+      newQueue.splice(toIdx, 0, moved);
+
+      let newCurrentIndex = p.index;
+      if (p.index === fromIdx) {
+        newCurrentIndex = toIdx;
+      } else if (fromIdx < p.index && toIdx >= p.index) {
+        newCurrentIndex -= 1;
+      } else if (fromIdx > p.index && toIdx <= p.index) {
+        newCurrentIndex += 1;
+      }
+
+      return { ...p, queue: newQueue, index: newCurrentIndex };
+    });
+  }, []);
+
+  const clearQueue = useCallback(() => {
+    setState((p) => {
+      if (p.index === -1) return { ...p, queue: [] };
+      const newQueue = p.queue.slice(0, p.index + 1);
+      return { ...p, queue: newQueue };
+    });
+  }, []);
+
   // -----------------------------------------------------------------------
   // CROSSFADE — overlap the end of one song with the start of the next using
   // a second <audio> element. Volumes ramp in opposite directions over the
@@ -1569,11 +1687,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const value: PlayerState & PlayerActions = {
     ...state,
     playQueue,
+    addToQueue,
+    playNext,
+    removeFromQueue,
+    reorderQueue,
+    clearQueue,
     togglePlay,
     next,
     previous,
     seek,
     setVolume,
+    setPlaybackRate,
     toggleMute,
     toggleShuffle,
     toggleBooster,

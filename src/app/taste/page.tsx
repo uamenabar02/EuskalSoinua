@@ -25,6 +25,8 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { AiPlaylistGenerator } from "@/components/ai-playlist-generator";
+
 const GENRES = [
   "Euskal Rock",
   "Euskal Pop",
@@ -58,7 +60,18 @@ export default function TasteTunerPage() {
   const p = usePlayer();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"tuner" | "swipe">("swipe");
+  const [activeTab, setActiveTab] = useState<"tuner" | "swipe" | "ai">("swipe");
+  
+  // Read query params for direct tab navigation (e.g. /taste?tab=ai)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam === "ai" || tabParam === "tuner" || tabParam === "swipe") {
+        setActiveTab(tabParam);
+      }
+    }
+  }, []);
   
   // Tuner Preferences State
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
@@ -74,8 +87,8 @@ export default function TasteTunerPage() {
   const [dislikesCount, setDislikesCount] = useState(0);
   const [history, setHistory] = useState<{ track: Track; liked: boolean }[]>([]);
 
-  // Preview Audio State (Synchronized with global player context)
-  const [autoplayPreviews, setAutoplayPreviews] = useState(true);
+  // Preview Audio State (Disabled by default so music doesn't start automatically on page load)
+  const [autoplayPreviews, setAutoplayPreviews] = useState(false);
 
   const currentItem = swipePool[swipeIndex];
   const previewPlaying = p.isPlaying && p.current?.id === currentItem?.track.id;
@@ -298,7 +311,7 @@ export default function TasteTunerPage() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex gap-2 border-b border-white/5 mt-8">
+        <div className="flex gap-2 border-b border-white/5 mt-8 flex-wrap">
           <button
             onClick={() => setActiveTab("swipe")}
             className={clsx(
@@ -316,6 +329,17 @@ export default function TasteTunerPage() {
             )}
           </button>
           <button
+            onClick={() => setActiveTab("ai")}
+            className={clsx(
+              "px-5 py-3 text-sm font-bold border-b-2 transition relative flex items-center gap-2",
+              activeTab === "ai"
+                ? "border-accent text-accent"
+                : "border-transparent text-textdim hover:text-ink hover:border-white/10"
+            )}
+          >
+            ✨ AI Playlist Curator
+          </button>
+          <button
             onClick={() => setActiveTab("tuner")}
             className={clsx(
               "px-5 py-3 text-sm font-bold border-b-2 transition relative flex items-center gap-2",
@@ -331,7 +355,17 @@ export default function TasteTunerPage() {
 
       {/* Tab Contents */}
       <AnimatePresence mode="wait">
-        {activeTab === "tuner" ? (
+        {activeTab === "ai" ? (
+          <motion.div
+            key="ai"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.2 }}
+          >
+            <AiPlaylistGenerator />
+          </motion.div>
+        ) : activeTab === "tuner" ? (
           <motion.div
             key="tuner"
             initial={{ opacity: 0, y: 15 }}
