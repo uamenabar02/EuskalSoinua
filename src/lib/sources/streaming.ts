@@ -441,35 +441,85 @@ function norm(s: string): string {
  * this keeps the result on the *official* channel and away from covers/remixes
  * (critical for underrepresented Basque catalog where community uploads abound).
  */
+export function normTitle(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s*\(.*?\)\s*/g, " ")
+    .replace(/\s*\[.*?\]\s*/g, " ")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function matchesTitle(targetTitle: string, hitTitle: string): boolean {
+  const t = normTitle(targetTitle);
+  const h = normTitle(hitTitle);
+  if (!t || !h) return false;
+
+  // Direct substring
+  if (h.includes(t) || t.includes(h)) return true;
+
+  // Tokenize target title words (ignoring common stop words)
+  const stopWords = new Set(["feat", "ft", "the", "a", "an", "and", "de", "del", "la", "el", "los", "las", "eta", "en", "da"]);
+  const tWords = t.split(/\s+/).filter((w) => w.length > 1 && !stopWords.has(w));
+  if (tWords.length === 0) {
+    const rawWords = t.split(/\s+/).filter((w) => w.length > 0);
+    return rawWords.some((w) => h.includes(w));
+  }
+
+  const hWords = new Set(h.split(/\s+/));
+  if (tWords.length === 1) {
+    return hWords.has(tWords[0]) || h.includes(tWords[0]);
+  }
+
+  const matchedCount = tWords.filter((w) => hWords.has(w) || h.includes(w)).length;
+  return matchedCount / tWords.length >= 0.5;
+}
+
+/**
+ * Score a search hit against the desired track. We heavily reward hits whose
+ * uploader matches the artist name and whose title matches the track title —
+ * this keeps the result on the *official* channel and away from covers/remixes
+ * (critical for underrepresented Basque catalog where community uploads abound).
+ */
 function scoreHit(hit: SearchHit, artist: string, title: string): number {
   const a = norm(artist);
   const t = norm(title);
   const hTitle = norm(hit.title);
   const hAuthor = norm(hit.author);
-  let score = 0;
+
+  // STRICT REQUIREMENT: The video title MUST match the track title.
+  // Never assign a video ID of a completely different song just because the artist matches.
+  if (!matchesTitle(title, hit.title)) {
+    return -999;
+  }
+
+  let score = 80; // Base score for verified title match
 
   let artistMatch = false;
   if (a) {
-    if (hAuthor.includes(a)) {
+    if (hAuthor.includes(a) || a.includes(hAuthor)) {
       score += 60;
       artistMatch = true;
-    }
-    if (hTitle.includes(a)) {
-      score += 20;
+    } else if (hTitle.includes(a)) {
+      score += 30;
       artistMatch = true;
     }
   }
 
-  if (t && hTitle.includes(t)) {
-    score += 80;
+  // Exact substring full title match bonus
+  if (t && (hTitle.includes(t) || t.includes(hTitle))) {
+    score += 40;
   }
 
-  // Penalize missing artist: if an artist was specified but does not appear in author or title, penalize heavily.
+  // Penalize missing artist if an artist was specified
   if (a && !artistMatch) {
-    score -= 100;
+    score -= 40;
   }
 
-  // penalise obvious "live", "cover", "remix", "karaoke" unless that's the title
+  // Penalise obvious "live", "cover", "remix", "karaoke" unless that's in the target title
   if (!/live|cover|remix|karaoke|instrumental/.test(t)) {
     if (/live|cover|remix|karaoke|instrumental/.test(hTitle)) score -= 35;
   }
@@ -543,7 +593,7 @@ export async function resolveVideoIdForTrack(input: {
       }
     }
 
-    if (best && /^[\w-]{11}$/.test(best.videoId)) {
+    if (best && bestScore >= 50 && /^[\w-]{11}$/.test(best.videoId)) {
       return { videoId: best.videoId, title: best.title, author: best.author };
     }
   }

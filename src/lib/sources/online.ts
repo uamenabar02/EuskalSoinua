@@ -1,9 +1,10 @@
 import "server-only";
 import { db } from "@/db";
 import { tracks, artists, albums } from "@/db/schema";
-import { eq, ilike, and } from "drizzle-orm";
+import { eq, ilike, and, or } from "drizzle-orm";
 import { mapTrack } from "@/lib/mappers";
 import type { Track } from "@/lib/types";
+import { matchesTitle } from "@/lib/sources/streaming";
 
 /**
  * REAL ONLINE METADATA SEARCH
@@ -552,10 +553,9 @@ export async function enrichTrackPreview(input: {
   const matches = await searchOnline(input.isrc ? input.isrc : `${input.artist} ${input.title}`);
   const key = `${norm(input.artist)}::${norm(input.title)}`;
   const best =
-    matches.find((m) => input.isrc && m.isrc === input.isrc) ??
+    matches.find((m) => Boolean(input.isrc && m.isrc && m.isrc === input.isrc)) ??
     matches.find((m) => `${norm(m.artist)}::${norm(m.title)}` === key) ??
-    matches.find((m) => norm(m.title).includes(norm(input.title)) || norm(input.title).includes(norm(m.title))) ??
-    matches[0];
+    matches.find((m) => matchesTitle(input.title, m.title));
   if (!best) return null;
   const payload = {
     previewUrl: best.previewUrl,
