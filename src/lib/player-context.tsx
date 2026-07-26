@@ -1532,33 +1532,44 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (!("mediaSession" in navigator)) return;
       const ms = navigator.mediaSession;
       const c = state.current;
-      if (c) {
-        const getAbsoluteUrl = (url: string) => {
+      const radio = state.radioStation;
+      const isRadio = state.isLiveRadio && radio;
+
+      if (c || isRadio) {
+        const getAbsoluteUrl = (url?: string) => {
           if (!url) return "";
           if (url.startsWith("http")) return url;
           return window.location.origin + (url.startsWith("/") ? "" : "/") + url;
         };
         const artwork = [];
-        if (c.thumbnail) artwork.push({ src: getAbsoluteUrl(c.thumbnail), sizes: '512x512', type: 'image/jpeg' });
-        else if (c.artworkUrl) artwork.push({ src: getAbsoluteUrl(c.artworkUrl), sizes: '512x512', type: 'image/jpeg' });
+        if (c?.thumbnail) artwork.push({ src: getAbsoluteUrl(c.thumbnail), sizes: '512x512', type: 'image/jpeg' });
+        else if (c?.artworkUrl) artwork.push({ src: getAbsoluteUrl(c.artworkUrl), sizes: '512x512', type: 'image/jpeg' });
+        else artwork.push({ src: getAbsoluteUrl('/icon.png'), sizes: '512x512', type: 'image/png' });
 
         ms.metadata = new MediaMetadata({
-          title: c.title,
-          artist: c.artistName,
-          album: c.albumName ?? "EuskalSoinua",
-          artwork: artwork.length > 0 ? artwork : undefined,
+          title: isRadio ? radio.name : (c?.title ?? "EuskalSoinua"),
+          artist: isRadio ? `${radio.category} • Directo` : (c?.artistName ?? "Euskal Musika"),
+          album: isRadio ? "Live Radio" : (c?.albumName ?? "EuskalSoinua"),
+          artwork: artwork,
         });
         ms.playbackState = state.isPlaying ? "playing" : "paused";
 
-        if ("setPositionState" in ms && state.duration > 0 && Number.isFinite(state.currentTime)) {
-          ms.setPositionState({
-            duration: state.duration,
-            playbackRate: 1,
-            position: Math.max(0, Math.min(state.currentTime, state.duration)),
-          });
+        if (!isRadio && "setPositionState" in ms && state.duration > 0 && Number.isFinite(state.currentTime) && Number.isFinite(state.duration)) {
+          try {
+            ms.setPositionState({
+              duration: state.duration,
+              playbackRate: state.playbackRate || 1,
+              position: Math.max(0, Math.min(state.currentTime, state.duration)),
+            });
+          } catch {
+            /* ignore setPositionState errors */
+          }
         }
+      } else {
+        ms.playbackState = "none";
       }
-      ms.setActionHandler("play", () => {
+
+      const handlePlay = () => {
         preWarmAudio();
         const s = stateRef.current;
         if (s.eqEnabled) {
@@ -1566,35 +1577,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           if (ctxRef.current?.state === "suspended") ctxRef.current.resume().catch(() => {});
         }
         if (s.engine === "youtube" && ytRef.current) {
-          try {
-            ytRef.current.playVideo();
-          } catch {}
+          try { ytRef.current.playVideo(); } catch {}
         } else {
           audioRef.current?.play().catch(() => {});
         }
-      });
-      ms.setActionHandler("pause", () => {
+      };
+
+      const handlePause = () => {
         const s = stateRef.current;
         if (s.engine === "youtube" && ytRef.current) {
-          try {
-            ytRef.current.pauseVideo();
-          } catch {}
+          try { ytRef.current.pauseVideo(); } catch {}
         } else {
           audioRef.current?.pause();
         }
-      });
+      };
+
+      ms.setActionHandler("play", handlePlay);
+      ms.setActionHandler("pause", handlePause);
+      ms.setActionHandler("stop", handlePause);
       ms.setActionHandler("previoustrack", () => previous());
       ms.setActionHandler("nexttrack", () => goNext(false));
       ms.setActionHandler("seekto", (d) => {
         if (d.seekTime != null) seek(d.seekTime);
       });
-      ms.setActionHandler("seekbackward", () => seek(state.currentTime - 10));
-      ms.setActionHandler("seekforward", () => seek(state.currentTime + 10));
+      ms.setActionHandler("seekbackward", () => seek(Math.max(0, state.currentTime - 10)));
+      ms.setActionHandler("seekforward", () => seek(Math.min(state.duration || Infinity, state.currentTime + 10)));
     } catch (e) {
-      console.warn("MediaSession API block or failure:", e);
+      console.warn("MediaSession API error:", e);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.current, state.isPlaying]);
+  }, [state.current, state.isPlaying, state.isLiveRadio, state.radioStation, state.currentTime, state.duration]);
 
   // Preload next 4 tracks + previous track in the queue when active song changes to eliminate buffering wait
   useEffect(() => {
