@@ -97,8 +97,9 @@ Uncomment the `url` line and paste your Vercel URL.
 You need a computer with [Android Studio](https://developer.android.com/studio) installed.
 
 ```bash
-# 1. Install Capacitor Android platform
-npx cap add android
+# 1. Create missing output and asset folders (required on Windows)
+mkdir out
+mkdir android\app\src\main\assets
 
 # 2. Sync the configuration
 npx cap sync
@@ -188,11 +189,15 @@ If you want it on the Play Store:
 
 ---
 
-## Troubleshooting
+## Troubleshooting & Fixes
 
 | Problem | Solution |
 |---------|----------|
-| "White screen" on phone | Check the `server.url` in `capacitor.config.ts` matches your Vercel URL |
+| **App opens in external Android Chrome browser instead of native window** | **1.** Run `git pull` on your PC.<br>**2.** Run `npx cap sync` in your terminal so `android/app/src/main/assets/capacitor.config.json` updates.<br>**3.** In Android Studio, click **Build → Clean Project**, then **Build → Rebuild Project**, and rebuild the APK. |
+| **Audio stops when screen locks or app goes to background** | In Android Studio, open `android/app/src/main/java/com/euskalsoinua/app/MainActivity.java` and make sure it has:<br>`if (this.bridge != null && this.bridge.getWebView() != null) { this.bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false); }` inside `onCreate()`. |
+| `proguard-android.txt` build error | In `android/app/build.gradle`, replace `proguard-android.txt` with `proguard-android-optimize.txt` |
+| Google Advanced Protection blocks APK install | Enable USB Debugging on phone, connect via USB, and click Run in Android Studio (or run `adb install <apk-path>`) |
+| "White screen" on phone | Check the `server.url` in `capacitor.config.ts` matches your live URL |
 | Radio won't play | Ensure `allowMixedContent: true` is in the config (it is by default) |
 | Songs don't load full version | Set `PIPED_API_URLS` env var on Vercel with a working instance |
 | Database errors | Verify `DATABASE_URL` is set in Vercel env vars + run `drizzle-kit push` |

@@ -26,7 +26,15 @@ const config: CapacitorConfig = {
   // static copy. This is what enables zero-reinstall updates.
   server: {
     androidScheme: "https",
-    // url: "https://YOUR-VERCEL-URL.vercel.app",  ← uncomment & set after deploying
+    // Set your live deployed app URL below (or Vercel / Cloud Run URL):
+    url: "https://ais-pre-r3eerdyzgjz3fsukpoikp4-542506682728.europe-west2.run.app",
+    allowNavigation: [
+      "ais-pre-r3eerdyzgjz3fsukpoikp4-542506682728.europe-west2.run.app",
+      "*.europe-west2.run.app",
+      "*.run.app",
+      "*.vercel.app",
+      "*"
+    ],
   },
   android: {
     backgroundColor: "#0a0a0f",
