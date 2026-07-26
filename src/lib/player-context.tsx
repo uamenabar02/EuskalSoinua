@@ -1607,6 +1607,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [state.current, state.isPlaying, state.isLiveRadio, state.radioStation, state.currentTime, state.duration]);
 
+  // Ensure Android OS WebView activates MediaSession for YouTube iframe engine
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (state.engine === "youtube" && state.isPlaying) {
+      if (!audio.src || !audio.src.startsWith("data:audio/wav")) {
+        audio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA";
+        audio.loop = true;
+      }
+      audio.play().catch(() => {});
+    } else if (state.engine === "youtube" && !state.isPlaying) {
+      if (audio.src && audio.src.startsWith("data:audio/wav")) {
+        audio.pause();
+      }
+    }
+  }, [state.engine, state.isPlaying]);
+
   // Preload next 4 tracks + previous track in the queue when active song changes to eliminate buffering wait
   useEffect(() => {
     if (state.queue.length === 0 || state.index < 0) return;
