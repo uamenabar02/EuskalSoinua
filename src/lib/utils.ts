@@ -63,6 +63,25 @@ export function clsx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
+/**
+ * Splits multi-artist strings like:
+ * "Bengo, Alaitz Eta Maider, Xabi Solano Maiza & Denso"
+ * into individual artist names: ["Bengo", "Alaitz Eta Maider", "Xabi Solano Maiza", "Denso"].
+ */
+export function splitArtistNames(artistName: string): string[] {
+  if (!artistName) return [];
+  const str = artistName.trim();
+  if (!str) return [];
+
+  const regex = /,\s+|\s+&\s+|\s+\/\s+|\s+[xX]\s+|\s+(?:feat|ft|featuring|with)\.?\s+/i;
+  const parts = str
+    .split(regex)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  return parts.length > 0 ? parts : [str];
+}
+
 // A small debounce helper for the search box.
 export function debounce<T extends (...args: never[]) => void>(fn: T, ms: number) {
   let t: ReturnType<typeof setTimeout> | undefined;

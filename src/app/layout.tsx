@@ -4,6 +4,7 @@ import "./globals.css";
 import { PlayerProvider } from "@/lib/player-context";
 import { ThemeProvider } from "@/lib/theme-context";
 import { ToastProvider } from "@/lib/toast";
+import { ViewModeProvider } from "@/lib/view-mode-context";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { NavDiagnostic } from "@/components/nav-diagnostic";
@@ -119,13 +120,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: bootScript }} />
       </head>
       <body className="bg-bg text-ink antialiased min-h-dvh">
-        <ThemeProvider>
-          <ToastProvider>
-            <PlayerProvider>
-              <LayoutWrapper>{children}</LayoutWrapper>
-            </PlayerProvider>
-          </ToastProvider>
-        </ThemeProvider>
+        <ViewModeProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <PlayerProvider>
+                <LayoutWrapper>{children}</LayoutWrapper>
+              </PlayerProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </ViewModeProvider>
         <ServiceWorkerRegister />
         <NavDiagnostic />
         {/* Capacitor native bridge (only active inside the Android app shell) */}

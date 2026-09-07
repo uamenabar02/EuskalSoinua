@@ -60,18 +60,16 @@ export default function TasteTunerPage() {
   const p = usePlayer();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"tuner" | "swipe" | "ai">("swipe");
-  
-  // Read query params for direct tab navigation (e.g. /taste?tab=ai)
-  useEffect(() => {
+  const [activeTab, setActiveTab] = useState<"tuner" | "swipe" | "ai">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab");
       if (tabParam === "ai" || tabParam === "tuner" || tabParam === "swipe") {
-        setActiveTab(tabParam);
+        return tabParam;
       }
     }
-  }, []);
+    return "swipe";
+  });
   
   // Tuner Preferences State
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);

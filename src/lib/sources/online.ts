@@ -5,6 +5,7 @@ import { eq, ilike, and, or } from "drizzle-orm";
 import { mapTrack } from "@/lib/mappers";
 import type { Track } from "@/lib/types";
 import { matchesTitle } from "@/lib/sources/streaming";
+import { splitArtistNames } from "@/lib/utils";
 
 /**
  * REAL ONLINE METADATA SEARCH
@@ -33,6 +34,92 @@ export interface OnlineMatch {
   previewUrlAlt: string | null; // iTunes (m4a)
   genre: string | null;
   source: "deezer" | "itunes";
+}
+
+export interface ArtistDisambiguation {
+  searchQuery: string;
+  searchQueries?: string[];
+  knownMatches: string[];
+  rejectedKeywords: string[];
+}
+
+export const BASQUE_DISAMBIGUATION: Record<string, ArtistDisambiguation> = {
+  dupla: {
+    searchQuery: "Dupla",
+    searchQueries: [
+      "Dupla De Un Pueblo Llamado Agurain",
+      "Dupla Folklorea",
+      "Dupla NAHIERAN",
+      "Dupla Agurain"
+    ],
+    knownMatches: [
+      "folklorea", "nahidudana", "concepto", "de agurain a kontrazaharra", "gure zakarra",
+      "dantzatzera at", "hamen", "beldurrik ez", "dmt", "ezer ez da berdina", "agurain",
+      "txoriak txori", "batu", "txikititan", "gazteak", "zikina", "kultura", "dantzatu",
+      "mundua pitzatzear dago", "haizea", "euskal herriko gazteak", "de un pueblo llamado agurain",
+      "30's", "30s", "ongi etorri", "tirikitrauki", "l_chawal_s", "chawals", "artista",
+      "obaportillo", "el mejurjo", "konforme", "kontrasanak", "tururu", "animali",
+      "un mal dia", "zugandek ihesi", "txiki", "mundua geldi", "01200", "eromeria",
+      "nahieran", "kata", "batukada", "skapa", "milenials", "dantza gaua"
+    ],
+    rejectedKeywords: [
+      "regional mexicano", "mariachi", "corridos", "salsa", "cumbia", "bachata",
+      "ranchera", "norteño", "mexicano", "mexican", "mexico", "banda sinaloense",
+      "dupla de la sierra", "dupla ranchera", "bolero", "vallenato", "zouk", "kompa",
+      "afrobeat", "afrobeats", "amapiano", "congolese", "makossa", "kizomba", "rumba",
+      "insatisfaite", "rythmo", "melodie", "mélodie", "chaleur", "inattendue", "portukonpa",
+      "ambiance", "guarachita", "tololoche", "chochias", "jalisco", "que se joda", "des iles",
+      "d'iles", "mon albi", "ti tèt", "souvenir", "danse-jauqu-matin", "l'heure", "gouyad"
+    ],
+  },
+  bengo: {
+    searchQuery: "Bengo",
+    searchQueries: [
+      "Bengo Denbora",
+      "Bengo 453",
+      "Bengo Bizitzak",
+      "Bengo Oiartzun"
+    ],
+    knownMatches: [
+      "453", "bizitzak", "bidean", "denbora", "orain", "bizi", "gogoan", "txatxarrak",
+      "beste egun bat", "kantu bat", "ai ai ai", "zortzi", "basamortuan", "sayonara",
+      "baimenik gabe", "bakarrik", "bueltan", "gelatxo honetan", "baleak", "bizitzari parre",
+      "oiartzun"
+    ],
+    rejectedKeywords: [
+      "afrobeats", "afrobeat", "amapiano", "bengo bengo", "congolese", "makossa",
+      "kizomba", "regional mexicano", "mariachi", "cumbia", "banda", "rumba", "zouk",
+      "kompa", "bachata"
+    ],
+  },
+};
+
+export function isValidMatchForArtist(
+  artistName: string,
+  m: { title: string; album?: string | null; genre?: string | null }
+): boolean {
+  const key = artistName.trim().toLowerCase();
+  const disam = BASQUE_DISAMBIGUATION[key];
+  if (!disam) return true;
+
+  const targetText = `${m.title} ${m.album ?? ""} ${m.genre ?? ""}`.toLowerCase();
+
+  // 1. Check rejected keywords
+  for (const rejected of disam.rejectedKeywords) {
+    if (targetText.includes(rejected.toLowerCase())) {
+      return false;
+    }
+  }
+
+  // 2. If knownMatches specified, target MUST match at least one known match
+  if (disam.knownMatches && disam.knownMatches.length > 0) {
+    const matched = disam.knownMatches.some((k) => targetText.includes(k.toLowerCase()));
+    if (!matched) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +247,19 @@ export async function searchOnline(query: string): Promise<OnlineMatch[]> {
   const q = query.trim();
   if (!q) return [];
   const [itunes, deezer] = await Promise.all([searchItunes(q), searchDeezer(q)]);
-  return dedupe([...deezer, ...itunes]).slice(0, 24);
+  const raw = [...deezer, ...itunes];
+  
+  const qLower = q.toLowerCase();
+  const filtered = raw.filter((m) => {
+    for (const artistKey of Object.keys(BASQUE_DISAMBIGUATION)) {
+      if (qLower.includes(artistKey) || m.artist.toLowerCase().includes(artistKey)) {
+        if (!isValidMatchForArtist(artistKey, m)) return false;
+      }
+    }
+    return true;
+  });
+
+  return dedupe(filtered).slice(0, 24);
 }
 
 // ---------------------------------------------------------------------------
@@ -171,16 +270,47 @@ export async function searchOnline(query: string): Promise<OnlineMatch[]> {
 /** iTunes: artistName -> artistId -> lookup up to 200 songs in one call. */
 async function getItunesArtistId(term: string): Promise<number | null> {
   try {
+    const key = term.trim().toLowerCase();
+    const disam = BASQUE_DISAMBIGUATION[key];
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(
-      `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&limit=1`,
+      `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&limit=30`,
       { signal: controller.signal, headers: { accept: "application/json" } },
     );
     clearTimeout(timer);
     if (!res.ok) return null;
-    const data = (await res.json()) as { results?: Array<{ artistId?: number }> };
-    return data.results?.[0]?.artistId ?? null;
+    const data = (await res.json()) as {
+      results?: Array<{
+        artistId?: number;
+        artistName?: string;
+        trackName?: string;
+        collectionName?: string;
+        primaryGenreName?: string;
+      }>;
+    };
+
+    if (!data.results?.length) return null;
+
+    if (disam) {
+      // First try to find a track matching knownMatches
+      const knownMatch = data.results.find((r) => {
+        if (!r.artistId) return false;
+        const text = `${r.trackName ?? ""} ${r.collectionName ?? ""}`.toLowerCase();
+        return disam.knownMatches.some((k) => text.includes(k.toLowerCase()));
+      });
+      if (knownMatch?.artistId) return knownMatch.artistId;
+
+      // Otherwise find first result passing isValidMatchForArtist
+      const valid = data.results.find((r) => {
+        if (!r.artistId) return false;
+        return isValidMatchForArtist(key, { title: r.trackName ?? "", album: r.collectionName, genre: r.primaryGenreName });
+      });
+      return valid?.artistId ?? data.results[0]?.artistId ?? null;
+    }
+
+    return data.results[0]?.artistId ?? null;
   } catch {
     return null;
   }
@@ -219,17 +349,45 @@ async function getItunesDiscography(artistId: number): Promise<OnlineMatch[]> {
 /** Deezer: artistName -> artistId -> all albums -> all tracks (with previews). */
 async function getDeezerDiscography(artistName: string): Promise<OnlineMatch[]> {
   try {
+    const key = artistName.trim().toLowerCase();
+    const disam = BASQUE_DISAMBIGUATION[key];
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
-    // search to resolve the artist id
     const sres = await fetch(
-      `https://api.deezer.com/search?q=${encodeURIComponent(`artist:"${artistName}"`)}&limit=1`,
+      `https://api.deezer.com/search?q=${encodeURIComponent(artistName)}&limit=30`,
       { signal: controller.signal, headers: { accept: "application/json" } },
     );
     clearTimeout(timer);
     if (!sres.ok) return [];
-    const sdata = (await sres.json()) as { data?: Array<{ artist?: { id?: number } }> };
-    const artistId = sdata.data?.[0]?.artist?.id;
+    const sdata = (await sres.json()) as {
+      data?: Array<{
+        artist?: { id?: number; name?: string };
+        album?: { title?: string };
+        title?: string;
+      }>;
+    };
+
+    let artistId: number | null = null;
+    if (disam && sdata.data?.length) {
+      const known = sdata.data.find((d) => {
+        if (!d.artist?.id) return false;
+        const text = `${d.title ?? ""} ${d.album?.title ?? ""}`.toLowerCase();
+        return disam.knownMatches.some((k) => text.includes(k.toLowerCase()));
+      });
+      if (known?.artist?.id) {
+        artistId = known.artist.id;
+      } else {
+        const valid = sdata.data.find((d) => {
+          if (!d.artist?.id) return false;
+          return isValidMatchForArtist(key, { title: d.title ?? "", album: d.album?.title });
+        });
+        artistId = valid?.artist?.id ?? sdata.data[0]?.artist?.id ?? null;
+      }
+    } else {
+      artistId = sdata.data?.[0]?.artist?.id ?? null;
+    }
+
     if (!artistId) return [];
 
     const c2 = new AbortController();
@@ -240,17 +398,19 @@ async function getDeezerDiscography(artistName: string): Promise<OnlineMatch[]> 
     });
     clearTimeout(t2);
     if (!ares.ok) return [];
-    const adata = (await ares.json()) as { data?: Array<{ id: number }> };
-    const albumIds = (adata.data ?? []).map((a) => a.id);
+    const adata = (await ares.json()) as {
+      data?: Array<{ id: number; title: string; cover_big?: string; cover_medium?: string }>;
+    };
+    const albumsList = adata.data ?? [];
 
     // fetch tracks for each album in parallel (bounded)
     const out: OnlineMatch[] = [];
-    const batches = albumIds.slice(0, 25);
+    const batches = albumsList.slice(0, 25);
     const results = await Promise.all(
-      batches.map(async (albumId) => {
+      batches.map(async (alb) => {
         const c3 = new AbortController();
         const t3 = setTimeout(() => c3.abort(), 8000);
-        const r = await fetch(`https://api.deezer.com/album/${albumId}/tracks?limit=50`, {
+        const r = await fetch(`https://api.deezer.com/album/${alb.id}/tracks?limit=50`, {
           signal: c3.signal,
           headers: { accept: "application/json" },
         });
@@ -261,11 +421,11 @@ async function getDeezerDiscography(artistName: string): Promise<OnlineMatch[]> 
           .filter((tr) => tr.preview)
           .map((tr): OnlineMatch => ({
             title: tr.title,
-            artist: tr.artist.name,
-            album: tr.album.title ?? null,
+            artist: tr.artist?.name || artistName,
+            album: alb.title || tr.album?.title || null,
             duration: tr.duration,
             isrc: tr.isrc ?? null,
-            artwork: tr.album.cover_big ?? tr.album.cover_medium ?? null,
+            artwork: alb.cover_big ?? alb.cover_medium ?? tr.album?.cover_big ?? null,
             previewUrl: tr.preview,
             previewUrlAlt: null,
             genre: null,
@@ -273,7 +433,13 @@ async function getDeezerDiscography(artistName: string): Promise<OnlineMatch[]> 
           }));
       }),
     );
-    for (const r of results) out.push(...r);
+    for (const r of results) {
+      for (const item of r) {
+        if (isValidMatchForArtist(artistName, item)) {
+          out.push(item);
+        }
+      }
+    }
     return out;
   } catch {
     return [];
@@ -282,19 +448,27 @@ async function getDeezerDiscography(artistName: string): Promise<OnlineMatch[]> 
 
 /**
  * Fetch the COMPLETE catalog for an artist by combining iTunes + Deezer
- * discographies. Returns a large, deduped set — this is what surfaces all 20+
- * songs for an artist instead of a handful of search matches.
+ * discographies plus search queries. Returns a large, deduped set.
  */
 export async function getFullDiscography(artistName: string): Promise<OnlineMatch[]> {
   const name = artistName.trim();
   if (!name) return [];
-  // iTunes gives the most complete single-call listing once we have the id.
+  const key = name.toLowerCase();
+  const disam = BASQUE_DISAMBIGUATION[key];
+
   const artistId = await getItunesArtistId(name);
-  const [itunes, deezer] = await Promise.all([
+  const extraQueries = disam?.searchQueries ?? [];
+  const extraItunesPromises = extraQueries.map((q) => searchItunes(q));
+
+  const [itunes, deezer, ...extraResults] = await Promise.all([
     artistId ? getItunesDiscography(artistId) : Promise.resolve([] as OnlineMatch[]),
     getDeezerDiscography(name),
+    ...extraItunesPromises,
   ]);
-  return dedupe([...itunes, ...deezer]);
+
+  const allExtras = extraResults.flat();
+  const combined = [...itunes, ...deezer, ...allExtras].filter((m) => isValidMatchForArtist(name, m));
+  return dedupe(combined);
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +602,9 @@ async function resolveAlbumId(
 ): Promise<number | null> {
   if (!albumName || !albumName.trim()) return null;
   const name = albumName.trim();
+  if (!isValidMatchForArtist(artistName, { title: name, album: name })) {
+    return null;
+  }
   const existing = await db
     .select({ id: albums.id })
     .from(albums)
@@ -452,6 +629,10 @@ async function resolveAlbumId(
 
 /** Persist a single OnlineMatch as a catalog track (dedup by ISRC/title+artist). */
 async function persistMatch(m: OnlineMatch): Promise<Track[]> {
+  if (!isValidMatchForArtist(m.artist, m)) {
+    return [];
+  }
+
   const whereClause = m.isrc
     ? eq(tracks.isrc, m.isrc)
     : and(ilike(tracks.title, m.title), ilike(tracks.artistName, m.artist));
@@ -490,19 +671,39 @@ async function persistMatch(m: OnlineMatch): Promise<Track[]> {
   }
 
   let artistId: number | null = null;
+  const parts = splitArtistNames(m.artist);
+  const primaryName = parts[0] || m.artist;
+
   const artistRow = await db
     .select()
     .from(artists)
-    .where(ilike(artists.name, m.artist))
+    .where(ilike(artists.name, primaryName))
     .limit(1);
   if (artistRow.length) {
-    artistId = artistRow[0].id;
+    if (isValidMatchForArtist(artistRow[0].name, m)) {
+      artistId = artistRow[0].id;
+    }
   } else {
     const [a] = await db
       .insert(artists)
-      .values({ name: m.artist, genre: m.genre, region: "global", language: "und", source: m.source })
+      .values({ name: primaryName, genre: m.genre, region: "global", language: "und", source: m.source })
       .returning({ id: artists.id });
     artistId = a.id;
+  }
+
+  // Ensure other collaborating artists exist as individual artists
+  for (const part of parts.slice(1)) {
+    const existing = await db
+      .select({ id: artists.id })
+      .from(artists)
+      .where(ilike(artists.name, part))
+      .limit(1);
+    if (!existing.length) {
+      await db
+        .insert(artists)
+        .values({ name: part, genre: m.genre, region: "global", language: "und", source: m.source })
+        .catch(() => {});
+    }
   }
 
   const albumId = artistId

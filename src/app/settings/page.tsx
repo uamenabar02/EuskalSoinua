@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { clsx } from "@/lib/utils";
 import { useTheme, THEMES } from "@/lib/theme-context";
+import { useViewMode } from "@/lib/view-mode-context";
 import ImportPlaylistModal from "@/components/import-playlist-modal";
 
 interface StreamingStatus {
@@ -40,6 +41,7 @@ function setCookie(name: string, value: string) {
 export default function SettingsPage() {
   const p = usePlayer();
   const { theme, setTheme } = useTheme();
+  const { viewMode, setViewMode } = useViewMode();
   const [status, setStatus] = useState<StreamingStatus | null>(null);
   const [eqEnabled, setEqEnabled] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -290,6 +292,81 @@ export default function SettingsPage() {
         </div>
         <div className="px-4 pb-3 text-xs text-textfaint">
           Your choice is saved on this device.
+        </div>
+      </Group>
+
+      {/* View Mode & Layout */}
+      <Group title="View Mode & Layout">
+        <div className="px-4 py-2 flex items-center gap-2 text-textdim">
+          <Smartphone size={18} className="text-accent" />
+          <span className="text-sm font-medium font-semibold text-white">Desktop / Smartphone View Selector</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 pt-1">
+          <button
+            onClick={() => setViewMode("auto")}
+            className={clsx(
+              "relative flex flex-col gap-1.5 rounded-xl p-3.5 border-2 transition text-left bg-white/5 hover:bg-white/10",
+              viewMode === "auto" ? "border-accent bg-accent/10" : "border-transparent"
+            )}
+          >
+            <div className="flex items-center gap-2 font-bold text-sm text-white">
+              <Laptop size={18} className="text-accent shrink-0" />
+              <span>Auto (Responsive)</span>
+            </div>
+            <p className="text-xs text-textdim leading-relaxed">
+              Adapts automatically based on your device screen width.
+            </p>
+            {viewMode === "auto" && (
+              <span className="absolute top-2.5 right-2.5 grid place-items-center h-5 w-5 rounded-full bg-accent text-black">
+                <Check size={13} strokeWidth={3} />
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setViewMode("smartphone")}
+            className={clsx(
+              "relative flex flex-col gap-1.5 rounded-xl p-3.5 border-2 transition text-left bg-white/5 hover:bg-white/10",
+              viewMode === "smartphone" ? "border-accent bg-accent/10" : "border-transparent"
+            )}
+          >
+            <div className="flex items-center gap-2 font-bold text-sm text-white">
+              <Smartphone size={18} className="text-accent shrink-0" />
+              <span>Smartphone View</span>
+            </div>
+            <p className="text-xs text-textdim leading-relaxed">
+              Forces smartphone layout & bottom tabs. Solves background audio stopping on Android Chrome with &quot;Desktop site&quot; mode ON!
+            </p>
+            {viewMode === "smartphone" && (
+              <span className="absolute top-2.5 right-2.5 grid place-items-center h-5 w-5 rounded-full bg-accent text-black">
+                <Check size={13} strokeWidth={3} />
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setViewMode("desktop")}
+            className={clsx(
+              "relative flex flex-col gap-1.5 rounded-xl p-3.5 border-2 transition text-left bg-white/5 hover:bg-white/10",
+              viewMode === "desktop" ? "border-accent bg-accent/10" : "border-transparent"
+            )}
+          >
+            <div className="flex items-center gap-2 font-bold text-sm text-white">
+              <Monitor size={18} className="text-accent shrink-0" />
+              <span>Desktop View</span>
+            </div>
+            <p className="text-xs text-textdim leading-relaxed">
+              Forces sidebar navigation and expanded desktop player bar.
+            </p>
+            {viewMode === "desktop" && (
+              <span className="absolute top-2.5 right-2.5 grid place-items-center h-5 w-5 rounded-full bg-accent text-black">
+                <Check size={13} strokeWidth={3} />
+              </span>
+            )}
+          </button>
+        </div>
+        <div className="px-4 pb-3 text-xs text-textfaint">
+          Saved persistently for this user / device in local storage.
         </div>
       </Group>
 

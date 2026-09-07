@@ -57,25 +57,35 @@ function groupByAlbum(tracks: (Track & { liked?: boolean })[]): {
 }
 
 export default function ArtistPage({ params }: { params: Promise<{ id: string }> }) {
-  const [id, setId] = useState<number | null>(null);
+  const [artistParam, setArtistParam] = useState<string | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
-    params.then((p) => setId(Number(p.id)));
+    params.then((p) => setArtistParam(p.id));
   }, [params]);
 
   useEffect(() => {
-    if (id == null) return;
-    fetch(`/api/artist/${id}`)
+    if (!artistParam) return;
+    fetch(`/api/artist/${encodeURIComponent(artistParam)}`)
       .then((r) => {
         if (!r.ok) throw new Error();
         return r.json();
       })
-      .then(setData)
+      .then((initialData) => {
+        setData(initialData);
+        // Automatically pull full catalog from online sources if track count is small
+        if (initialData?.artist?.name && initialData.tracks.length < 20) {
+          fetch(`/api/discography?artist=${encodeURIComponent(initialData.artist.name)}`)
+            .then(() => fetch(`/api/artist/${encodeURIComponent(initialData.artist.id ?? artistParam)}`))
+            .then((r) => r.json())
+            .then(setData)
+            .catch(() => {});
+        }
+      })
       .catch(() => setError(true));
-  }, [id]);
+  }, [artistParam]);
 
   // Pull the full discography (all songs from iTunes/Deezer) so every track by
   // this artist is available, then refresh.
@@ -84,7 +94,8 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
     setLoadingMore(true);
     try {
       await fetch(`/api/discography?artist=${encodeURIComponent(data.artist.name)}`);
-      const fresh = await fetch(`/api/artist/${id}`).then((r) => r.json());
+      const targetId = data.artist.id ?? artistParam;
+      const fresh = await fetch(`/api/artist/${encodeURIComponent(targetId)}`).then((r) => r.json());
       setData(fresh);
     } catch {
       /* ignore */

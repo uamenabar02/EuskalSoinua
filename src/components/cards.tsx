@@ -6,6 +6,7 @@ import { CoverArt } from "@/components/cover";
 import { usePlayer } from "@/lib/player-context";
 import type { Track, Artist, Album, Playlist } from "@/lib/types";
 import { clsx } from "@/lib/utils";
+import { ArtistLinks } from "@/components/artist-links";
 
 export function TrackCard({ track }: { track: Track }) {
   const { playQueue, current, isPlaying } = usePlayer();
@@ -33,7 +34,7 @@ export function TrackCard({ track }: { track: Track }) {
         ) : null}
       </div>
       <div className="font-semibold truncate text-sm">{track.title}</div>
-      <div className="text-textdim text-xs truncate mt-0.5">{track.artistName}</div>
+      <ArtistLinks artistName={track.artistName} primaryArtistId={track.artistId} />
     </button>
   );
 }
@@ -75,7 +76,7 @@ export function AlbumCard({ album }: { album: Album }) {
         />
       </div>
       <div className="font-semibold truncate text-sm">{album.title}</div>
-      <div className="text-textdim text-xs truncate mt-0.5">{album.artistName}</div>
+      <ArtistLinks artistName={album.artistName || ""} primaryArtistId={album.artistId} />
     </Link>
   );
 }

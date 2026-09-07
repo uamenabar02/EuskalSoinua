@@ -32,7 +32,9 @@ import {
 import { useRouter } from "next/navigation";
 import { useToast } from "@/lib/toast";
 import { usePlayer } from "@/lib/player-context";
+import { useViewMode } from "@/lib/view-mode-context";
 import { CoverArt } from "@/components/cover";
+import { ArtistLinks } from "@/components/artist-links";
 import { formatTime, clsx } from "@/lib/utils";
 import type { LyricLine } from "@/lib/types";
 
@@ -42,6 +44,7 @@ const EQ_LABELS = ["60", "230", "910", "3.6k", "14k"];
 
 export function NowPlaying() {
   const p = usePlayer();
+  const { viewMode } = useViewMode();
   const [tab, setTab] = useState<Tab>("player");
   if (!p.current || !p.nowPlayingOpen) return null;
 
@@ -181,7 +184,7 @@ function PlayerTab() {
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="min-w-0">
           <div className="text-xl font-bold truncate">{c.title}</div>
-          <div className="text-white/70 truncate">{c.artistName}</div>
+          <ArtistLinks artistName={c.artistName} primaryArtistId={c.artistId} className="text-white/70" />
         </div>
         <button
           onClick={async () => {
@@ -463,7 +466,7 @@ function QueueTab() {
         </div>
       ) : (
         <div className="text-center py-8 text-xs text-white/50 glass rounded-xl">
-          Queue is empty. Select "Add to Queue" or "Play Next" on any track!
+          Queue is empty. Select &quot;Add to Queue&quot; or &quot;Play Next&quot; on any track!
         </div>
       )}
 
@@ -506,7 +509,7 @@ function QueueRow({
         <div className={clsx("truncate text-sm font-medium", active ? "text-accent" : "text-white")}>
           {line.title}
         </div>
-        <div className="truncate text-xs text-white/50">{line.artistName}</div>
+        <ArtistLinks artistName={line.artistName} primaryArtistId={(line as any).artistId} className="text-white/50" />
       </div>
     </div>
   );

@@ -23,6 +23,7 @@ import {
 } from "drizzle-orm";
 import { mapTrack, mapArtist, mapAlbum } from "@/lib/mappers";
 import type { Track, Artist, Album } from "@/lib/types";
+import { isValidMatchForArtist } from "@/lib/sources/online";
 
 export async function isLiked(trackId: number, syncKey: string = "default"): Promise<boolean> {
   const r = await db
@@ -327,33 +328,185 @@ export async function searchCatalog(q: string) {
     .orderBy(desc(albums.year))
     .limit(12);
 
+  const filteredTracks = trackRows.filter((t: any) =>
+    isValidMatchForArtist(t.artistName, { title: t.title, album: t.albumName, genre: t.genre })
+  );
+
+  const filteredAlbums = albumRows.filter((a: any) =>
+    isValidMatchForArtist(a.artistName, { title: a.title, album: a.title, genre: a.genre })
+  );
+
   return {
-    tracks: trackRows.map((t: any) => ({ ...mapTrack(t), liked: liked.has(t.id) })),
+    tracks: filteredTracks.map((t: any) => ({ ...mapTrack(t), liked: liked.has(t.id) })),
     artists: artistRows.map((a: any) => ({ ...mapArtist(a), followed: followed.has(a.id) })),
-    albums: albumRows.map((a: any) => ({ ...mapAlbum(a), saved: saved.has(a.id) })),
+    albums: filteredAlbums.map((a: any) => ({ ...mapAlbum(a), saved: saved.has(a.id) })),
   };
 }
 
-export async function getArtist(id: number) {
-  const [row] = await db.select().from(artists).where(eq(artists.id, id)).limit(1);
+export async function cleanupCompositeArtists(): Promise<void> {
+  try {
+    const allArtists = await db.select({ id: artists.id, name: artists.name }).from(artists);
+    const regex = /,\s+|\s+&\s+|\s+\/\s+|\s+[xX]\s+|\s+(?:feat|ft|featuring|with)\.?\s+/i;
+
+    for (const a of allArtists) {
+      if (regex.test(a.name)) {
+        // This is a composite artist name like "Bengo, Alaitz Eta Maider, Xabi Solano Maiza & Denso"
+        const parts = a.name
+          .split(regex)
+          .map((p: string) => p.trim())
+          .filter(Boolean);
+        if (parts.length > 1) {
+          const primaryName = parts[0];
+          // Find or create primary artist
+          let [primaryRow] = await db
+            .select()
+            .from(artists)
+            .where(ilike(artists.name, primaryName))
+            .limit(1);
+
+          if (!primaryRow) {
+            const [inserted] = await db
+              .insert(artists)
+              .values({
+                name: primaryName,
+                genre: "Basque Music",
+                region: "global",
+                source: "local",
+              })
+              .returning();
+            primaryRow = inserted;
+          }
+
+          if (primaryRow && primaryRow.id !== a.id) {
+            // Re-assign tracks and albums from composite artist to primary artist
+            await db
+              .update(tracks)
+              .set({ artistId: primaryRow.id })
+              .where(eq(tracks.artistId, a.id))
+              .catch(() => {});
+
+            await db
+              .update(albums)
+              .set({ artistId: primaryRow.id })
+              .where(eq(albums.artistId, a.id))
+              .catch(() => {});
+
+            // Delete composite artist row
+            await db.delete(artists).where(eq(artists.id, a.id)).catch(() => {});
+          }
+
+          // Ensure individual artists exist
+          for (const part of parts.slice(1)) {
+            const existingPart = await db
+              .select({ id: artists.id })
+              .from(artists)
+              .where(ilike(artists.name, part))
+              .limit(1);
+
+            if (!existingPart.length) {
+              await db
+                .insert(artists)
+                .values({
+                  name: part,
+                  genre: "Basque Music",
+                  region: "global",
+                  source: "local",
+                })
+                .catch(() => {});
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function getArtist(idOrName: number | string) {
+  let row: any = null;
+  const isNumeric = typeof idOrName === "number" || (!isNaN(Number(idOrName)) && !String(idOrName).includes("%") && String(idOrName).trim() !== "");
+
+  if (isNumeric) {
+    const numericId = Number(idOrName);
+    const rows = await db.select().from(artists).where(eq(artists.id, numericId)).limit(1);
+    row = rows[0];
+  } else {
+    const nameStr = decodeURIComponent(String(idOrName)).trim();
+    if (nameStr) {
+      const rows = await db.select().from(artists).where(ilike(artists.name, nameStr)).limit(1);
+      if (rows.length) {
+        row = rows[0];
+      } else {
+        const [inserted] = await db
+          .insert(artists)
+          .values({
+            name: nameStr,
+            genre: "Basque Music",
+            region: "global",
+            language: "und",
+            source: "local",
+          })
+          .returning();
+        row = inserted;
+      }
+    }
+  }
+
   if (!row) return null;
+  const id = row.id;
   const followedSet = await followedIds();
-  const trackRows = await db
+
+  // Clean up any composite artists in the background
+  cleanupCompositeArtists().catch(() => {});
+
+  let trackRows = await db
     .select()
     .from(tracks)
-    .where(eq(tracks.artistId, id))
+    .where(
+      or(
+        eq(tracks.artistId, id),
+        ilike(tracks.artistName, `%${row.name}%`)
+      )
+    )
     .orderBy(desc(tracks.playCount));
+
+  const validTrackRows: any[] = [];
+  for (const t of trackRows) {
+    if (isValidMatchForArtist(row.name, { title: t.title, album: t.albumName, genre: t.genre })) {
+      validTrackRows.push(t);
+    } else {
+      await db.update(tracks).set({ artistId: null }).where(eq(tracks.id, t.id)).catch(() => {});
+    }
+  }
+
   const likedSet = await likedIds();
-  const albumRows = await db
+
+  let albumRows = await db
     .select()
     .from(albums)
-    .where(eq(albums.artistId, id))
+    .where(
+      or(
+        eq(albums.artistId, id),
+        ilike(albums.artistName, `%${row.name}%`)
+      )
+    )
     .orderBy(desc(albums.year));
+
+  const validAlbumRows: any[] = [];
+  for (const a of albumRows) {
+    if (isValidMatchForArtist(row.name, { title: a.title, album: a.title, genre: a.genre })) {
+      validAlbumRows.push(a);
+    } else {
+      await db.update(albums).set({ artistId: null }).where(eq(albums.id, a.id)).catch(() => {});
+    }
+  }
+
   const savedSet = await savedAlbumIds();
   return {
     artist: { ...mapArtist(row), followed: followedSet.has(row.id) },
-    tracks: trackRows.map((t: any) => ({ ...mapTrack(t), liked: likedSet.has(t.id) })),
-    albums: albumRows.map((a: any) => ({ ...mapAlbum(a), saved: savedSet.has(a.id) })),
+    tracks: validTrackRows.map((t: any) => ({ ...mapTrack(t), liked: likedSet.has(t.id) })),
+    albums: validAlbumRows.map((a: any) => ({ ...mapAlbum(a), saved: savedSet.has(a.id) })),
   };
 }
 

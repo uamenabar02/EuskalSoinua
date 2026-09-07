@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Search, Library, Disc3, Plus, Radio as RadioIcon, Eye, Settings, Sparkles } from "lucide-react";
 import { usePlayer } from "@/lib/player-context";
+import { useViewMode } from "@/lib/view-mode-context";
 import { clsx } from "@/lib/utils";
 import type { Playlist } from "@/lib/types";
 
@@ -55,6 +56,7 @@ function NavItem({
 export function Sidebar() {
   const pathname = usePathname();
   const p = usePlayer();
+  const { viewMode, isSmartphoneView } = useViewMode();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
 
   const refreshPlaylists = () =>
@@ -75,6 +77,8 @@ export function Sidebar() {
     };
   }, []);
 
+  if (isSmartphoneView) return null;
+
   const createPlaylist = async () => {
     const name = window.prompt("Playlist name", "My Playlist");
     if (!name) return;
@@ -87,7 +91,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="hidden md:flex flex-col gap-2 w-64 shrink-0 p-2">
+    <aside className={clsx("flex-col gap-2 w-64 shrink-0 p-2", viewMode === "auto" ? "hidden md:flex" : "flex")}>
       <div className="flex items-center gap-2 px-3 py-5">
         <div
           className="grid place-items-center h-9 w-9 rounded-lg"
@@ -246,8 +250,15 @@ function playlistColor(id: number): string {
 
 export function MobileNav() {
   const pathname = usePathname();
+  const { viewMode, isDesktopView } = useViewMode();
+
+  if (isDesktopView) return null;
+
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 glass border-t border-white/10 flex items-stretch justify-around px-2 py-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)]">
+    <nav className={clsx(
+      "fixed bottom-0 inset-x-0 z-40 glass border-t border-white/10 flex items-stretch justify-around px-2 py-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)]",
+      viewMode === "auto" ? "md:hidden flex" : "flex"
+    )}>
       {MOBILE_NAV.map((n) => {
         const active =
           pathname === n.href || (n.href !== "/" && pathname.startsWith(n.href));

@@ -12,6 +12,7 @@ import { ToggleButton } from "@/components/like-button";
 import { CoverArt, EqualizerBars } from "@/components/cover";
 import { formatTime, clsx } from "@/lib/utils";
 import type { Track } from "@/lib/types";
+import { ArtistLinks, splitArtistNames } from "@/components/artist-links";
 
 export function TrackRow({
   track,
@@ -93,12 +94,7 @@ export function TrackRow({
           >
             {track.title}
           </div>
-          <Link
-            href={`/artist/${track.artistId ?? ""}`}
-            className="truncate text-xs text-textdim hover:underline block max-w-full"
-          >
-            {track.artistName}
-          </Link>
+          <ArtistLinks artistName={track.artistName} primaryArtistId={track.artistId} />
           {(track as any).reason ? (
             <div className="text-[11px] text-accent/90 truncate flex items-center gap-1 mt-0.5 font-medium">
               <Sparkles size={11} className="shrink-0 text-accent" />
@@ -346,15 +342,19 @@ function TrackMenu({ track }: { track: Track }) {
           >
             <Radio size={14} /> {loadingRadio ? "Loading radio…" : "Go to song radio"}
           </button>
-          {track.artistId ? (
-            <Link
-              href={`/artist/${track.artistId}`}
-              onClick={() => setOpen(false)}
-              className="block px-3 py-2 rounded-lg hover:bg-white/10"
-            >
-              Go to artist
-            </Link>
-          ) : null}
+          {splitArtistNames(track.artistName).map((artistPart, idx) => {
+            const href = idx === 0 && track.artistId ? `/artist/${track.artistId}` : `/artist/${encodeURIComponent(artistPart)}`;
+            return (
+              <Link
+                key={`${artistPart}-${idx}`}
+                href={href}
+                onClick={() => setOpen(false)}
+                className="block px-3 py-2 rounded-lg hover:bg-white/10 truncate"
+              >
+                Go to artist: {artistPart}
+              </Link>
+            );
+          })}
           {track.albumId ? (
             <Link
               href={`/album/${track.albumId}`}

@@ -2,15 +2,17 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import { usePlayer } from "@/lib/player-context";
+import { useViewMode } from "@/lib/view-mode-context";
 import { Sidebar, MobileNav } from "@/components/nav";
 import { PlayerBar } from "@/components/player-bar";
 import { NowPlaying } from "@/components/now-playing";
-import { Eye, ShieldAlert } from "lucide-react";
+import { Eye, ShieldAlert, Smartphone } from "lucide-react";
 import { AccessGate } from "@/components/access-gate";
 
 export function LayoutWrapper({ children }: { children: ReactNode }) {
   const p = usePlayer();
   const { playerHidden } = p;
+  const { viewMode, isSmartphoneView, setViewMode } = useViewMode();
   const [unlinked, setUnlinked] = useState(false);
 
   useEffect(() => {
@@ -90,30 +92,55 @@ export function LayoutWrapper({ children }: { children: ReactNode }) {
     );
   }
 
+  const isForcedSmartphone = viewMode === "smartphone";
+
   return (
     <AccessGate>
-      <div className="flex flex-col md:flex-row h-dvh overflow-hidden">
-        <Sidebar />
-        <main
-          className={`flex-1 min-w-0 overflow-y-auto md:pr-2 transition-all duration-300 ${
-            playerHidden ? "pb-20 md:pb-6" : "pb-36 md:pb-28"
-          }`}
-        >
-          {children}
-        </main>
+      <div className="w-full h-dvh flex flex-col overflow-hidden relative bg-bg">
+        {/* Top indicator banner when Smartphone View mode is explicitly forced in Settings */}
+        {isForcedSmartphone && (
+          <div className="bg-accent/15 border-b border-accent/20 px-4 py-1.5 flex items-center justify-between text-xs text-accent font-semibold shrink-0 z-10">
+            <span className="flex items-center gap-1.5 truncate">
+              <Smartphone size={14} /> Smartphone View Active
+            </span>
+            <button
+              onClick={() => setViewMode("auto")}
+              className="hover:underline text-[10px] text-white/80 shrink-0 uppercase tracking-wider font-bold bg-accent/20 px-2 py-0.5 rounded"
+            >
+              Reset to Auto
+            </button>
+          </div>
+        )}
+
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row h-full overflow-hidden relative">
+          <Sidebar />
+          <main
+            className={`flex-1 min-w-0 overflow-y-auto transition-all duration-300 ${
+              isSmartphoneView ? "px-3 pt-3" : "md:pr-2"
+            } ${
+              playerHidden
+                ? isSmartphoneView ? "pb-20" : "pb-20 md:pb-6"
+                : isSmartphoneView ? "pb-36" : "pb-36 md:pb-28"
+            }`}
+          >
+            {children}
+          </main>
+        </div>
+
+        {!playerHidden && <PlayerBar />}
+        <MobileNav />
+        {!playerHidden && <NowPlaying />}
+
+        {playerHidden && isSmartphoneView && (
+          <button
+            onClick={p.togglePlayerHidden}
+            className="fixed right-4 bottom-[calc(72px+env(safe-area-inset-bottom))] z-50 flex items-center justify-center h-12 w-12 rounded-full bg-accent text-black shadow-lg shadow-accent/25 border border-white/10 active:scale-95 transition-all animate-bounce"
+            title="Show Music Player"
+          >
+            <Eye size={22} />
+          </button>
+        )}
       </div>
-      {!playerHidden && <PlayerBar />}
-      <MobileNav />
-      {!playerHidden && <NowPlaying />}
-      {playerHidden && (
-        <button
-          onClick={p.togglePlayerHidden}
-          className="md:hidden fixed right-4 bottom-[calc(72px+env(safe-area-inset-bottom))] z-50 flex items-center justify-center h-12 w-12 rounded-full bg-accent text-black shadow-lg shadow-accent/25 border border-white/10 active:scale-95 transition-all animate-bounce"
-          title="Show Music Player"
-        >
-          <Eye size={22} />
-        </button>
-      )}
     </AccessGate>
   );
 }

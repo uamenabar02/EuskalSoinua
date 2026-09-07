@@ -1,7 +1,8 @@
 import "server-only";
 import { db } from "@/db";
 import { artists, albums, tracks, eqPresets, playlists } from "@/db/schema";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
+import { BASQUE_DISAMBIGUATION, isValidMatchForArtist } from "@/lib/sources/online";
 
 /**
  * SEED CATALOG
@@ -338,6 +339,44 @@ const SEED_MODERN: SeedArtist[] = [
     ],
   },
   {
+    name: "Dupla",
+    genre: "Euskal Pop / Urban",
+    region: "eu",
+    language: "eu",
+    listeners: 64000,
+    bio: "Aguraingo musika talde urbano eta elektronikoa. Tradizioa eta soinu moderno digitalak uztartzen dituzte.",
+    tracks: [
+      { title: "30's", album: "De Un Pueblo Llamado Agurain", year: 2024, duration: 197 },
+      { title: "Ongi Etorri", album: "De Un Pueblo Llamado Agurain", year: 2024, duration: 163 },
+      { title: "Tirikitrauki", album: "De Un Pueblo Llamado Agurain", year: 2024, duration: 185 },
+      { title: "Hamen", album: "Folklorea", year: 2019, duration: 198 },
+      { title: "Nahidudana", album: "Nahidudana", year: 2021, duration: 215 },
+      { title: "Beldurrik ez", album: "Folklorea", year: 2019, duration: 204 },
+      { title: "DMT", album: "Concepto", year: 2021, duration: 186 },
+      { title: "Dantzatzera at!", album: "Folklorea", year: 2019, duration: 210 },
+      { title: "Ezer ez da berdina", album: "De Agurain a Kontrazaharra", year: 2022, duration: 192 },
+      { title: "Gure zakarra", album: "De Agurain a Kontrazaharra", year: 2022, duration: 180 },
+    ],
+  },
+  {
+    name: "Bengo",
+    genre: "Euskal Pop / Urban",
+    region: "eu",
+    language: "eu",
+    listeners: 52000,
+    bio: "Oiartzungo abeslari eta ekoizle gaztea. Melodia harrapatzaileak eta urban pop soinu berritzaileak.",
+    tracks: [
+      { title: "Denbora", album: "453", year: 2022, duration: 205 },
+      { title: "Orain", album: "Bizitzak", year: 2023, duration: 195 },
+      { title: "Bizi", album: "453", year: 2022, duration: 212 },
+      { title: "Gogoan", album: "BIDEAN", year: 2024, duration: 188 },
+      { title: "Txatxarrak", album: "Bizitzak", year: 2023, duration: 201 },
+      { title: "Zortzi", album: "453", year: 2022, duration: 190 },
+      { title: "Sayonara", album: "Bizitzak", year: 2023, duration: 185 },
+      { title: "Baimenik gabe", album: "BIDEAN", year: 2024, duration: 198 },
+    ],
+  },
+  {
     name: "Shinova",
     genre: "Indie Rock",
     region: "eu",
@@ -480,6 +519,44 @@ async function runSeed(): Promise<void> {
 
   await ensureModernTracks();
   await ensureDefaults();
+  await cleanupDisambiguatedTracks();
+}
+
+async function cleanupDisambiguatedTracks(): Promise<void> {
+  try {
+    for (const [key] of Object.entries(BASQUE_DISAMBIGUATION)) {
+      const artistRows = await db
+        .select({ id: artists.id, name: artists.name })
+        .from(artists)
+        .where(sql`lower(${artists.name}) = ${key}`);
+
+      for (const aRow of artistRows) {
+        const trackRows = await db
+          .select({ id: tracks.id, title: tracks.title, albumName: tracks.albumName, genre: tracks.genre })
+          .from(tracks)
+          .where(eq(tracks.artistId, aRow.id));
+
+        for (const t of trackRows) {
+          if (!isValidMatchForArtist(aRow.name, { title: t.title, album: t.albumName, genre: t.genre })) {
+            await db.update(tracks).set({ artistId: null }).where(eq(tracks.id, t.id));
+          }
+        }
+
+        const albumRows = await db
+          .select({ id: albums.id, title: albums.title, genre: albums.genre })
+          .from(albums)
+          .where(eq(albums.artistId, aRow.id));
+
+        for (const alb of albumRows) {
+          if (!isValidMatchForArtist(aRow.name, { title: alb.title, album: alb.title, genre: alb.genre })) {
+            await db.update(albums).set({ artistId: null }).where(eq(albums.id, alb.id));
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore if cleanup fails on seed
+  }
 }
 
 async function ensureModernTracks(): Promise<void> {

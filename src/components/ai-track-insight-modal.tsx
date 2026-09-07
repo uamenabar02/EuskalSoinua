@@ -21,9 +21,8 @@ export function AiTrackInsightModal({ track, isOpen, onClose }: AiTrackInsightMo
   } | null>(null);
 
   useEffect(() => {
+    let ignore = false;
     if (isOpen && track) {
-      setLoading(true);
-      setInsight(null);
       fetch("/api/ai/track-insight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -31,11 +30,19 @@ export function AiTrackInsightModal({ track, isOpen, onClose }: AiTrackInsightMo
       })
         .then((res) => res.json())
         .then((data) => {
-          if (data.insight) setInsight(data.insight);
+          if (!ignore) {
+            if (data.insight) setInsight(data.insight);
+            setLoading(false);
+          }
         })
-        .catch((err) => console.error("Insight fetch error:", err))
-        .finally(() => setLoading(false));
+        .catch((err) => {
+          console.error("Insight fetch error:", err);
+          if (!ignore) setLoading(false);
+        });
     }
+    return () => {
+      ignore = true;
+    };
   }, [isOpen, track]);
 
   if (!isOpen || !track) return null;

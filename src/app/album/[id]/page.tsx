@@ -6,6 +6,7 @@ import { DetailHeader, PlayAllButton, CenterLoader } from "@/components/detail";
 import { TrackList } from "@/components/track-row";
 import { ToggleButton } from "@/components/like-button";
 import { DownloadAllButton } from "@/components/download-button";
+import { ArtistLinks } from "@/components/artist-links";
 import type { Track, Album } from "@/lib/types";
 
 interface Data {
@@ -69,13 +70,7 @@ export default function AlbumPage({ params }: { params: Promise<{ id: string }> 
         title={album.title}
         subtitle={
           <span className="flex flex-wrap items-center gap-x-2 justify-center sm:justify-start">
-            {album.artistId ? (
-              <Link href={`/artist/${album.artistId}`} className="font-semibold hover:underline">
-                {album.artistName}
-              </Link>
-            ) : (
-              <span>{album.artistName}</span>
-            )}
+            <ArtistLinks artistName={album.artistName || ""} primaryArtistId={album.artistId} className="font-semibold hover:underline" />
             <span>• {album.year ?? ""}</span>
             <span>• {tracks.length} songs</span>
           </span>

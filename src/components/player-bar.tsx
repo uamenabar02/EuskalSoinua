@@ -20,12 +20,15 @@ import {
   EyeOff,
 } from "lucide-react";
 import { usePlayer } from "@/lib/player-context";
+import { useViewMode } from "@/lib/view-mode-context";
 import { CoverArt } from "@/components/cover";
 import { ToggleButton } from "@/components/like-button";
+import { ArtistLinks } from "@/components/artist-links";
 import { formatTime, clsx } from "@/lib/utils";
 
 export function PlayerBar() {
   const p = usePlayer();
+  const { viewMode, isSmartphoneView, isDesktopView } = useViewMode();
   const c = p.current;
   const [menuOpen, setMenuOpen] = useState(false);
   const radio = p.radioStation;
@@ -42,58 +45,71 @@ export function PlayerBar() {
   return (
     <>
       {/* mobile compact */}
-      <div className="md:hidden fixed bottom-[calc(60px+env(safe-area-inset-bottom))] inset-x-2 z-40 glass border border-white/10 px-3 py-2 rounded-xl shadow-lg shadow-black/40">
-        <button
-          onClick={p.openNowPlaying}
-          className="w-full flex items-center gap-3"
+      {isSmartphoneView && (
+        <div
+          className={clsx(
+            "fixed bottom-[calc(60px+env(safe-area-inset-bottom))] inset-x-2 z-40 glass border border-white/10 px-3 py-2 rounded-xl shadow-lg shadow-black/40",
+            viewMode === "auto" ? "md:hidden block" : "block"
+          )}
         >
-          <CoverArt
-            seed={seed}
-            artwork={p.isLiveRadio ? null : c?.artworkUrl}
-            label={title}
-            rounded="rounded-md"
-            className="h-11 w-11 shrink-0"
-          />
-          <div className="min-w-0 flex-1 text-left">
-            <div className="truncate text-sm font-semibold flex items-center gap-1.5">
-              {p.isLiveRadio ? <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" /> : null}
-              {title}
+          <button
+            onClick={p.openNowPlaying}
+            className="w-full flex items-center gap-3"
+          >
+            <CoverArt
+              seed={seed}
+              artwork={p.isLiveRadio ? null : c?.artworkUrl}
+              label={title}
+              rounded="rounded-md"
+              className="h-11 w-11 shrink-0"
+            />
+            <div className="min-w-0 flex-1 text-left">
+              <div className="truncate text-sm font-semibold flex items-center gap-1.5">
+                {p.isLiveRadio ? <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" /> : null}
+                {title}
+              </div>
+              <ArtistLinks artistName={artist} primaryArtistId={c?.artistId} />
             </div>
-            <div className="truncate text-xs text-textdim">{artist}</div>
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                p.togglePlay();
+              }}
+              className="grid place-items-center h-9 w-9"
+            >
+              {p.isPlaying ? (
+                <Pause size={22} fill="currentColor" />
+              ) : (
+                <Play size={22} fill="currentColor" />
+              )}
+            </span>
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm("Hide the music player? You can restore it from settings or the sidebar.")) {
+                  p.togglePlayerHidden();
+                }
+              }}
+              className="grid place-items-center h-9 w-9 text-textdim hover:text-ink shrink-0"
+              title="Hide player"
+            >
+              <EyeOff size={18} />
+            </span>
+          </button>
+          <div className="mt-1 h-1 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
           </div>
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              p.togglePlay();
-            }}
-            className="grid place-items-center h-9 w-9"
-          >
-            {p.isPlaying ? (
-              <Pause size={22} fill="currentColor" />
-            ) : (
-              <Play size={22} fill="currentColor" />
-            )}
-          </span>
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              if (window.confirm("Hide the music player? You can restore it from settings or the sidebar.")) {
-                p.togglePlayerHidden();
-              }
-            }}
-            className="grid place-items-center h-9 w-9 text-textdim hover:text-ink shrink-0"
-            title="Hide player"
-          >
-            <EyeOff size={18} />
-          </span>
-        </button>
-        <div className="mt-1 h-1 rounded-full bg-white/10 overflow-hidden">
-          <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
         </div>
-      </div>
+      )}
 
       {/* desktop full */}
-      <div className="hidden md:grid fixed bottom-0 inset-x-0 z-30 grid-cols-[1fr_2fr_1fr] items-center gap-4 glass border-t border-white/10 px-4 h-[88px]">
+      {isDesktopView && (
+        <div
+          className={clsx(
+            "fixed bottom-0 inset-x-0 z-30 grid-cols-[1fr_2fr_1fr] items-center gap-4 glass border-t border-white/10 px-4 h-[88px]",
+            viewMode === "desktop" ? "grid" : "hidden md:grid"
+          )}
+        >
         {/* now playing */}
         <div className="flex items-center gap-3 min-w-0">
           <CoverArt
@@ -108,7 +124,7 @@ export function PlayerBar() {
               {p.isLiveRadio ? <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" /> : null}
               {title}
             </div>
-            <div className="truncate text-xs text-textdim">{artist}</div>
+            <ArtistLinks artistName={artist} primaryArtistId={c?.artistId} />
           </div>
           {!p.isLiveRadio && c ? (
             <ToggleButton endpoint="like" id={c.id} initial={false} size={16} className="ml-1" />
@@ -275,6 +291,7 @@ export function PlayerBar() {
           </div>
         </div>
       </div>
-    </>
+    )}
+  </>
   );
 }
