@@ -583,7 +583,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // -----------------------------------------------------------------------
 
   // Resolve metadata: videoId + provider + sponsorblock + lyrics. Shared by
-  // both engines so the UI is consistent regardless of playback path.
+  // all playback paths so the UI and SponsorBlock stay consistent.
   const loadTrackMeta = useCallback(
     (track: Track) => {
       setState((p) => ({ ...p, lyricsLoading: true }));
@@ -593,12 +593,41 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           setState((p) => ({ ...p, lyrics: l.lines ?? [], lyricsLoading: false })),
         )
         .catch(() => setState((p) => ({ ...p, lyricsLoading: false })));
+
+      // Resolve stream info and SponsorBlock segments in background
+      fetch(`/api/stream-info?trackId=${track.id}`)
+        .then((r) => r.json())
+        .then((info: { provider?: string; videoId?: string | null }) => {
+          if (stateRef.current.current?.id === track.id) {
+            setState((p) => ({
+              ...p,
+              provider: info.provider ?? (stateRef.current.fullTrackMode ? "piped" : "preview"),
+              streamingConfigured: true,
+            }));
+          }
+          const vid = info.videoId || track.externalId;
+          if (
+            stateRef.current.sponsorblockEnabled &&
+            vid &&
+            /^[\w-]{11}$/.test(vid)
+          ) {
+            fetch(`/api/sponsorblock?videoId=${vid}`)
+              .then((r) => r.json())
+              .then((d: { segments: SponsorSegment[] }) => {
+                if (stateRef.current.current?.id === track.id) {
+                  setState((p) => ({ ...p, segments: d.segments ?? [] }));
+                }
+              })
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
     },
     [],
   );
 
-  // Play a track through the <audio> element (ad-free preview / extracted
-  // stream). Pauses the YouTube engine if it was running.
+  // Play a track through the persistent HTML5 <audio> element (full stream or preview).
+  // This engine survives screen locking and backgrounding on Android Chrome and iOS.
   const loadTrackViaAudio = useCallback(
     (track: Track, startTime = 0) => {
       const audio = audioRef.current;
@@ -647,8 +676,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [ensureAudioGraph],
   );
 
-  // Play a track through the official YouTube IFrame player (FULL song, with
-  // ads — the legal trade-off the user opts into via "Full Track mode").
+  // Fallback YouTube IFrame player
   const loadTrackViaYouTube = useCallback(
     async (videoId: string) => {
       ytVideoIdRef.current = videoId;
@@ -663,19 +691,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       } catch {
         /* noop */
       }
-      // First-time creation: pass the videoId to the constructor so it begins
-      // playing as soon as onReady fires (no missed-command race).
       const existed = !!ytRef.current;
       const player = await ensureYTPlayer(videoId);
       if (!player) {
-        // API couldn't load -> fall back to audio
         const t = stateRef.current.current;
         if (t) loadTrackViaAudio(t);
         return;
       }
-      // If the player already existed, load the new video. If it was JUST
-      // created with this videoId, the constructor already cued it — but if the
-      // player somehow isn't ready yet, queue it for onReady to pick up.
       if (existed) {
         if (ytReadyRef.current) {
           try {
@@ -708,82 +730,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         segments: [],
         activeSegment: null,
         lyrics: [],
-        provider: "demo",
+        provider: p.fullTrackMode ? "piped" : "demo",
         engine: "audio",
         isLiveRadio: false,
         radioStation: null,
       }));
 
-      // Lyrics always load in background.
+      // Lyrics and stream info load in background.
       loadTrackMeta(track);
 
-      // When the browser is in the background or screen is off (document.hidden === true),
-      // Mobile Chrome suspends YouTube iframes and forbids iframe autoplay.
-      // We MUST route directly to HTML5 Audio to maintain 100% continuous background playback
-      // and responsive MediaSession lock-screen controls.
-      const isHidden = typeof document !== "undefined" && document.hidden;
-      if (isHidden) {
-        loadTrackViaAudio(track);
-        return;
-      }
-
-      const isYTEnabled = stateRef.current.fullTrackMode;
-      const cached = streamInfoCacheRef.current.get(track.id);
-      const knownVideoId = (cached?.videoId && /^[\w-]{11}$/.test(cached.videoId) && !failedEmbedVideoIds.has(cached.videoId))
-        ? cached.videoId
-        : (track.externalId && /^[\w-]{11}$/.test(track.externalId) && !failedEmbedVideoIds.has(track.externalId))
-          ? track.externalId
-          : null;
-
-      if (isYTEnabled && knownVideoId) {
-        // Immediate full-track playback via official YouTube player (no preview hijacking)
-        currentAudio.pause();
-        setState((p) => ({ ...p, engine: "youtube", provider: "youtube", streamingConfigured: true }));
-        if (stateRef.current.sponsorblockEnabled) {
-          fetch(`/api/sponsorblock?videoId=${knownVideoId}`)
-            .then((r) => r.json())
-            .then((d: { segments: SponsorSegment[] }) => setState((p) => ({ ...p, segments: d.segments ?? [] })))
-            .catch(() => {});
-        }
-        loadTrackViaYouTube(knownVideoId);
-        return;
-      }
-
-      if (isYTEnabled && !knownVideoId) {
-        // Full Track Mode is ON, but video ID is not cached yet:
-        // Show buffering and fetch stream-info directly without forcing a 30s preview
-        currentAudio.pause();
-        setState((p) => ({ ...p, buffering: true, engine: "youtube", provider: "youtube" }));
-        fetch(`/api/stream-info?trackId=${track.id}`)
-          .then((r) => r.json())
-          .then((info: { provider?: string; videoId?: string | null }) => {
-            if (stateRef.current.current?.id !== track.id) return;
-            const resolvedVideoId = info?.videoId;
-            if (resolvedVideoId && /^[\w-]{11}$/.test(resolvedVideoId) && !failedEmbedVideoIds.has(resolvedVideoId)) {
-              streamInfoCacheRef.current.set(track.id, { provider: "youtube", videoId: resolvedVideoId });
-              loadTrackViaYouTube(resolvedVideoId);
-            } else {
-              streamInfoCacheRef.current.set(track.id, { provider: info?.provider ?? "preview", videoId: null });
-              loadTrackViaAudio(track);
-            }
-          })
-          .catch(() => {
-            if (stateRef.current.current?.id === track.id) {
-              loadTrackViaAudio(track);
-            }
-          });
-        return;
-      }
-
-      // Preview / Audio mode
+      // Fast slot swap to pre-buffered standby element if available
       const shadow = getShadowEl();
       let alreadyPlayingAudio = false;
 
-      // Check if the standby audio element has ALREADY pre-buffered this exact track
       if (
         shadow &&
-        shadow.dataset.preloadedTrackId === String(track.id) &&
-        !isYTEnabled
+        shadow.dataset.preloadedTrackId === String(track.id)
       ) {
         try {
           dispatchRef.current.cancelCrossfade();
@@ -792,7 +754,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           } catch {}
 
           currentAudio.pause();
-          // Fast slot swap to pre-buffered standby element
           activeSlotRef.current = activeSlotRef.current === "A" ? "B" : "A";
           audioRef.current = shadow;
           shadow.dataset.preloadedTrackId = "";
@@ -818,7 +779,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         loadTrackViaAudio(track);
       }
     },
-    [ensureAudioGraph, flushListen, getShadowEl, loadTrackMeta, loadTrackViaAudio, loadTrackViaYouTube],
+    [ensureAudioGraph, flushListen, getShadowEl, loadTrackMeta, loadTrackViaAudio],
   );
 
   const preWarmAudio = useCallback(() => {
@@ -1497,16 +1458,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       (() => {
         const downloadedUrl = getDownloadedUrlSync(nextTrack.id);
         if (!crossfadeRef.current.active) return; // cancelled while loading
-        shadow.src = downloadedUrl ?? `/api/stream?trackId=${nextTrack.id}`;
+        const mode = s.fullTrackMode ? "full" : "preview";
+        shadow.src = downloadedUrl ?? `/api/stream?trackId=${nextTrack.id}&mode=${mode}`;
         shadow.loop = false;
         shadow.volume = 0;
         shadow.play().catch(() => {});
       })();
 
-      // Volume ramp via rAF
+      // Volume ramp with background screen-lock resilience
       const ramp = () => {
         const cf = crossfadeRef.current;
         if (!cf.active) return;
+        // If document is hidden / screen locked in background, complete crossfade immediately
+        if (typeof document !== "undefined" && document.hidden) {
+          dispatchRef.current.completeCrossfade();
+          return;
+        }
         const elapsed = Date.now() - cf.startedAt;
         const progress = Math.min(1, elapsed / cf.durationMs);
         activeEl.volume = targetVol * (1 - progress);
@@ -1517,7 +1484,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           cf.raf = requestAnimationFrame(ramp);
         }
       };
-      crossfadeRef.current.raf = requestAnimationFrame(ramp);
+
+      if (typeof document !== "undefined" && document.hidden) {
+        dispatchRef.current.completeCrossfade();
+      } else {
+        crossfadeRef.current.raf = requestAnimationFrame(ramp);
+      }
     },
     [getShadowEl],
   );
@@ -1745,28 +1717,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const handleVisibilityChange = () => {
       if (typeof document === "undefined") return;
       if (document.hidden) {
-        // App is hidden / screen turned off: if active engine is YouTube, hand off to HTML5 audio so playback never stops!
-        if (stateRef.current.isPlaying && stateRef.current.engine === "youtube" && stateRef.current.current) {
-          let curTime = 0;
-          try {
-            curTime = ytRef.current?.getCurrentTime() || stateRef.current.currentTime || 0;
-          } catch {}
-          try {
-            ytRef.current?.pauseVideo();
-          } catch {}
-          dispatchRef.current.loadTrackViaAudio(stateRef.current.current, curTime);
+        // App is hidden / screen turned off
+        if (ctxRef.current && ctxRef.current.state === "suspended") {
+          ctxRef.current.resume().catch(() => {});
         }
       } else {
-        // App returned to foreground
-        if (stateRef.current.isPlaying && stateRef.current.engine === "youtube" && ytRef.current) {
-          try {
-            const st = ytRef.current.getPlayerState?.();
-            if (st === 2 || st === 5) {
-              ytRef.current.playVideo();
-            }
-          } catch {
-            /* noop */
-          }
+        // App returned to foreground: resume any suspended Web Audio context
+        if (ctxRef.current && ctxRef.current.state === "suspended") {
+          ctxRef.current.resume().catch(() => {});
         }
       }
     };

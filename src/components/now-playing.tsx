@@ -302,9 +302,9 @@ function PlayerTab() {
           <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 text-accent px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide">
             <Radio size={11} /> Full song · YouTube
           </span>
-        ) : p.provider === "piped" || p.provider === "invidious" || p.provider === "lbry" ? (
+        ) : p.provider === "piped" || p.provider === "invidious" || p.provider === "lbry" || (p.fullTrackMode && p.provider !== "demo") ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 text-accent px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide">
-            <Radio size={11} /> Full ad-free stream
+            <Radio size={11} /> Full song · Background Audio
           </span>
         ) : p.provider === "preview" ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-sky-400/15 text-sky-300 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide">

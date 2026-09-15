@@ -25,7 +25,9 @@ export interface DeviceAccessRecord {
 }
 
 // Memory / File fallback store for environments where PostgreSQL pool is disconnected
-const LOCAL_STORE_FILE = path.join(process.cwd(), ".access_data.json");
+const LOCAL_STORE_FILE = process.env.VERCEL
+  ? path.join("/tmp", ".access_data.json")
+  : path.join(process.cwd(), ".access_data.json");
 
 interface LocalStore {
   adminEmail: string;
@@ -42,23 +44,27 @@ const defaultStore: LocalStore = {
   requests: {},
 };
 
+let memoryStore: LocalStore = { ...defaultStore };
+
 function readLocalStore(): LocalStore {
   try {
     if (fs.existsSync(LOCAL_STORE_FILE)) {
       const data = fs.readFileSync(LOCAL_STORE_FILE, "utf-8");
-      return { ...defaultStore, ...JSON.parse(data) };
+      memoryStore = { ...defaultStore, ...JSON.parse(data) };
+      return memoryStore;
     }
   } catch (e) {
-    console.error("[AccessDB] Failed reading local store file:", e);
+    // Fall back to in-memory store
   }
-  return defaultStore;
+  return memoryStore;
 }
 
 function writeLocalStore(store: LocalStore) {
+  memoryStore = { ...store };
   try {
     fs.writeFileSync(LOCAL_STORE_FILE, JSON.stringify(store, null, 2), "utf-8");
   } catch (e) {
-    console.error("[AccessDB] Failed writing local store file:", e);
+    // Non-fatal on read-only serverless filesystems
   }
 }
 
