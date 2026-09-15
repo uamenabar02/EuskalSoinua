@@ -45,16 +45,38 @@ export async function resolveTrackForPlayback(trackId: number, mode?: "full" | "
     }
   }
 
+  // If we already have a direct preview URL and mode is NOT "full",
+  // we DO NOT wait for slow external video searches. We can stream immediately!
+  // If videoId is not yet present, resolve it in background so it doesn't block playback.
   if (!videoId && isStreamingConfigured()) {
-    const hit = await resolveVideoIdForTrack({
-      artist: track.artistName,
-      title: track.title,
-      region: track.region,
-    });
-    if (hit?.videoId) {
-      videoId = hit.videoId;
-      resolvedViaSearch = true;
-      setTrackExternalId(track.id, hit.videoId).catch(() => {});
+    if (mode === "full") {
+      // In full-track mode, we strictly need videoId; cap timeout to 2.5s so it never hangs
+      const hitPromise = resolveVideoIdForTrack({
+        artist: track.artistName,
+        title: track.title,
+        region: track.region,
+      });
+      const timeoutPromise = new Promise<null>((res) => setTimeout(() => res(null), 2500));
+      const hit = await Promise.race([hitPromise, timeoutPromise]);
+      if (hit?.videoId) {
+        videoId = hit.videoId;
+        resolvedViaSearch = true;
+        setTrackExternalId(track.id, hit.videoId).catch(() => {});
+      }
+    } else {
+      // In preview or default audio mode, resolve videoId asynchronously in background
+      // without blocking the immediate start of the audio stream.
+      resolveVideoIdForTrack({
+        artist: track.artistName,
+        title: track.title,
+        region: track.region,
+      })
+        .then((hit) => {
+          if (hit?.videoId) {
+            setTrackExternalId(track.id, hit.videoId).catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
   }
 

@@ -451,10 +451,14 @@ const SEED_MODERN: SeedArtist[] = [
 ];
 
 let seedPromise: Promise<void> | null = null;
+let isSeeded = false;
 
 export async function ensureSeed(): Promise<void> {
+  if (isSeeded) return;
   if (seedPromise) return seedPromise;
-  seedPromise = runSeed();
+  seedPromise = runSeed().then(() => {
+    isSeeded = true;
+  });
   return seedPromise;
 }
 
@@ -518,6 +522,7 @@ async function runSeed(): Promise<void> {
   }
 
   await ensureModernTracks();
+  await ensureGroundTruthCatalog();
   await ensureDefaults();
   await cleanupDisambiguatedTracks();
 }
@@ -666,3 +671,357 @@ async function ensureDefaults(): Promise<void> {
     ]);
   }
 }
+
+export const GROUND_TRUTH_DATA = [
+  {
+    artist: "Bengo",
+    genre: "Basque Urban Pop",
+    region: "eu",
+    language: "eu",
+    bio: "Oiartzungo abeslari eta ekoizle gaztea. Melodia harrapatzaileak eta urban pop soinu berritzaileak.",
+    tracks: [
+      {
+        title: "Galdu Gattezen",
+        album: "Bizitzak",
+        year: 2023,
+        duration: 195,
+        externalId: "ghNA8wTrSmI",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/18/cd/25/18cd25a7-eaa8-3282-a17d-28bb24a4c831/mzaf_15492999691862970648.plus.aac.p.m4a",
+      },
+      {
+        title: "Beldurrik Gabe",
+        album: "Bizitzak",
+        year: 2023,
+        duration: 185,
+        externalId: "x1ECsx6lbwE",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/02/a5/22/02a5228a-a312-bfec-8014-257acd0e5f28/mzaf_8749929553842873852.plus.aac.p.m4a",
+      },
+    ],
+  },
+  {
+    artist: "ZETAK",
+    genre: "Basque Synth Pop",
+    region: "eu",
+    language: "eu",
+    bio: "Pello Reparazen proiektu elektroniko eta pop modernoa. Arbizuko soinu berritzailea.",
+    tracks: [
+      {
+        title: "Zeinen Ederra Izango Den",
+        album: "Zeinen Ederra Izango Den",
+        year: 2020,
+        duration: 220,
+        externalId: "4phtwVJqSuw",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview114/v4/ba/ef/1d/baef1dc9-cbeb-5935-ac83-2f7e77666b47/mzaf_2043386368707079735.plus.aac.p.m4a",
+      },
+      {
+        title: "Itzulera",
+        album: "Zeinen Ederra Izango Den",
+        year: 2022,
+        duration: 220,
+        externalId: "ZErUMnB7aMk",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/a0/5e/23/a05e2353-43ac-f0ef-3d3c-774df9af14f1/mzaf_9891321263478634825.plus.aac.p.m4a",
+      },
+    ],
+  },
+  {
+    artist: "La Txama",
+    genre: "Basque Fusion",
+    region: "eu",
+    language: "eu",
+    bio: "Basque fusion and urban pop-rock band.",
+    tracks: [
+      {
+        title: "Musa 13",
+        album: "Musa 13",
+        year: 2023,
+        duration: 215,
+        externalId: "KdkZM4rzRSA",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview122/v4/97/49/63/974963c6-dc15-a699-519f-23f06c5f3433/mzaf_13987627347685713636.plus.aac.p.m4a",
+      },
+      {
+        title: "Fusilaren Hotsa",
+        album: "Musa 13",
+        year: 2023,
+        duration: 205,
+        externalId: "9gBPu-BU0jQ",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/cf/a6/8d/cfa68dba-e006-110f-bbee-533332ca9363/mzaf_3275564627724789443.plus.aac.p.m4a",
+      },
+    ],
+  },
+  {
+    artist: "Izaro",
+    genre: "Basque Indie Pop",
+    region: "eu",
+    language: "eu",
+    bio: "Mallabiako abeslari eta konpositorea. Soinu barnekoia eta pop dotorea.",
+    tracks: [
+      {
+        title: "Aske Maitte",
+        album: "Limones en Invierno",
+        year: 2020,
+        duration: 240,
+        externalId: "hnwYJzZyqzk",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/ae/77/97/ae77977e-212a-0889-8136-426dc00585e9/mzaf_13385617291043792300.plus.aac.p.m4a",
+      },
+      {
+        title: "Oso Blanco",
+        album: "om",
+        year: 2016,
+        duration: 210,
+        externalId: "Ir6LtvAKBqY",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/af/83/69/af83699a-dbcc-d8f9-dd6f-79f5be8e0356/mzaf_13491605586197966985.plus.aac.p.m4a",
+      },
+    ],
+  },
+  {
+    artist: "Anari",
+    genre: "Basque Alt Rock",
+    region: "eu",
+    language: "eu",
+    bio: "Azkoitiko kantautorea eta euskal rock alternatiboaren erreferente nagusietakoa.",
+    tracks: [
+      {
+        title: "Efemerideak",
+        album: "Epilogo Bat",
+        year: 2016,
+        duration: 235,
+        externalId: "fao20vtn8cA",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/2c/39/44/2c3944b3-ee65-36ce-590e-0ac02257d2ed/mzaf_14942995138019367593.plus.aac.p.m4a",
+      },
+      {
+        title: "Orfidentalak",
+        album: "Habiak",
+        year: 2000,
+        duration: 250,
+        externalId: "6XiiX5aFTFM",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/3f/22/08/3f220857-55e4-323c-740b-037e1007371a/mzaf_5868505665825816210.plus.aac.p.m4a",
+      },
+    ],
+  },
+  {
+    artist: "Streetwise",
+    genre: "Basque Street Punk",
+    region: "eu",
+    language: "eu",
+    bio: "Iruñeko street punk eta Oi! talde boteretsua.",
+    tracks: [
+      {
+        title: "Txantxangorria",
+        album: "Datorrena",
+        year: 2022,
+        duration: 190,
+        externalId: "n-9RN_E7L1k",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/58/b0/ca/58b0caaa-19c1-3f7e-3525-df44956ba943/mzaf_11699123269940345631.plus.aac.p.m4a",
+      },
+      {
+        title: "Izatea Baino",
+        album: "Datorrena",
+        year: 2022,
+        duration: 185,
+        externalId: "ZlZQAxqx2gE",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ad/bd/30/adbd30fa-7e11-9fc4-ee31-3e7afd0071ab/mzaf_1621266349327819936.plus.aac.p.m4a",
+      },
+    ],
+  },
+  {
+    artist: "Bizardunak",
+    genre: "Basque Folk Punk",
+    region: "eu",
+    language: "eu",
+    bio: "Nafarroako folk punk erradikala eta euskal kantu tradizionalen interpretazio kementsuak.",
+    tracks: [
+      {
+        title: "Nazi de Fresa",
+        album: "Bizardunak",
+        year: 2009,
+        duration: 180,
+        externalId: "0zI2goqPXLw",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/0e/3b/d1/0e3bd1df-bb37-81ca-baa4-bc26b5609471/mzaf_1363825328113959105.plus.aac.p.m4a",
+      },
+      {
+        title: "Shane McGowan's Basque Paddys",
+        album: "En Zugzwang",
+        year: 2010,
+        duration: 210,
+        externalId: "98if3xXYNaQ",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/7d/66/70/7d6670eb-fbce-7187-4ea4-d72e1196972a/mzaf_17469467063648011767.plus.aac.p.m4a",
+      },
+    ],
+  },
+  {
+    artist: "Olaia Inziarte",
+    genre: "Basque Indie",
+    region: "eu",
+    language: "eu",
+    bio: "Oronoztarra, pop ilun eta intimoaren egile berritzailea.",
+    tracks: [
+      {
+        title: "Denbora Lehen Orain",
+        album: "Lehengo Lepotikan Burua",
+        year: 2022,
+        duration: 205,
+        externalId: "bFeGyEIvJqw",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/32/7c/fe/327cfeea-0ef8-0ca5-b16f-9c600ff682fa/mzaf_4092370951689205369.plus.aac.p.m4a",
+      },
+    ],
+  },
+  {
+    artist: "Tatta",
+    genre: "Basque Urban/Trap",
+    region: "eu",
+    language: "eu",
+    bio: "Arrasateko rap eta trap abeslaria, euskal eszena urbano berriaren buru.",
+    tracks: [
+      {
+        title: "Muxutxo Bana",
+        album: "Martin",
+        year: 2024,
+        duration: 175,
+        externalId: "4zpjzjJSZNk",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/01/78/2e/01782eef-f187-a20c-585f-04f261c9631d/mzaf_9971338142441165059.plus.aac.p.m4a",
+      },
+    ],
+  },
+  {
+    artist: "Belako",
+    genre: "Basque Post-Punk",
+    region: "eu",
+    language: "eu",
+    bio: "Mungiako post-punk eta rock alternatiboko talde txalotua.",
+    tracks: [
+      {
+        title: "Render Me Numb",
+        album: "Render Me Numb, Trivial Violence",
+        year: 2018,
+        duration: 220,
+        externalId: "JD-IK47W3ok",
+        previewUrlAlt: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/94/a1/75/94a17593-4112-0182-2911-acceffdc25ef/mzaf_3513018776870479321.plus.aac.p.m4a",
+      },
+    ],
+  },
+];
+
+export async function ensureGroundTruthCatalog(): Promise<void> {
+  try {
+    for (const item of GROUND_TRUTH_DATA) {
+      // 1. Find or create artist
+      const existingArtists = await db
+        .select({ id: artists.id, name: artists.name })
+        .from(artists)
+        .where(sql`lower(${artists.name}) = lower(${item.artist})`);
+
+      let artistId = existingArtists[0]?.id;
+      if (!artistId) {
+        const [inserted] = await db
+          .insert(artists)
+          .values({
+            name: item.artist,
+            genre: item.genre,
+            region: item.region,
+            language: item.language,
+            bio: item.bio,
+            monthlyListeners: 65000,
+            source: "local",
+          })
+          .returning({ id: artists.id });
+        artistId = inserted.id;
+      } else {
+        await db
+          .update(artists)
+          .set({
+            genre: item.genre,
+            region: item.region,
+            language: item.language,
+            bio: item.bio,
+          })
+          .where(eq(artists.id, artistId));
+      }
+
+      // 2. Process each track
+      for (const t of item.tracks) {
+        // Album
+        const existingAlbums = await db
+          .select({ id: albums.id })
+          .from(albums)
+          .where(sql`lower(${albums.title}) = lower(${t.album}) and ${albums.artistId} = ${artistId}`);
+
+        let albumId = existingAlbums[0]?.id;
+        if (!albumId) {
+          const [insertedAlb] = await db
+            .insert(albums)
+            .values({
+              title: t.album,
+              artistId,
+              artistName: item.artist,
+              year: t.year,
+              genre: item.genre,
+              region: item.region,
+              source: "local",
+            })
+            .returning({ id: albums.id });
+          albumId = insertedAlb.id;
+        }
+
+        // Track: match by title and artistId OR artistName
+        const existingTracks = await db
+          .select({ id: tracks.id, externalId: tracks.externalId })
+          .from(tracks)
+          .where(
+            sql`lower(${tracks.title}) = lower(${t.title}) and (${tracks.artistId} = ${artistId} or lower(${tracks.artistName}) = lower(${item.artist}))`
+          );
+
+        if (existingTracks.length > 0) {
+          for (const ex of existingTracks) {
+            await db
+              .update(tracks)
+              .set({
+                artistId,
+                artistName: item.artist,
+                albumId,
+                albumName: t.album,
+                duration: t.duration,
+                externalId: t.externalId,
+                previewUrlAlt: t.previewUrlAlt,
+                source: "youtube",
+                genre: item.genre,
+                region: item.region,
+                language: item.language,
+              })
+              .where(eq(tracks.id, ex.id));
+          }
+        } else {
+          await db.insert(tracks).values({
+            title: t.title,
+            artistId,
+            artistName: item.artist,
+            albumId,
+            albumName: t.album,
+            duration: t.duration,
+            genre: item.genre,
+            region: item.region,
+            language: item.language,
+            externalId: t.externalId,
+            previewUrlAlt: t.previewUrlAlt,
+            source: "youtube",
+            playCount: 4500,
+          });
+        }
+
+        // Also backfill any collaborative or duplicate track variants (e.g. feat / remix)
+        await db
+          .update(tracks)
+          .set({
+            externalId: t.externalId,
+            previewUrlAlt: t.previewUrlAlt,
+            source: "youtube",
+          })
+          .where(
+            sql`lower(${tracks.title}) = lower(${t.title}) and lower(${tracks.artistName}) like lower(${'%' + item.artist + '%'}) and (${tracks.externalId} is null or ${tracks.externalId} = '' or ${tracks.previewUrlAlt} is null)`
+          );
+      }
+    }
+  } catch (err) {
+    console.error("ensureGroundTruthCatalog error:", err);
+  }
+}
+

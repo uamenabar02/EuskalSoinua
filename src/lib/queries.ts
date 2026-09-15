@@ -78,6 +78,19 @@ export async function clearTrackPreview(trackId: number) {
 
 import { GoogleGenAI, Type } from "@google/genai";
 
+interface HomeCacheEntry {
+  data: {
+    trending: any[];
+    basqueHighlights: any[];
+    topArtists: any[];
+    newReleases: any[];
+    basqueArtists: any[];
+  };
+  timestamp: number;
+}
+const homeCache = new Map<string, HomeCacheEntry>();
+const HOME_CACHE_TTL_MS = 6 * 60 * 1000; // 6 minutes
+
 async function curateWithGemini<T extends { id: number }>(
   items: T[],
   sectionName: string,
@@ -121,7 +134,7 @@ CRITICAL VARIETY & DISCOVERY RULES:
 CANDIDATE POOL:
 ${JSON.stringify(poolSummary, null, 2)}`;
 
-      const response = await ai.models.generateContent({
+      const geminiCall = ai.models.generateContent({
         model: "gemini-3.6-flash",
         contents: prompt,
         config: {
@@ -140,6 +153,12 @@ ${JSON.stringify(poolSummary, null, 2)}`;
           },
         },
       });
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Gemini timeout")), 2500)
+      );
+
+      const response = await Promise.race([geminiCall, timeoutPromise]);
 
       const jsonText = response.text ?? "{}";
       const parsed = JSON.parse(jsonText);
@@ -172,8 +191,8 @@ ${JSON.stringify(poolSummary, null, 2)}`;
         }
       }
       return curated.slice(0, 10);
-    } catch (e) {
-      console.error(`Gemini curation error for section ${sectionName}:`, e);
+    } catch {
+      // Fast fallback to shuffled pool on timeout or error
     }
   }
 
@@ -182,6 +201,13 @@ ${JSON.stringify(poolSummary, null, 2)}`;
 }
 
 export async function getHomeSections(syncKey: string = "default", requestedSection?: string, seed?: string) {
+  // Return cached homepage if requestedSection and seed are not specified
+  if (!requestedSection && !seed) {
+    const cached = homeCache.get(syncKey);
+    if (cached && Date.now() - cached.timestamp < HOME_CACHE_TTL_MS) {
+      return cached.data;
+    }
+  }
   const [liked, followed, saved] = await Promise.all([
     likedIds(syncKey),
     followedIds(syncKey),
@@ -265,19 +291,49 @@ export async function getHomeSections(syncKey: string = "default", requestedSect
   };
 
   if (requestedSection === "trending") {
-    return { section: "trending", items: await getTrending() };
+    const items = await getTrending();
+    const cached = homeCache.get(syncKey);
+    if (cached) {
+      cached.data.trending = items;
+      cached.timestamp = Date.now();
+    }
+    return { section: "trending", items };
   }
   if (requestedSection === "basqueHighlights") {
-    return { section: "basqueHighlights", items: await getBasqueHighlights() };
+    const items = await getBasqueHighlights();
+    const cached = homeCache.get(syncKey);
+    if (cached) {
+      cached.data.basqueHighlights = items;
+      cached.timestamp = Date.now();
+    }
+    return { section: "basqueHighlights", items };
   }
   if (requestedSection === "topArtists") {
-    return { section: "topArtists", items: await getTopArtists() };
+    const items = await getTopArtists();
+    const cached = homeCache.get(syncKey);
+    if (cached) {
+      cached.data.topArtists = items;
+      cached.timestamp = Date.now();
+    }
+    return { section: "topArtists", items };
   }
   if (requestedSection === "basqueArtists") {
-    return { section: "basqueArtists", items: await getBasqueArtists() };
+    const items = await getBasqueArtists();
+    const cached = homeCache.get(syncKey);
+    if (cached) {
+      cached.data.basqueArtists = items;
+      cached.timestamp = Date.now();
+    }
+    return { section: "basqueArtists", items };
   }
   if (requestedSection === "newReleases") {
-    return { section: "newReleases", items: await getNewReleases() };
+    const items = await getNewReleases();
+    const cached = homeCache.get(syncKey);
+    if (cached) {
+      cached.data.newReleases = items;
+      cached.timestamp = Date.now();
+    }
+    return { section: "newReleases", items };
   }
 
   const [trending, basqueHighlights, topArtists, newReleases, basqueArtists] = await Promise.all([
@@ -288,13 +344,17 @@ export async function getHomeSections(syncKey: string = "default", requestedSect
     getBasqueArtists(),
   ]);
 
-  return {
+  const fullData = {
     trending,
     basqueHighlights,
     topArtists,
     newReleases,
     basqueArtists,
   };
+
+  homeCache.set(syncKey, { data: fullData, timestamp: Date.now() });
+
+  return fullData;
 }
 
 export async function searchCatalog(q: string) {

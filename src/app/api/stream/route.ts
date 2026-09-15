@@ -40,7 +40,10 @@ function getProxyCandidates(originalUrl: string, invidiousInstances: string[]): 
  */
 async function tryFetch(url: string, headers: Record<string, string>): Promise<Response | null> {
   try {
-    const r = await fetch(url, { headers });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const r = await fetch(url, { headers, signal: controller.signal });
+    clearTimeout(timer);
     if (r.ok || r.status === 206) return r;
     return null;
   } catch {
@@ -52,11 +55,33 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const trackId = Number(searchParams.get("trackId"));
   const mode = searchParams.get("mode") as "full" | "preview" | null;
+  const isFallback = searchParams.get("fallback") === "1";
   if (!trackId) {
     return new Response(JSON.stringify({ error: "trackId required" }), {
       status: 400,
       headers: { "content-type": "application/json" },
     });
+  }
+
+  // Fast direct royalty-free fallback for instantaneous recovery from network errors
+  if (isFallback) {
+    const fb = await resolveStream({ videoId: null, trackId, duration: 0 });
+    const range = request.headers.get("range");
+    const upstreamHeaders: Record<string, string> = {};
+    if (range) upstreamHeaders.range = range;
+    const upstream = await tryFetch(fb.url, upstreamHeaders);
+    if (upstream && upstream.body) {
+      const respHeaders = new Headers();
+      respHeaders.set("content-type", "audio/mpeg");
+      respHeaders.set("accept-ranges", "bytes");
+      const cl = upstream.headers.get("content-length");
+      if (cl) respHeaders.set("content-length", cl);
+      const cr = upstream.headers.get("content-range");
+      if (cr) respHeaders.set("content-range", cr);
+      respHeaders.set("cache-control", "no-store");
+      respHeaders.set("x-stream-provider", "demo");
+      return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
+    }
   }
 
   const resolution = await resolveTrackForPlayback(trackId, mode || undefined);
@@ -182,8 +207,8 @@ export async function GET(request: Request) {
     }
   }
 
-  // 3) distinct royalty-free fallback (always works) - only if NOT full-track mode
-  if (!upstream && mode !== "full") {
+  // 3) distinct fallback (always ensures playable audio, never dead-ends with 503)
+  if (!upstream) {
     const fb = await resolveStream({ videoId: null, trackId, duration: 0 });
     upstream = await tryFetch(fb.url, upstreamHeaders);
     provider = fb.provider;

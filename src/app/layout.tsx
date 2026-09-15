@@ -53,6 +53,12 @@ const bootScript = `(function(){
     var t=localStorage.getItem('euskalsoinua-theme');var m={midnight:'#0a0a0f',aurora:'#0a0e1f',basque:'#140a08',forest:'#07120c',oled:'#000000',light:'#f4f4f7'};if(!t)t='midnight';document.documentElement.setAttribute('data-theme',t);var c=document.querySelector('meta[name="theme-color"]');if(c)c.setAttribute('content',m[t]||'#0a0a0f');
   }catch(e){}
   try{
+    var isIframe = false;
+    try { isIframe = window.self !== window.top; } catch(e) { isIframe = true; }
+    var cookieSuffix = (isIframe && window.location.protocol === 'https:')
+      ? '; path=/; max-age=31536000; SameSite=None; Secure'
+      : '; path=/; max-age=31536000; SameSite=Lax';
+
     var k=localStorage.getItem('euskalsoinua-sync-key');
     if(!k){
       var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -63,7 +69,7 @@ const bootScript = `(function(){
       k='S-'+code;
       localStorage.setItem('euskalsoinua-sync-key',k);
     }
-    document.cookie='sync_key='+k+'; path=/; max-age=31536000; SameSite=Strict';
+    document.cookie='sync_key='+k+cookieSuffix;
 
     var d=localStorage.getItem('euskalsoinua-device-id');
     if(!d){
@@ -75,7 +81,7 @@ const bootScript = `(function(){
       d=dcode;
       localStorage.setItem('euskalsoinua-device-id',d);
     }
-    document.cookie='device_id='+d+'; path=/; max-age=31536000; SameSite=Strict';
+    document.cookie='device_id='+d+cookieSuffix;
 
     var dn=localStorage.getItem('euskalsoinua-device-name');
     if(!dn){
@@ -96,7 +102,7 @@ const bootScript = `(function(){
       dn=br+' on '+os;
       localStorage.setItem('euskalsoinua-device-name',dn);
     }
-    document.cookie='device_name='+encodeURIComponent(dn)+'; path=/; max-age=31536000; SameSite=Strict';
+    document.cookie='device_name='+encodeURIComponent(dn)+cookieSuffix;
   }catch(e){}
   try{
     var swV = localStorage.getItem('euskalsoinua-sw-version');

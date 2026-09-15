@@ -81,7 +81,7 @@ export const BASQUE_DISAMBIGUATION: Record<string, ArtistDisambiguation> = {
       "Bengo Oiartzun"
     ],
     knownMatches: [
-      "453", "bizitzak", "bidean", "denbora", "orain", "bizi", "gogoan", "txatxarrak",
+      "galdu gattezen", "beldurrik gabe", "453", "bizitzak", "bidean", "denbora", "orain", "bizi", "gogoan", "txatxarrak",
       "beste egun bat", "kantu bat", "ai ai ai", "zortzi", "basamortuan", "sayonara",
       "baimenik gabe", "bakarrik", "bueltan", "gelatxo honetan", "baleak", "bizitzari parre",
       "oiartzun"

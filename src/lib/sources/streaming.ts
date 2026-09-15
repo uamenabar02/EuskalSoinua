@@ -128,7 +128,7 @@ function proxyGooglevideoUrl(url: string, proxyBase?: string): string {
 async function fetchPipedInstance(base: string, videoId: string): Promise<StreamResult | null> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 2500);
     const res = await fetch(`${base}/streams/${videoId}`, {
       signal: controller.signal,
       headers: { accept: "application/json" },
@@ -185,7 +185,7 @@ function pickBestInvidious(formats: InvidiousFormat[]): InvidiousFormat | null {
 async function fetchInvidiousInstance(base: string, videoId: string): Promise<StreamResult | null> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 2500);
     const res = await fetch(`${base}/api/v1/videos/${videoId}`, {
       signal: controller.signal,
       headers: { accept: "application/json" },
@@ -270,16 +270,26 @@ const STREAM_MEMO = new Map<string, { result: StreamResult; expires: number }>()
 const STREAM_MEMO_TTL = 3600_000;
 
 async function computeStream(input: ResolveInput): Promise<StreamResult> {
+  // If we have a direct high-speed preview URL and mode is NOT specifically "full",
+  // serve the preview immediately with ZERO proxy scraping delay!
+  if (input.mode !== "full" && (input.previewUrlAlt || input.previewUrl)) {
+    if (input.previewUrlAlt) return previewResult(input.previewUrlAlt, "audio/mp4", input.duration ?? 0);
+    return previewResult(input.previewUrl!, "audio/mpeg", input.duration ?? 0);
+  }
+
   // 1) Full ad-free YouTube stream (works when a proxy instance is available).
   if (input.videoId) {
     const real = await resolveFromAllInstances(input.videoId);
     if (real) return real;
   }
   if (input.mode === "full") {
+    // If full extraction failed but we have a preview, use preview as fallback so playback doesn't dead-end
+    if (input.previewUrlAlt) return previewResult(input.previewUrlAlt, "audio/mp4", input.duration ?? 0);
+    if (input.previewUrl) return previewResult(input.previewUrl, "audio/mpeg", input.duration ?? 0);
     return {
-      url: "",
-      contentType: "audio/mp4",
-      duration: 0,
+      url: demoAudioForTrack(input.trackId ?? 1),
+      contentType: "audio/mpeg",
+      duration: input.duration ?? 0,
       provider: "demo",
       sponsorblockAvailable: false,
     };
@@ -352,7 +362,7 @@ export interface SearchHit {
 async function searchPipedInstance(base: string, query: string): Promise<SearchHit[]> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 2500);
     const res = await fetch(
       `${base}/search?q=${encodeURIComponent(query)}&filter=music_songs`,
       { signal: controller.signal, headers: { accept: "application/json" } },
@@ -381,7 +391,7 @@ async function searchPipedInstance(base: string, query: string): Promise<SearchH
 async function searchInvidiousInstance(base: string, query: string): Promise<SearchHit[]> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 2500);
     const res = await fetch(
       `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`,
       { signal: controller.signal, headers: { accept: "application/json" } },
