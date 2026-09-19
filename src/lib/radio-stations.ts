@@ -32,6 +32,43 @@ export interface RadioStation {
 const CURATED: RadioStation[] = [
   // === EUSKADI / BASQUE COUNTRY ===
   {
+    id: "eu-arrate-irratia",
+    name: "Arrate Irratia",
+    streamUrl: "https://online.arrateirratia.eus/zuzenean",
+    country: "Euskadi",
+    countryCode: "ES",
+    region: "Euskadi",
+    category: "Basque",
+    favicon: "https://arrateirratia.eus/wp-content/uploads/2025/07/cropped-logo-arrate-irratia.png",
+    tags: ["euskera", "eibar", "folk", "arrate"],
+    curated: true,
+  },
+  {
+    id: "eu-naiz-irratia",
+    name: "Naiz Irratia",
+    streamUrl: "https://zuzenean.naizirratia.eus/naiz_irratia.mp3",
+    country: "Euskadi",
+    countryCode: "ES",
+    region: "Euskadi",
+    category: "Basque",
+    favicon: "https://irratia.naiz.eus/assets/audio_placeholder-b1f053152168c5f4e77c809800c5363c2b734f16a0527b2e1cd0f1b099cf31dd.png",
+    bitrate: 320,
+    tags: ["euskera", "news", "info", "naiz"],
+    curated: true,
+  },
+  {
+    id: "eu-naiz-musika",
+    name: "Naiz Musika",
+    streamUrl: "https://zuzenean.naizirratia.eus/naiz_musika.mp3",
+    country: "Euskadi",
+    countryCode: "ES",
+    region: "Euskadi",
+    category: "Basque",
+    bitrate: 128,
+    tags: ["euskera", "musika", "naiz"],
+    curated: true,
+  },
+  {
     id: "eu-euskadi-irratia",
     name: "Euskadi Irratia",
     streamUrl: "http://mp3-eitb.stream.flumotion.com/eitb/euskadiirratia.mp3",
@@ -89,14 +126,25 @@ const CURATED: RadioStation[] = [
 
   // === SPAIN ===
   {
-    id: "es-europa-fm",
+    id: "es-europa-fm-gipuzkoa",
     name: "Europa FM Gipuzkoa",
     streamUrl: "https://stream.zeno.fm/se76qau1hc9uv",
     country: "Euskadi",
     countryCode: "ES",
     region: "Euskadi",
     category: "Basque",
-    tags: ["music", "pop", "hits"],
+    tags: ["music", "pop", "hits", "europafm"],
+    curated: true,
+  },
+  {
+    id: "es-europa-fm",
+    name: "Europa FM",
+    streamUrl: "https://stream.zeno.fm/se76qau1hc9uv",
+    country: "España",
+    countryCode: "ES",
+    region: "España",
+    category: "Spain",
+    tags: ["music", "pop", "hits", "europafm"],
     curated: true,
   },
   {
@@ -271,20 +319,42 @@ export async function searchRadioStations(
   query: string,
   country?: string,
 ): Promise<RadioStation[]> {
-  if (!query.trim() && !country) return [];
+  const cleanQ = query.trim().toLowerCase();
+  const cleanCountry = country?.trim().toUpperCase();
+
+  if (!cleanQ && !cleanCountry) return [];
+
+  // 1. Search matching curated stations first
+  const matchingCurated: RadioStation[] = CURATED.filter((s) => {
+    if (cleanCountry && s.countryCode.toUpperCase() !== cleanCountry) {
+      return false;
+    }
+    if (!cleanQ) return true;
+    const compactQ = cleanQ.replace(/\s+/g, "");
+    const compactName = s.name.toLowerCase().replace(/\s+/g, "");
+    const nameMatch = s.name.toLowerCase().includes(cleanQ) || compactName.includes(compactQ);
+    const tagMatch = s.tags?.some((t) => t.toLowerCase().includes(cleanQ) || cleanQ.includes(t.toLowerCase()));
+    const catMatch = s.category.toLowerCase().includes(cleanQ);
+    const regionMatch = s.region.toLowerCase().includes(cleanQ);
+    return nameMatch || tagMatch || catMatch || regionMatch;
+  });
+
+  // 2. Query Radio Browser API using /json/stations/search
   const params = new URLSearchParams({
     hidebroken: "true",
     order: "clickcount",
     reverse: "true",
-    limit: "40",
+    limit: "50",
   });
-  if (country) params.set("countrycode", country);
-  const path = query.trim()
-    ? `/json/stations/byname/${encodeURIComponent(query)}`
-    : "/json/stations/topclick/40";
-  const data = await rbFetch(`${path}?${params.toString()}`);
-  if (!data) return [];
-  return data
+  if (cleanCountry) {
+    params.set("countrycode", cleanCountry);
+  }
+  if (cleanQ) {
+    params.set("name", cleanQ);
+  }
+
+  const data = await rbFetch(`/json/stations/search?${params.toString()}`);
+  const rbResults: RadioStation[] = (data || [])
     .filter((s) => s.url_resolved && s.url_resolved.startsWith("http"))
     .map((s) => ({
       id: s.stationuuid,
@@ -298,6 +368,29 @@ export async function searchRadioStations(
       bitrate: s.bitrate || 0,
       tags: s.tags ? s.tags.split(",").filter(Boolean).slice(0, 4) : [],
     }));
+
+  // Combine and deduplicate
+  const seenUrls = new Set<string>();
+  const seenNames = new Set<string>();
+  const combined: RadioStation[] = [];
+
+  for (const s of matchingCurated) {
+    const n = s.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    seenUrls.add(s.streamUrl);
+    seenNames.add(n);
+    combined.push(s);
+  }
+
+  for (const s of rbResults) {
+    const n = s.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!seenUrls.has(s.streamUrl) && !seenNames.has(n)) {
+      seenUrls.add(s.streamUrl);
+      seenNames.add(n);
+      combined.push(s);
+    }
+  }
+
+  return combined;
 }
 
 /** Group stations by region for display. */

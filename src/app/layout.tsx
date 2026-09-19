@@ -30,8 +30,8 @@ export const viewport: Viewport = {
   themeColor: "#0a0a0f",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  maximumScale: 5,
+  userScalable: true,
   viewportFit: "cover",
 };
 
@@ -39,18 +39,22 @@ export const viewport: Viewport = {
 // open DevTools console and see "RELOAD" (full page load) vs "SPA" (client nav).
 const navLog = `console.log('%c[EuskalSoinua] Page load','color:#1ed760;font-weight:bold','→ full browser load at',new Date().toISOString().substring(11,19));`;
 
-// No-flash boot script: runs in <head> BEFORE React/paint. Does four things:
-//   1. Applies the saved theme (no white flash).
-//   2. UNREGISTERS all old service workers immediately — previous versions had
-//      fetch handlers that cached stale RSC payloads and broke Next.js
-//      client-side navigation (forced full-page reloads, killing the audio).
-//   3. Clears all old caches.
-//   4. Initializes or loads the Device Sync Key and sets the session cookie.
-// This runs as early as physically possible so the old SW is destroyed before
-// the user can click any navigation link.
+// No-flash boot script: runs in <head> BEFORE React/paint. Does:
+//   1. Applies saved theme.
+//   2. Applies saved view mode (smartphone / desktop / auto).
+//   3. Destroys stale service workers & caches.
+//   4. Sets device sync cookies.
 const bootScript = `(function(){
   try{
     var t=localStorage.getItem('euskalsoinua-theme');var m={midnight:'#0a0a0f',aurora:'#0a0e1f',basque:'#140a08',forest:'#07120c',oled:'#000000',light:'#f4f4f7'};if(!t)t='midnight';document.documentElement.setAttribute('data-theme',t);var c=document.querySelector('meta[name="theme-color"]');if(c)c.setAttribute('content',m[t]||'#0a0a0f');
+  }catch(e){}
+  try{
+    var vm=localStorage.getItem('euskalsoinua-view-mode');
+    if(vm==='smartphone'||vm==='desktop'){
+      document.documentElement.setAttribute('data-view-mode',vm);
+    } else {
+      document.documentElement.setAttribute('data-view-mode',window.innerWidth<768?'smartphone':'desktop');
+    }
   }catch(e){}
   try{
     var isIframe = false;

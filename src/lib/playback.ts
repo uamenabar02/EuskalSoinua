@@ -30,9 +30,49 @@ export async function resolveTrackForPlayback(trackId: number, mode?: "full" | "
   let previewUrlAlt = track.previewUrlAlt;
   let resolvedViaSearch = false;
 
-  // Enrich: if this track has no real preview yet, look it up online so the
-  // ACTUAL song plays (instead of an unrelated royalty-free file).
-  if (!previewUrl && !previewUrlAlt) {
+  // In full-track mode, if we already have videoId in DB, return IMMEDIATELY with 0ms latency!
+  if (mode === "full" && videoId) {
+    return {
+      result: {
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        contentType: "audio/mp4",
+        duration: track.duration || 0,
+        provider: "youtube",
+        sponsorblockAvailable: true,
+      },
+      trackId: track.id,
+      title: track.title,
+      artist: track.artistName,
+      videoId,
+      resolvedViaSearch: false,
+      previewUrl,
+      previewUrlAlt,
+    };
+  }
+
+  // If in preview mode and we already have a preview URL, return IMMEDIATELY with 0ms latency!
+  if (mode === "preview" && (previewUrl || previewUrlAlt)) {
+    const streamUrl = previewUrlAlt || previewUrl!;
+    return {
+      result: {
+        url: streamUrl,
+        contentType: previewUrlAlt ? "audio/mp4" : "audio/mpeg",
+        duration: track.duration || 30,
+        provider: "preview",
+        sponsorblockAvailable: false,
+      },
+      trackId: track.id,
+      title: track.title,
+      artist: track.artistName,
+      videoId: null,
+      resolvedViaSearch: false,
+      previewUrl,
+      previewUrlAlt,
+    };
+  }
+
+  // Enrich: if this track has no real preview yet and we are in preview mode, look it up online
+  if (mode === "preview" && !previewUrl && !previewUrlAlt) {
     const enriched = await enrichTrackPreview({
       trackId: track.id,
       title: track.title,
@@ -45,27 +85,40 @@ export async function resolveTrackForPlayback(trackId: number, mode?: "full" | "
     }
   }
 
-  // If we already have a direct preview URL and mode is NOT "full",
-  // we DO NOT wait for slow external video searches. We can stream immediately!
-  // If videoId is not yet present, resolve it in background so it doesn't block playback.
+  // If we need videoId for full mode and it's missing:
   if (!videoId && isStreamingConfigured()) {
     if (mode === "full") {
-      // In full-track mode, we strictly need videoId; cap timeout to 2.5s so it never hangs
+      // In full-track mode, search YouTube directly
       const hitPromise = resolveVideoIdForTrack({
         artist: track.artistName,
         title: track.title,
         region: track.region,
       });
-      const timeoutPromise = new Promise<null>((res) => setTimeout(() => res(null), 2500));
+      const timeoutPromise = new Promise<null>((res) => setTimeout(() => res(null), 3500));
       const hit = await Promise.race([hitPromise, timeoutPromise]);
       if (hit?.videoId) {
         videoId = hit.videoId;
         resolvedViaSearch = true;
         setTrackExternalId(track.id, hit.videoId).catch(() => {});
+        return {
+          result: {
+            url: `https://www.youtube.com/watch?v=${videoId}`,
+            contentType: "audio/mp4",
+            duration: track.duration || 0,
+            provider: "youtube",
+            sponsorblockAvailable: true,
+          },
+          trackId: track.id,
+          title: track.title,
+          artist: track.artistName,
+          videoId,
+          resolvedViaSearch: true,
+          previewUrl,
+          previewUrlAlt,
+        };
       }
     } else {
       // In preview or default audio mode, resolve videoId asynchronously in background
-      // without blocking the immediate start of the audio stream.
       resolveVideoIdForTrack({
         artist: track.artistName,
         title: track.title,
@@ -83,9 +136,6 @@ export async function resolveTrackForPlayback(trackId: number, mode?: "full" | "
   // Force resolution depending on mode
   let finalVideoId = videoId;
   if (mode === "preview") {
-    // If we want a preview and we actually have a preview URL, we bypass videoId (YouTube)
-    // to guarantee we play the fast, ad-free, 30s preview first.
-    // If we don't have a preview URL, we still allow videoId as a fallback.
     if (previewUrl || previewUrlAlt) {
       finalVideoId = null;
     }

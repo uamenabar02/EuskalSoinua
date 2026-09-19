@@ -10,11 +10,11 @@ import ImportPlaylistModal from "@/components/import-playlist-modal";
 
 import { SocialRoom } from "@/components/social-room";
 import { ImportExportManager } from "@/components/import-export";
-import { AiPlaylistGenerator } from "@/components/ai-playlist-generator";
 
 interface Lib {
   liked: (Track & { liked?: boolean })[];
   playlists: Playlist[];
+  aiPlaylists: Playlist[];
   followed: (Artist & { followed?: boolean })[];
   albums: (Album & { saved?: boolean })[];
 }
@@ -22,7 +22,6 @@ interface Lib {
 export default function LibraryPage() {
   const [lib, setLib] = useState<Lib | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
-  const [showAiCurator, setShowAiCurator] = useState(true);
 
   const load = () =>
     fetch("/api/library")
@@ -37,6 +36,7 @@ export default function LibraryPage() {
         const safeData: Lib = {
           liked: Array.isArray(data.liked) ? data.liked : [],
           playlists: Array.isArray(data.playlists) ? data.playlists : [],
+          aiPlaylists: Array.isArray(data.aiPlaylists) ? data.aiPlaylists : [],
           followed: Array.isArray(data.followed) ? data.followed : [],
           albums: Array.isArray(data.albums) ? data.albums : [],
         };
@@ -53,19 +53,23 @@ export default function LibraryPage() {
             setLib({
               liked: Array.isArray(parsed?.liked) ? parsed.liked : [],
               playlists: Array.isArray(parsed?.playlists) ? parsed.playlists : [],
+              aiPlaylists: Array.isArray(parsed?.aiPlaylists) ? parsed.aiPlaylists : [],
               followed: Array.isArray(parsed?.followed) ? parsed.followed : [],
               albums: Array.isArray(parsed?.albums) ? parsed.albums : [],
             });
           } else {
-            setLib({ liked: [], playlists: [], followed: [], albums: [] });
+            setLib({ liked: [], playlists: [], aiPlaylists: [], followed: [], albums: [] });
           }
         } catch (e) {
-          setLib({ liked: [], playlists: [], followed: [], albums: [] });
+          setLib({ liked: [], playlists: [], aiPlaylists: [], followed: [], albums: [] });
         }
       });
 
   useEffect(() => {
     load();
+    const handlePlaylistsChanged = () => load();
+    window.addEventListener("playlists-changed", handlePlaylistsChanged);
+    return () => window.removeEventListener("playlists-changed", handlePlaylistsChanged);
   }, []);
 
   const createPlaylist = async () => {
@@ -94,12 +98,12 @@ export default function LibraryPage() {
           Your Library
         </h1>
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setShowAiCurator((prev) => !prev)}
+          <Link
+            href="/curator"
             className="flex items-center gap-2 bg-accent text-black font-extrabold text-sm px-4 py-2 rounded-full hover:scale-105 transition shadow-md shadow-accent/15 cursor-pointer"
           >
-            <Sparkles size={16} /> {showAiCurator ? "AI Curator Active" : "✨ Gemini AI Curator"}
-          </button>
+            <Sparkles size={16} /> AI Playlist Curator
+          </Link>
           <button
             onClick={() => setIsImportOpen(true)}
             className="flex items-center gap-2 bg-white/10 hover:bg-white/15 text-white font-semibold text-sm px-4 py-2 rounded-full hover:scale-105 transition cursor-pointer"
@@ -161,7 +165,7 @@ export default function LibraryPage() {
             <div className="text-xs text-textdim">Offline songs</div>
           </div>
         </Link>
-        {lib.playlists.map((pl) => (
+        {lib.playlists.slice(0, 4).map((pl) => (
           <Link
             key={pl.id}
             href={`/playlist/${pl.id}`}
@@ -227,19 +231,38 @@ export default function LibraryPage() {
         </Link>
       </div>
 
-      {showAiCurator && (
-        <div className="mb-8">
-          <AiPlaylistGenerator />
-        </div>
-      )}
-
+      {/* Playlists Section */}
       <Section title="Playlists">
         {lib.playlists.length === 0 ? (
           <div className="text-textdim text-sm px-1">
-            No playlists yet — tap “Create”.
+            No user playlists yet — tap “Create”.
           </div>
         ) : (
           lib.playlists.map((pl) => (
+            <SectionCard key={pl.id}>
+              <PlaylistCard playlist={pl} />
+            </SectionCard>
+          ))
+        )}
+      </Section>
+
+      {/* AI-Curated Playlists Subsection */}
+      <Section
+        title="AI-Generated Playlists"
+        subtitle="Curated by Gemini AI Smart Playlist Curation"
+      >
+        {lib.aiPlaylists.length === 0 ? (
+          <div className="text-textdim text-sm px-1 flex items-center gap-3 py-3">
+            <span>No AI-curated playlists yet.</span>
+            <Link
+              href="/curator"
+              className="text-xs text-accent font-bold hover:underline flex items-center gap-1"
+            >
+              <Sparkles size={13} /> Create with Gemini AI &rarr;
+            </Link>
+          </div>
+        ) : (
+          lib.aiPlaylists.map((pl) => (
             <SectionCard key={pl.id}>
               <PlaylistCard playlist={pl} />
             </SectionCard>

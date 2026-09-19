@@ -39,6 +39,14 @@ export async function GET(request: Request) {
         items[r.id] = { provider: "demo", videoId: null };
       }
     }
+
+    // Proactively resolve externalId for the first few tracks in background
+    for (const r of rows.slice(0, 8)) {
+      if (!r.externalId) {
+        resolveTrackForPlayback(r.id, "full").catch(() => {});
+      }
+    }
+
     return NextResponse.json({ items });
   }
 

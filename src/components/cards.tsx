@@ -14,7 +14,7 @@ export function TrackCard({ track }: { track: Track }) {
   return (
     <button
       onClick={() => playQueue([track])}
-      className="group relative w-full text-left rounded-xl bg-panel hover:bg-panel-hover transition p-3 sm:p-4"
+      className="group relative w-full text-left rounded-xl bg-panel hover:bg-panel-hover transition p-3 sm:p-4 cursor-pointer"
     >
       <div className="relative aspect-square mb-3">
         <CoverArt
@@ -22,7 +22,7 @@ export function TrackCard({ track }: { track: Track }) {
           artwork={track.artworkUrl}
           label={track.title}
           rounded="rounded-lg"
-          className="w-full h-full"
+          className="w-full h-full shadow-md"
         />
         <span className="absolute right-2 bottom-2 grid place-items-center h-11 w-11 rounded-full bg-accent text-black shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all">
           <Play size={18} fill="currentColor" />
@@ -33,8 +33,8 @@ export function TrackCard({ track }: { track: Track }) {
           </span>
         ) : null}
       </div>
-      <div className="font-semibold truncate text-sm">{track.title}</div>
-      <ArtistLinks artistName={track.artistName} primaryArtistId={track.artistId} />
+      <div className="font-semibold truncate text-sm card-title">{track.title}</div>
+      <ArtistLinks artistName={track.artistName} primaryArtistId={track.artistId} className="card-subtitle" />
     </button>
   );
 }
@@ -50,11 +50,11 @@ export function ArtistCard({ artist }: { artist: Artist }) {
           seed={artist.name}
           label={artist.name}
           rounded="rounded-full"
-          className="w-full h-full"
+          className="w-full h-full shadow-md"
         />
       </div>
-      <div className="font-semibold truncate text-sm text-center">{artist.name}</div>
-      <div className="text-textdim text-xs text-center mt-0.5 truncate">
+      <div className="font-semibold truncate text-sm text-center card-title">{artist.name}</div>
+      <div className="text-textdim text-xs text-center mt-0.5 truncate card-subtitle">
         {artist.region === "eu" ? "Artista" : "Artist"}
       </div>
     </Link>
@@ -72,11 +72,11 @@ export function AlbumCard({ album }: { album: Album }) {
           seed={`${album.title}-${album.artistName}`}
           label={album.title}
           rounded="rounded-lg"
-          className="w-full h-full"
+          className="w-full h-full shadow-md"
         />
       </div>
-      <div className="font-semibold truncate text-sm">{album.title}</div>
-      <ArtistLinks artistName={album.artistName || ""} primaryArtistId={album.artistId} />
+      <div className="font-semibold truncate text-sm card-title">{album.title}</div>
+      <ArtistLinks artistName={album.artistName || ""} primaryArtistId={album.artistId} className="card-subtitle" />
     </Link>
   );
 }
@@ -92,11 +92,11 @@ export function PlaylistCard({ playlist }: { playlist: Playlist }) {
           seed={playlist.coverSeed ?? playlist.name}
           label={playlist.name}
           rounded="rounded-lg"
-          className="w-full h-full"
+          className="w-full h-full shadow-md"
         />
       </div>
-      <div className="font-semibold truncate text-sm">{playlist.name}</div>
-      <div className="text-textdim text-xs truncate mt-0.5">
+      <div className="font-semibold truncate text-sm card-title">{playlist.name}</div>
+      <div className="text-textdim text-xs truncate mt-0.5 card-subtitle">
         {playlist.description ?? `${playlist.trackCount} tracks`}
       </div>
     </Link>

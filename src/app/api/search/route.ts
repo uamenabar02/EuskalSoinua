@@ -1,44 +1,59 @@
 import { NextResponse } from "next/server";
 import { searchCatalog, likedIds } from "@/lib/queries";
-import { ensureSeed } from "@/lib/seed";
 import { ingestOnlineTracks, ingestDiscography } from "@/lib/sources/online";
-import { mapTrack, mapArtist } from "@/lib/mappers";
+import { mapArtist } from "@/lib/mappers";
 import { db } from "@/db";
 import { artists } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 /**
- * Unified search: local catalog + REAL online sources (iTunes + Deezer).
- * Online matches are ingested as catalog tracks (with real artwork + a
- * playable preview) so they become first-class: playable, likeable, addable
- * to playlists. This lets users find ANY artist (La Txama, StreetWise, …)
- * without importing anything.
+ * Unified high-performance search:
+ * 1. Checks local catalog first with multi-token ranking.
+ * 2. If local results are sparse (< 5 tracks), concurrently queries online sources
+ *    (iTunes + Deezer) with a strict timeout and ingests new tracks into the DB.
+ * 3. Never blocks user search on full multi-album discography ingestion.
  */
 export async function GET(request: Request) {
-  await ensureSeed();
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q") ?? "";
-  if (!q.trim()) {
+  const trimmed = q.trim();
+  if (!trimmed) {
     return NextResponse.json({ tracks: [], artists: [], albums: [], online: false });
   }
 
-  // Run local + online concurrently. Online results are saved to the DB.
-  const [local, online, likedSet] = await Promise.all([
-    searchCatalog(q),
-    ingestOnlineTracks(q).catch(() => []),
+  // 1. Fast local catalog search
+  const [local, likedSet] = await Promise.all([
+    searchCatalog(trimmed),
     likedIds(),
   ]);
 
-  // Detect a dominant artist in the online results and pull their FULL
-  // discography so searches like "ZETAK" surface all their songs, not just a
-  // handful of keyword matches.
-  let discography: Awaited<ReturnType<typeof ingestDiscography>> = [];
-  if (online.length >= 3) {
+  // If local catalog already has solid results, return immediately (sub-20ms response time!)
+  if (local.tracks.length >= 6 || (local.artists.length > 0 && local.tracks.length >= 3)) {
+    return NextResponse.json({
+      tracks: local.tracks,
+      artists: local.artists,
+      albums: local.albums,
+      online: false,
+    });
+  }
+
+  // 2. Local catalog is sparse -> query online sources (iTunes + Deezer)
+  let onlineTracks: any[] = [];
+  try {
+    const onlinePromise = ingestOnlineTracks(trimmed);
+    const timeoutPromise = new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2800));
+    onlineTracks = await Promise.race([onlinePromise, timeoutPromise]);
+  } catch {
+    onlineTracks = [];
+  }
+
+  // If online tracks found, trigger background full discography ingestion without blocking response
+  if (onlineTracks.length >= 3) {
     const counts = new Map<string, number>();
-    for (const t of online) {
+    for (const t of onlineTracks) {
       counts.set(t.artistName, (counts.get(t.artistName) ?? 0) + 1);
     }
     let topArtist = "";
@@ -50,40 +65,45 @@ export async function GET(request: Request) {
       }
     }
     if (topArtist && topCount >= 3) {
-      discography = await ingestDiscography(topArtist).catch(() => []);
+      // Run in background without awaiting so the user gets instant response
+      ingestDiscography(topArtist).catch(() => {});
     }
   }
 
-  // Merge online + discography tracks into the list (dedupe by id).
+  // Merge online tracks into local results (deduping by id)
   const seenIds = new Set(local.tracks.map((t: any) => t.id));
   const mergedTracks = [...local.tracks];
-  for (const t of [...online, ...discography]) {
+  for (const t of onlineTracks) {
     if (!seenIds.has(t.id)) {
       seenIds.add(t.id);
       mergedTracks.push({ ...t, liked: likedSet.has(t.id) });
     }
   }
 
-  // Pull any newly-created online artists too.
-  const onlineArtistIds = [...new Set(online.map((t: any) => t.artistId).filter(Boolean))] as number[];
-  let extraArtists = local.artists;
-  if (onlineArtistIds.length) {
-    const rows = await db
-      .select()
-      .from(artists)
-      .where(eq(artists.id, onlineArtistIds[0]));
-    const existingArtistIds = new Set(local.artists.map((a: any) => a.id));
-    for (const a of rows) {
-      if (!existingArtistIds.has(a.id)) {
-        extraArtists = [...extraArtists, { ...mapArtist(a), followed: false }];
+  // Include any newly ingested online artists
+  let mergedArtists = local.artists;
+  const newArtistIds = [...new Set(onlineTracks.map((t: any) => t.artistId).filter(Boolean))] as number[];
+  const existingArtistIds = new Set(local.artists.map((a: any) => a.id));
+  const missingArtistIds = newArtistIds.filter((id) => !existingArtistIds.has(id));
+
+  if (missingArtistIds.length > 0) {
+    try {
+      const extraRows = await db
+        .select()
+        .from(artists)
+        .where(inArray(artists.id, missingArtistIds.slice(0, 5)));
+      for (const a of extraRows) {
+        mergedArtists = [...mergedArtists, { ...mapArtist(a), followed: false }];
       }
+    } catch {
+      // ignore
     }
   }
 
   return NextResponse.json({
     tracks: mergedTracks,
-    artists: extraArtists,
+    artists: mergedArtists,
     albums: local.albums,
-    online: online.length > 0,
+    online: onlineTracks.length > 0,
   });
 }

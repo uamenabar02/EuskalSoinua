@@ -261,3 +261,99 @@ button,
 a {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* ===========================================================================
+   SMARTPHONE VIEW ADAPTIVE RESCALING & FULL-SCREEN LAYOUT
+   ---------------------------------------------------------------------------
+   When the app is in Smartphone View ([data-view-mode="smartphone"]), the app
+   must utilize the entire screen width (100% width, no huge left/right margins)
+   while keeping typography, touch targets, and cards comfortably proportioned.
+   =========================================================================== */
+
+html[data-view-mode="smartphone"] {
+  /* Fluid base font scaling for high readability across phone screen densities */
+  font-size: clamp(15px, 1.1vw + 11px, 18px);
+}
+
+/* Horizontal scroller cards in smartphone mode */
+html[data-view-mode="smartphone"] .section-card,
+html[data-view-mode="smartphone"] [data-section-card] {
+  width: clamp(150px, 42vw, 200px) !important;
+  min-width: 150px !important;
+}
+
+/* Force multi-column grids to 2 columns in smartphone mode to avoid crowding */
+html[data-view-mode="smartphone"] .grid-cols-2,
+html[data-view-mode="smartphone"] .grid-cols-3,
+html[data-view-mode="smartphone"] .grid-cols-4,
+html[data-view-mode="smartphone"] .grid-cols-5,
+html[data-view-mode="smartphone"] .grid-cols-6,
+html[data-view-mode="smartphone"] .sm\:grid-cols-2,
+html[data-view-mode="smartphone"] .sm\:grid-cols-3,
+html[data-view-mode="smartphone"] .md\:grid-cols-3,
+html[data-view-mode="smartphone"] .md\:grid-cols-4,
+html[data-view-mode="smartphone"] .lg\:grid-cols-3,
+html[data-view-mode="smartphone"] .lg\:grid-cols-4,
+html[data-view-mode="smartphone"] .lg\:grid-cols-5,
+html[data-view-mode="smartphone"] .xl\:grid-cols-6 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+/* Full-width container in Smartphone View - no artificial side margins */
+html[data-view-mode="smartphone"] .smartphone-container {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 0.75rem !important;
+  padding-right: 0.75rem !important;
+}
+
+/* Ensure mobile nav bar spans 100% width from edge to edge */
+html[data-view-mode="smartphone"] nav.mobile-bottom-nav {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+}
+
+/* Track row layout in smartphone view: hide album column, expand title/artist across full width */
+html[data-view-mode="smartphone"] .track-row-grid {
+  grid-template-columns: 24px minmax(0, 1fr) auto !important;
+  gap: 0.75rem !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+}
+
+html[data-view-mode="smartphone"] .track-row-album {
+  display: none !important;
+}
+
+html[data-view-mode="smartphone"] .track-list-header {
+  display: none !important;
+}
+
+/* Card titles and subtitles */
+html[data-view-mode="smartphone"] .card-title {
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+}
+
+html[data-view-mode="smartphone"] .card-subtitle {
+  font-size: 0.8rem !important;
+}
+
+/* Hide non-critical details when data-hide-details="true" */
+html[data-hide-details="true"] .non-critical-detail {
+  display: none !important;
+}
+
+/* Compact padding when details are hidden */
+html[data-hide-details="true"] .compact-when-hidden {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+  gap: 0.5rem !important;
+}
+

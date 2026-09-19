@@ -6,6 +6,7 @@ import { useViewMode } from "@/lib/view-mode-context";
 import { Sidebar, MobileNav } from "@/components/nav";
 import { PlayerBar } from "@/components/player-bar";
 import { NowPlaying } from "@/components/now-playing";
+import { DetailToggle } from "@/components/detail-toggle";
 import { Eye, ShieldAlert, Smartphone } from "lucide-react";
 import { AccessGate } from "@/components/access-gate";
 
@@ -99,16 +100,19 @@ export function LayoutWrapper({ children }: { children: ReactNode }) {
       <div className="w-full h-dvh flex flex-col overflow-hidden relative bg-bg">
         {/* Top indicator banner when Smartphone View mode is explicitly forced in Settings */}
         {isForcedSmartphone && (
-          <div className="bg-accent/15 border-b border-accent/20 px-4 py-1.5 flex items-center justify-between text-xs text-accent font-semibold shrink-0 z-10">
+          <div className="bg-accent/15 border-b border-accent/20 px-3 sm:px-4 py-1.5 flex items-center justify-between text-xs text-accent font-semibold shrink-0 z-10 gap-2">
             <span className="flex items-center gap-1.5 truncate">
               <Smartphone size={14} /> Smartphone View Active
             </span>
-            <button
-              onClick={() => setViewMode("auto")}
-              className="hover:underline text-[10px] text-white/80 shrink-0 uppercase tracking-wider font-bold bg-accent/20 px-2 py-0.5 rounded"
-            >
-              Reset to Auto
-            </button>
+            <div className="flex items-center gap-2">
+              <DetailToggle variant="minimal" />
+              <button
+                onClick={() => setViewMode("auto")}
+                className="hover:underline text-[10px] text-white/80 shrink-0 uppercase tracking-wider font-bold bg-accent/20 px-2 py-1 rounded"
+              >
+                Reset to Auto
+              </button>
+            </div>
           </div>
         )}
 
@@ -116,11 +120,11 @@ export function LayoutWrapper({ children }: { children: ReactNode }) {
           <Sidebar />
           <main
             className={`flex-1 min-w-0 overflow-y-auto transition-all duration-300 ${
-              isSmartphoneView ? "px-3 pt-3" : "md:pr-2"
+              isSmartphoneView ? "px-3 pt-3 smartphone-container" : "md:pr-2"
             } ${
               playerHidden
-                ? isSmartphoneView ? "pb-20" : "pb-20 md:pb-6"
-                : isSmartphoneView ? "pb-36" : "pb-36 md:pb-28"
+                ? isSmartphoneView ? "pb-28" : "pb-28 md:pb-6"
+                : isSmartphoneView ? "pb-48" : "pb-48 md:pb-28"
             }`}
           >
             {children}

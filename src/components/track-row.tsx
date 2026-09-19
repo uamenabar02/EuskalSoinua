@@ -51,13 +51,13 @@ export function TrackRow({
     <div
       onClick={handleClick}
       className={clsx(
-        "group grid items-center gap-3 rounded-lg px-2 sm:px-3 py-2 transition-colors",
-        "hover:bg-white/5 grid-cols-[24px_1fr_90px] sm:grid-cols-[24px_minmax(0,4fr)_minmax(0,3fr)_minmax(100px,auto)]",
+        "group grid items-center gap-2 sm:gap-3 rounded-xl px-2 sm:px-3 py-2 sm:py-2.5 transition-colors cursor-pointer w-full track-row-grid",
+        "hover:bg-white/5 grid-cols-[24px_1fr_auto] sm:grid-cols-[24px_minmax(0,4fr)_minmax(0,3fr)_minmax(100px,auto)]",
         isCurrent && "bg-white/5",
       )}
     >
       {/* index / play */}
-      <div className="grid place-items-center w-6 text-textdim text-sm">
+      <div className="grid place-items-center w-6 text-textdim text-xs sm:text-sm">
         {isCurrent && isPlaying ? (
           <span className="group-hover:hidden text-accent">
             <EqualizerBars className="h-3.5" />
@@ -75,28 +75,28 @@ export function TrackRow({
       </div>
 
       {/* title + artist */}
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
         {showCover ? (
           <CoverArt
             seed={`${track.albumName}-${track.artistName}`}
             artwork={track.artworkUrl}
             label={track.title}
-            rounded="rounded-md"
-            className="h-10 w-10 shrink-0"
+            rounded="rounded-lg"
+            className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 shadow-sm"
           />
         ) : null}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div
             className={clsx(
-              "truncate text-sm font-medium",
+              "truncate text-sm sm:text-base font-semibold leading-tight",
               isCurrent ? "text-accent" : "text-ink",
             )}
           >
             {track.title}
           </div>
-          <ArtistLinks artistName={track.artistName} primaryArtistId={track.artistId} />
+          <ArtistLinks artistName={track.artistName} primaryArtistId={track.artistId} className="text-xs sm:text-sm" />
           {(track as any).reason ? (
-            <div className="text-[11px] text-accent/90 truncate flex items-center gap-1 mt-0.5 font-medium">
+            <div className="text-[11px] text-accent/90 truncate flex items-center gap-1 mt-0.5 font-medium non-critical-detail">
               <Sparkles size={11} className="shrink-0 text-accent" />
               <span className="truncate">{(track as any).reason}</span>
             </div>
@@ -106,7 +106,7 @@ export function TrackRow({
 
       {/* album (desktop) */}
       {showAlbum ? (
-        <div className="hidden sm:block min-w-0">
+        <div className="hidden sm:block min-w-0 track-row-album">
           {track.albumId ? (
             <Link
               href={`/album/${track.albumId}`}
@@ -177,10 +177,10 @@ export function TrackList({
   showAlbum?: boolean;
 }) {
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col w-full">
       <div
         className={clsx(
-          "hidden sm:grid gap-3 px-3 pb-2 border-b border-white/5 text-xs uppercase tracking-wider text-textfaint",
+          "hidden sm:grid gap-3 px-3 pb-2 border-b border-white/5 text-xs uppercase tracking-wider text-textfaint track-list-header",
           showAlbum
             ? "grid-cols-[24px_minmax(0,4fr)_minmax(0,3fr)_minmax(100px,auto)]"
             : "grid-cols-[24px_minmax(0,4fr)_minmax(100px,auto)]",

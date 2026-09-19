@@ -86,5 +86,12 @@ export function Section({
 }
 
 export function SectionCard({ children }: { children: ReactNode }) {
-  return <div className="snap-start shrink-0 w-40 sm:w-48 lg:w-52">{children}</div>;
+  return (
+    <div
+      data-section-card="true"
+      className="snap-start shrink-0 w-40 sm:w-48 lg:w-52 section-card"
+    >
+      {children}
+    </div>
+  );
 }

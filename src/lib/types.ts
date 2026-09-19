@@ -78,7 +78,7 @@ export interface StreamResult {
   originalUrl?: string;
   contentType: string;
   duration: number;
-  provider: "piped" | "invidious" | "lbry" | "preview" | "demo";
+  provider: "youtube" | "piped" | "invidious" | "lbry" | "preview" | "demo";
   sponsorblockAvailable: boolean;
 }
 

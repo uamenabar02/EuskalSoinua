@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 
 import { AiPlaylistGenerator } from "@/components/ai-playlist-generator";
+import { DetailToggle } from "@/components/detail-toggle";
 
 const GENRES = [
   "Euskal Rock",
@@ -60,11 +61,14 @@ export default function TasteTunerPage() {
   const p = usePlayer();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"tuner" | "swipe" | "ai">(() => {
+  const [activeTab, setActiveTab] = useState<"tuner" | "swipe">(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab");
-      if (tabParam === "ai" || tabParam === "tuner" || tabParam === "swipe") {
+      if (tabParam === "ai") {
+        window.location.href = "/curator";
+      }
+      if (tabParam === "tuner" || tabParam === "swipe") {
         return tabParam;
       }
     }
@@ -293,27 +297,32 @@ export default function TasteTunerPage() {
 
 
   return (
-    <div className="px-4 sm:px-6 pt-6 max-w-4xl mx-auto pb-24">
+    <div className="w-full max-w-4xl mx-auto px-2 sm:px-6 pt-4 sm:pt-6 pb-24">
       {/* Header */}
-      <header className="mb-8 animate-fade-up">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-accent text-xs font-bold uppercase tracking-wider flex items-center gap-1">
-            <Sparkles size={14} /> Personalization Hub
-          </span>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-            Let me know about you
-          </h1>
-          <p className="text-textdim text-sm max-w-2xl">
-            Fine-tune EuskalSoinua&apos;s on-device recommendation algorithms. Choose your preferred music types or play our high-contrast Matcher game to instantly shape your <b>For You</b> feed.
-          </p>
+      <header className="mb-6 sm:mb-8 animate-fade-up">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-accent text-xs font-bold uppercase tracking-wider flex items-center gap-1">
+              <Sparkles size={14} /> Personalization Hub
+            </span>
+            <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight">
+              Let me know about you
+            </h1>
+            <p className="text-textdim text-xs sm:text-sm max-w-2xl non-critical-detail">
+              Fine-tune EuskalSoinua&apos;s on-device recommendation algorithms. Choose your preferred music types or play our high-contrast Matcher game to instantly shape your <b>For You</b> feed.
+            </p>
+          </div>
+          <div className="shrink-0 self-start sm:self-auto">
+            <DetailToggle />
+          </div>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex gap-2 border-b border-white/5 mt-8 flex-wrap">
+        <div className="flex gap-2 border-b border-white/5 mt-6 flex-wrap">
           <button
             onClick={() => setActiveTab("swipe")}
             className={clsx(
-              "px-5 py-3 text-sm font-bold border-b-2 transition relative flex items-center gap-2",
+              "px-4 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-bold border-b-2 transition relative flex items-center gap-2 cursor-pointer",
               activeTab === "swipe"
                 ? "border-accent text-accent"
                 : "border-transparent text-textdim hover:text-ink hover:border-white/10"
@@ -327,20 +336,9 @@ export default function TasteTunerPage() {
             )}
           </button>
           <button
-            onClick={() => setActiveTab("ai")}
-            className={clsx(
-              "px-5 py-3 text-sm font-bold border-b-2 transition relative flex items-center gap-2",
-              activeTab === "ai"
-                ? "border-accent text-accent"
-                : "border-transparent text-textdim hover:text-ink hover:border-white/10"
-            )}
-          >
-            ✨ AI Playlist Curator
-          </button>
-          <button
             onClick={() => setActiveTab("tuner")}
             className={clsx(
-              "px-5 py-3 text-sm font-bold border-b-2 transition relative flex items-center gap-2",
+              "px-4 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-bold border-b-2 transition relative flex items-center gap-2 cursor-pointer",
               activeTab === "tuner"
                 ? "border-accent text-accent"
                 : "border-transparent text-textdim hover:text-ink hover:border-white/10"
@@ -349,21 +347,30 @@ export default function TasteTunerPage() {
             📋 Music Profile Tuning
           </button>
         </div>
+
+        {/* Link to AI Curator in main menu */}
+        <div className="mt-4 sm:mt-6 p-3.5 rounded-xl bg-gradient-to-r from-accent/15 via-panel to-panel border border-accent/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 non-critical-detail">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-accent/20 text-accent shrink-0">
+              <Sparkles size={16} />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white">Gemini AI Smart Playlist Curation is in the Main Menu</div>
+              <div className="text-[11px] text-textdim">Create custom playlists anytime with either conversational prompts or detailed musical forms.</div>
+            </div>
+          </div>
+          <Link
+            href="/curator"
+            className="px-3.5 py-1.5 bg-accent text-black font-extrabold text-xs rounded-full hover:scale-105 transition text-center shrink-0 shadow-sm"
+          >
+            Open AI Curator ✨
+          </Link>
+        </div>
       </header>
 
       {/* Tab Contents */}
       <AnimatePresence mode="wait">
-        {activeTab === "ai" ? (
-          <motion.div
-            key="ai"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.2 }}
-          >
-            <AiPlaylistGenerator />
-          </motion.div>
-        ) : activeTab === "tuner" ? (
+        {activeTab === "tuner" ? (
           <motion.div
             key="tuner"
             initial={{ opacity: 0, y: 15 }}

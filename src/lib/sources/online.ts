@@ -39,6 +39,8 @@ export interface OnlineMatch {
 export interface ArtistDisambiguation {
   searchQuery: string;
   searchQueries?: string[];
+  itunesArtistId?: number;
+  deezerArtistId?: number;
   knownMatches: string[];
   rejectedKeywords: string[];
 }
@@ -46,6 +48,8 @@ export interface ArtistDisambiguation {
 export const BASQUE_DISAMBIGUATION: Record<string, ArtistDisambiguation> = {
   dupla: {
     searchQuery: "Dupla",
+    itunesArtistId: 1442326892,
+    deezerArtistId: 7247522,
     searchQueries: [
       "Dupla De Un Pueblo Llamado Agurain",
       "Dupla Folklorea",
@@ -53,16 +57,17 @@ export const BASQUE_DISAMBIGUATION: Record<string, ArtistDisambiguation> = {
       "Dupla Agurain"
     ],
     knownMatches: [
-      "folklorea", "nahidudana", "concepto", "de agurain a kontrazaharra", "gure zakarra",
-      "dantzatzera at", "hamen", "beldurrik ez", "dmt", "ezer ez da berdina", "agurain",
+      "folklorea", "nahidudana", "de agurain a kontrazaharra", "gure zakarra",
+      "dantzatzera at", "hamen", "beldurrik ez", "ezer ez da berdina", "agurain",
       "txoriak txori", "batu", "txikititan", "gazteak", "zikina", "kultura", "dantzatu",
       "mundua pitzatzear dago", "haizea", "euskal herriko gazteak", "de un pueblo llamado agurain",
-      "30's", "30s", "ongi etorri", "tirikitrauki", "l_chawal_s", "chawals", "artista",
-      "obaportillo", "el mejurjo", "konforme", "kontrasanak", "tururu", "animali",
-      "un mal dia", "zugandek ihesi", "txiki", "mundua geldi", "01200", "eromeria",
-      "nahieran", "kata", "batukada", "skapa", "milenials", "dantza gaua"
+      "30's", "30s", "ongi etorri", "tirikitrauki", "l_s chaval_s", "chavales", "chaval_s", "artista",
+      "otsaportillo", "el mejunje", "konforme", "kontraesanak", "tururu", "animali",
+      "un mal dia", "zugandik ihesi", "txiki", "mundua geldi", "01200", "eromeria",
+      "nahieran", "kata", "batukada", "skapa", "milenials", "dantza gaua", "somos asi"
     ],
     rejectedKeywords: [
+      "concepto", "dmt", "dtm",
       "regional mexicano", "mariachi", "corridos", "salsa", "cumbia", "bachata",
       "ranchera", "norteño", "mexicano", "mexican", "mexico", "banda sinaloense",
       "dupla de la sierra", "dupla ranchera", "bolero", "vallenato", "zouk", "kompa",
@@ -74,6 +79,8 @@ export const BASQUE_DISAMBIGUATION: Record<string, ArtistDisambiguation> = {
   },
   bengo: {
     searchQuery: "Bengo",
+    itunesArtistId: 1492546131,
+    deezerArtistId: 6599526,
     searchQueries: [
       "Bengo Denbora",
       "Bengo 453",
@@ -92,6 +99,80 @@ export const BASQUE_DISAMBIGUATION: Record<string, ArtistDisambiguation> = {
       "kompa", "bachata"
     ],
   },
+  vendetta: {
+    searchQuery: "Vendetta",
+    itunesArtistId: 1724095815,
+    deezerArtistId: 5197,
+    searchQueries: [
+      "Vendetta Begitara Begira",
+      "Vendetta Pao Pao Pao",
+      "Vendetta Udarako Gau Luzeak",
+      "Vendetta Atzo Gaur eta Bihar"
+    ],
+    knownMatches: [
+      "pao pao pao", "begitara begira", "egunero", "udarako gau luzeak", "le souvenir",
+      "ilunpetan", "hemen", "gau beltza", "batasuna", "munstroa", "bother", "puro infierno",
+      "atzo, gaur eta bihar", "13", "esperoan", "sangre y revolucion", "al fin", "buonasera",
+      "la parranda", "pasos de acero", "botella llena", "druglin", "tomas", "aaoo", "reggae gaua"
+    ],
+    rejectedKeywords: [
+      "pake lasterketa", "zer gara", "requiem : mieux qu'hier", "requiem", "mieux qu'hier",
+      "étoile", "etoile", "bec âne", "bec ane", "merci", "addict", "sierra leone",
+      "les démons", "les demons", "shayo", "broski", "formidable", "making off", "hotshot",
+      "r.r", "8014", "ia", "french rap", "rap français", "drill", "here you come again"
+    ],
+  },
+  huntza: {
+    searchQuery: "Huntza",
+    itunesArtistId: 1178649819,
+    deezerArtistId: 11408010,
+    searchQueries: [
+      "Huntza Aldapan Gora",
+      "Huntza Ertzetatik",
+      "Huntza Xilema",
+      "Huntza Ezin Ezer Espero"
+    ],
+    knownMatches: [
+      "aldapan gora", "ertzetatik", "xilema", "ezin ezer espero", "buruz behera", "lasai, lasai", "lasai lasai",
+      "promesetan", "deabruak gara", "iñundik iñoare", "iñundik iñora", "haizeak", "17:15", "olatu bat",
+      "gauerdiko biolinak", "kalabazak", "ipuinetan", "damutu asko", "agur itaka", "poema nekatu bat",
+      "punta punte bi", "izan nahi dut", "odoletan", "ilunabarrean", "arinarina", "arin - arina", "imajina",
+      "zelatari", "herri unibertsitatea", "zarako apretak", "parent(h)esiak", "si vols", "ohorea"
+    ],
+    rejectedKeywords: [
+      "harri orri ar", "balearen biziak"
+    ],
+  },
+  zetak: {
+    searchQuery: "ZETAK",
+    itunesArtistId: 1456598867,
+    deezerArtistId: 61818832,
+    searchQueries: [
+      "ZETAK Zeinen Ederra",
+      "ZETAK Itzulera",
+      "ZETAK Aaztiyen"
+    ],
+    knownMatches: [
+      "zeinen ederra", "itzulera", "errepidean", "akelarre", "zutaz", "hitzeman", "aaztiyen"
+    ],
+    rejectedKeywords: []
+  },
+  "la txama": {
+    searchQuery: "La Txama",
+    itunesArtistId: 1734802402,
+    deezerArtistId: 257288702,
+    searchQueries: ["La Txama Musa 13", "La Txama Fusilaren Hotsa"],
+    knownMatches: ["musa 13", "fusilaren hotsa"],
+    rejectedKeywords: []
+  },
+  streetwise: {
+    searchQuery: "Streetwise",
+    itunesArtistId: 1436623399,
+    deezerArtistId: 103328,
+    searchQueries: ["Streetwise Txantxangorria", "Streetwise Izatea Baino"],
+    knownMatches: ["txantxangorria", "izatea baino"],
+    rejectedKeywords: []
+  }
 };
 
 export function isValidMatchForArtist(
@@ -104,21 +185,21 @@ export function isValidMatchForArtist(
 
   const targetText = `${m.title} ${m.album ?? ""} ${m.genre ?? ""}`.toLowerCase();
 
-  // 1. Check rejected keywords
+  // 1. Strict check: rejected keywords (reject foreign genres, unrelated homonyms)
   for (const rejected of disam.rejectedKeywords) {
     if (targetText.includes(rejected.toLowerCase())) {
       return false;
     }
   }
 
-  // 2. If knownMatches specified, target MUST match at least one known match
+  // 2. If it matches known matches, it is confirmed authentic
   if (disam.knownMatches && disam.knownMatches.length > 0) {
     const matched = disam.knownMatches.some((k) => targetText.includes(k.toLowerCase()));
-    if (!matched) {
-      return false;
-    }
+    if (matched) return true;
   }
 
+  // 3. For new releases: as long as it does not hit rejected homonym keywords,
+  // it is admitted into the artist catalog.
   return true;
 }
 
@@ -141,7 +222,7 @@ interface ITunesResult {
 async function searchItunes(query: string): Promise<OnlineMatch[]> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    const timer = setTimeout(() => controller.abort(), 3500);
     const res = await fetch(
       `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=song&limit=20`,
       { signal: controller.signal, headers: { accept: "application/json" } },
@@ -185,7 +266,7 @@ interface DeezerResult {
 async function searchDeezer(query: string): Promise<OnlineMatch[]> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    const timer = setTimeout(() => controller.abort(), 3500);
     const res = await fetch(
       `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=20`,
       { signal: controller.signal, headers: { accept: "application/json" } },
@@ -272,9 +353,12 @@ async function getItunesArtistId(term: string): Promise<number | null> {
   try {
     const key = term.trim().toLowerCase();
     const disam = BASQUE_DISAMBIGUATION[key];
+    if (disam?.itunesArtistId) {
+      return disam.itunesArtistId;
+    }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    const timer = setTimeout(() => controller.abort(), 4000);
     const res = await fetch(
       `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&limit=30`,
       { signal: controller.signal, headers: { accept: "application/json" } },
@@ -319,7 +403,7 @@ async function getItunesArtistId(term: string): Promise<number | null> {
 async function getItunesDiscography(artistId: number): Promise<OnlineMatch[]> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    const timer = setTimeout(() => controller.abort(), 6000);
     const res = await fetch(
       `https://itunes.apple.com/lookup?id=${artistId}&entity=song&limit=200`,
       { signal: controller.signal, headers: { accept: "application/json" } },
@@ -352,40 +436,43 @@ async function getDeezerDiscography(artistName: string): Promise<OnlineMatch[]> 
     const key = artistName.trim().toLowerCase();
     const disam = BASQUE_DISAMBIGUATION[key];
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-    const sres = await fetch(
-      `https://api.deezer.com/search?q=${encodeURIComponent(artistName)}&limit=30`,
-      { signal: controller.signal, headers: { accept: "application/json" } },
-    );
-    clearTimeout(timer);
-    if (!sres.ok) return [];
-    const sdata = (await sres.json()) as {
-      data?: Array<{
-        artist?: { id?: number; name?: string };
-        album?: { title?: string };
-        title?: string;
-      }>;
-    };
+    let artistId: number | null = disam?.deezerArtistId ?? null;
 
-    let artistId: number | null = null;
-    if (disam && sdata.data?.length) {
-      const known = sdata.data.find((d) => {
-        if (!d.artist?.id) return false;
-        const text = `${d.title ?? ""} ${d.album?.title ?? ""}`.toLowerCase();
-        return disam.knownMatches.some((k) => text.includes(k.toLowerCase()));
-      });
-      if (known?.artist?.id) {
-        artistId = known.artist.id;
-      } else {
-        const valid = sdata.data.find((d) => {
+    if (!artistId) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      const sres = await fetch(
+        `https://api.deezer.com/search?q=${encodeURIComponent(artistName)}&limit=30`,
+        { signal: controller.signal, headers: { accept: "application/json" } },
+      );
+      clearTimeout(timer);
+      if (!sres.ok) return [];
+      const sdata = (await sres.json()) as {
+        data?: Array<{
+          artist?: { id?: number; name?: string };
+          album?: { title?: string };
+          title?: string;
+        }>;
+      };
+
+      if (disam && sdata.data?.length) {
+        const known = sdata.data.find((d) => {
           if (!d.artist?.id) return false;
-          return isValidMatchForArtist(key, { title: d.title ?? "", album: d.album?.title });
+          const text = `${d.title ?? ""} ${d.album?.title ?? ""}`.toLowerCase();
+          return disam.knownMatches.some((k) => text.includes(k.toLowerCase()));
         });
-        artistId = valid?.artist?.id ?? sdata.data[0]?.artist?.id ?? null;
+        if (known?.artist?.id) {
+          artistId = known.artist.id;
+        } else {
+          const valid = sdata.data.find((d) => {
+            if (!d.artist?.id) return false;
+            return isValidMatchForArtist(key, { title: d.title ?? "", album: d.album?.title });
+          });
+          artistId = valid?.artist?.id ?? sdata.data[0]?.artist?.id ?? null;
+        }
+      } else {
+        artistId = sdata.data?.[0]?.artist?.id ?? null;
       }
-    } else {
-      artistId = sdata.data?.[0]?.artist?.id ?? null;
     }
 
     if (!artistId) return [];
@@ -627,116 +714,165 @@ async function resolveAlbumId(
   return a.id;
 }
 
+const inFlightPersists = new Map<string, Promise<Track[]>>();
+
 /** Persist a single OnlineMatch as a catalog track (dedup by ISRC/title+artist). */
 async function persistMatch(m: OnlineMatch): Promise<Track[]> {
   if (!isValidMatchForArtist(m.artist, m)) {
     return [];
   }
 
-  const whereClause = m.isrc
-    ? eq(tracks.isrc, m.isrc)
-    : and(ilike(tracks.title, m.title), ilike(tracks.artistName, m.artist));
-  const existing = await db.select().from(tracks).where(whereClause).limit(1);
-  if (existing.length) {
-    const row = existing[0];
-    const albumId = row.albumId ?? (row.artistId
-      ? await resolveAlbumId(row.artistId, row.artistName, m.album ?? row.albumName, m.artwork)
-      : null);
-    const needsUpdate =
-      (!row.previewUrl || !row.artworkUrl || (!row.albumId && albumId)) &&
-      (m.previewUrl || m.artwork || albumId);
-    if (needsUpdate) {
-      await db
-        .update(tracks)
-        .set({
+  const lockKey = `${norm(m.artist)}::${norm(m.title)}::${norm(m.album ?? "")}`;
+  const existingPromise = inFlightPersists.get(lockKey);
+  if (existingPromise) return existingPromise;
+
+  const promise = (async () => {
+    // 1. Check by ISRC if available
+    let row: any = null;
+    if (m.isrc) {
+      const byIsrc = await db.select().from(tracks).where(eq(tracks.isrc, m.isrc)).limit(1);
+      if (byIsrc.length) row = byIsrc[0];
+    }
+
+    // 2. If not found, check by title + artist name
+    if (!row) {
+      const parts = splitArtistNames(m.artist);
+      const primaryName = parts[0] || m.artist;
+      const candidates = await db
+        .select()
+        .from(tracks)
+        .where(
+          and(
+            ilike(tracks.title, m.title.trim()),
+            or(
+              ilike(tracks.artistName, m.artist.trim()),
+              ilike(tracks.artistName, primaryName.trim()),
+              ilike(tracks.artistName, `%${primaryName.trim()}%`)
+            )
+          )
+        )
+        .limit(10);
+
+      if (candidates.length) {
+        if (m.album) {
+          const matchAlbum = candidates.find(
+            (c: any) => c.albumName && norm(c.albumName) === norm(m.album!)
+          );
+          row = matchAlbum || candidates[0];
+        } else {
+          row = candidates[0];
+        }
+      }
+    }
+
+    if (row) {
+      const albumId = row.albumId ?? (row.artistId
+        ? await resolveAlbumId(row.artistId, row.artistName, m.album ?? row.albumName, m.artwork)
+        : null);
+      const needsUpdate =
+        (!row.previewUrl || !row.artworkUrl || (!row.albumId && albumId) || (!row.isrc && m.isrc)) &&
+        (m.previewUrl || m.artwork || albumId || m.isrc);
+      if (needsUpdate) {
+        await db
+          .update(tracks)
+          .set({
+            previewUrl: row.previewUrl ?? m.previewUrl,
+            previewUrlAlt: row.previewUrlAlt ?? m.previewUrlAlt,
+            artworkUrl: row.artworkUrl ?? m.artwork,
+            isrc: row.isrc ?? m.isrc,
+            albumId: row.albumId ?? albumId,
+            albumName: row.albumName ?? m.album,
+          })
+          .where(eq(tracks.id, row.id));
+      }
+      return [
+        mapTrack({
+          ...row,
           previewUrl: row.previewUrl ?? m.previewUrl,
           previewUrlAlt: row.previewUrlAlt ?? m.previewUrlAlt,
           artworkUrl: row.artworkUrl ?? m.artwork,
           isrc: row.isrc ?? m.isrc,
           albumId: row.albumId ?? albumId,
           albumName: row.albumName ?? m.album,
-        })
-        .where(eq(tracks.id, row.id));
+        }),
+      ];
     }
-    return [
-      mapTrack({
-        ...row,
-        previewUrl: row.previewUrl ?? m.previewUrl,
-        previewUrlAlt: row.previewUrlAlt ?? m.previewUrlAlt,
-        artworkUrl: row.artworkUrl ?? m.artwork,
-        albumId: row.albumId ?? albumId,
-        albumName: row.albumName ?? m.album,
-      }),
-    ];
-  }
 
-  let artistId: number | null = null;
-  const parts = splitArtistNames(m.artist);
-  const primaryName = parts[0] || m.artist;
+    let artistId: number | null = null;
+    const parts = splitArtistNames(m.artist);
+    const primaryName = parts[0] || m.artist;
 
-  const artistRow = await db
-    .select()
-    .from(artists)
-    .where(ilike(artists.name, primaryName))
-    .limit(1);
-  if (artistRow.length) {
-    if (isValidMatchForArtist(artistRow[0].name, m)) {
-      artistId = artistRow[0].id;
-    }
-  } else {
-    const [a] = await db
-      .insert(artists)
-      .values({ name: primaryName, genre: m.genre, region: "global", language: "und", source: m.source })
-      .returning({ id: artists.id });
-    artistId = a.id;
-  }
-
-  // Ensure other collaborating artists exist as individual artists
-  for (const part of parts.slice(1)) {
-    const existing = await db
-      .select({ id: artists.id })
+    const artistRow = await db
+      .select()
       .from(artists)
-      .where(ilike(artists.name, part))
+      .where(ilike(artists.name, primaryName))
       .limit(1);
-    if (!existing.length) {
-      await db
+    if (artistRow.length) {
+      if (isValidMatchForArtist(artistRow[0].name, m)) {
+        artistId = artistRow[0].id;
+      }
+    } else {
+      const [a] = await db
         .insert(artists)
-        .values({ name: part, genre: m.genre, region: "global", language: "und", source: m.source })
-        .catch(() => {});
+        .values({ name: primaryName, genre: m.genre, region: "global", language: "und", source: m.source })
+        .returning({ id: artists.id });
+      artistId = a.id;
     }
-  }
 
-  const albumId = artistId
-    ? await resolveAlbumId(artistId, m.artist, m.album, m.artwork)
-    : null;
+    // Ensure other collaborating artists exist as individual artists
+    for (const part of parts.slice(1)) {
+      const existing = await db
+        .select({ id: artists.id })
+        .from(artists)
+        .where(ilike(artists.name, part))
+        .limit(1);
+      if (!existing.length) {
+        await db
+          .insert(artists)
+          .values({ name: part, genre: m.genre, region: "global", language: "und", source: m.source })
+          .catch(() => {});
+      }
+    }
 
-  const [row] = await db
-    .insert(tracks)
-    .values({
-      title: m.title,
-      artistId,
-      artistName: m.artist,
-      albumId,
-      albumName: m.album,
-      duration: m.duration,
-      genre: m.genre,
-      region: "global",
-      language: "und",
-      isrc: m.isrc,
-      previewUrl: m.previewUrl,
-      previewUrlAlt: m.previewUrlAlt,
-      artworkUrl: m.artwork,
-      source: m.source,
-      playCount: Math.floor(Math.random() * 800) + 50,
-    })
-    .returning();
-  if (albumId) {
-    await db
-      .update(albums)
-      .set({ trackCount: (await db.select({ c: albums.trackCount }).from(albums).where(eq(albums.id, albumId)))[0]?.c ?? 0 })
-      .where(eq(albums.id, albumId));
+    const albumId = artistId
+      ? await resolveAlbumId(artistId, m.artist, m.album, m.artwork)
+      : null;
+
+    const [rowInserted] = await db
+      .insert(tracks)
+      .values({
+        title: m.title,
+        artistId,
+        artistName: m.artist,
+        albumId,
+        albumName: m.album,
+        duration: m.duration,
+        genre: m.genre,
+        region: "global",
+        language: "und",
+        isrc: m.isrc,
+        previewUrl: m.previewUrl,
+        previewUrlAlt: m.previewUrlAlt,
+        artworkUrl: m.artwork,
+        source: m.source,
+        playCount: Math.floor(Math.random() * 800) + 50,
+      })
+      .returning();
+    if (albumId) {
+      await db
+        .update(albums)
+        .set({ trackCount: (await db.select({ c: albums.trackCount }).from(albums).where(eq(albums.id, albumId)))[0]?.c ?? 0 })
+        .where(eq(albums.id, albumId));
+    }
+    return [mapTrack(rowInserted)];
+  })();
+
+  inFlightPersists.set(lockKey, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlightPersists.delete(lockKey);
   }
-  return [mapTrack(row)];
 }
 
 /**

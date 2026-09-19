@@ -55,6 +55,11 @@ const ALLOWED_HOSTS = [
   "cope",
   "cires21",
   "radioparadise",
+  "arrateirratia.eus",
+  "naizirratia.eus",
+  "naiz.eus",
+  "surfernetwork.com",
+  "usastreams.com",
 ];
 
 function isLikelyAudioHost(url: URL): boolean {

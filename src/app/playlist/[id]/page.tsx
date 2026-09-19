@@ -16,17 +16,17 @@ interface Data {
 
 export default function PlaylistPage({ params }: { params: Promise<{ id: string }> }) {
   const { toast } = useToast();
-  const [id, setId] = useState<number | null>(null);
+  const [id, setId] = useState<string | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    params.then((p) => setId(Number(p.id)));
+    params.then((p) => setId(p.id));
   }, [params]);
 
-  const load = (pid: number) =>
+  const load = (pid: string) =>
     fetch(`/api/playlists/${pid}`)
       .then((r) => {
         if (!r.ok) throw new Error();
@@ -53,7 +53,7 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
       });
 
   useEffect(() => {
-    if (id == null) return;
+    if (!id) return;
     load(id);
   }, [id]);
 
@@ -91,17 +91,27 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
   if (!data) return <CenterLoader />;
 
   const { playlist, tracks } = data;
+  const isDailyMix = playlist.type === ("daily_mix" as any) || String(id || "").startsWith("daily-");
   const isSyncedPlaylist =
-    playlist.description?.toLowerCase().includes("synced") ||
-    playlist.description?.toLowerCase().includes("spotify.com") ||
-    playlist.description?.toLowerCase().includes("playlist");
+    !isDailyMix &&
+    (playlist.description?.toLowerCase().includes("synced") ||
+      playlist.description?.toLowerCase().includes("spotify.com") ||
+      playlist.description?.toLowerCase().includes("playlist"));
 
   return (
     <div>
       <DetailHeader
         seed={playlist.coverSeed ?? playlist.name}
         coverLabel={playlist.name}
-        meta={<span className="text-sm font-semibold text-textdim">Playlist</span>}
+        meta={
+          isDailyMix ? (
+            <span className="text-xs font-bold uppercase tracking-wider text-accent px-2.5 py-1 rounded-full bg-accent/10 border border-accent/20">
+              Daily Mix
+            </span>
+          ) : (
+            <span className="text-sm font-semibold text-textdim">Playlist</span>
+          )
+        }
         title={playlist.name}
         subtitle={
           <span className="flex flex-wrap items-center gap-x-2 justify-center sm:justify-start">
@@ -129,13 +139,15 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
                 <span>{syncing ? "Syncing…" : "Sync now"}</span>
               </button>
             )}
-            <button
-              onClick={removePlaylist}
-              className="grid place-items-center h-11 w-11 rounded-full bg-white/10 hover:bg-red-500/20 text-textdim hover:text-red-400 transition"
-              aria-label="delete playlist"
-            >
-              <Trash2 size={18} />
-            </button>
+            {!isDailyMix && (
+              <button
+                onClick={removePlaylist}
+                className="grid place-items-center h-11 w-11 rounded-full bg-white/10 hover:bg-red-500/20 text-textdim hover:text-red-400 transition cursor-pointer"
+                aria-label="delete playlist"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
           </>
         }
       />

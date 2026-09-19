@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Search, Library, Disc3, Plus, Radio as RadioIcon, Eye, Settings, Sparkles } from "lucide-react";
+import { Home, Search, Library, Disc3, Plus, Radio as RadioIcon, Eye, Settings, Sparkles, Sliders } from "lucide-react";
 import { usePlayer } from "@/lib/player-context";
 import { useViewMode } from "@/lib/view-mode-context";
 import { clsx } from "@/lib/utils";
@@ -12,13 +12,19 @@ import type { Playlist } from "@/lib/types";
 const NAV = [
   { href: "/", label: "Home", icon: Home },
   { href: "/search", label: "Search", icon: Search },
+  { href: "/curator", label: "AI Curation", icon: Sparkles },
   { href: "/radio", label: "Radio", icon: RadioIcon },
-  { href: "/taste", label: "Let me know", icon: Sparkles },
+  { href: "/taste", label: "Let me know", icon: Sliders },
   { href: "/library", label: "Your Library", icon: Library },
 ];
 
 const MOBILE_NAV = [
-  ...NAV,
+  { href: "/", label: "Home", icon: Home },
+  { href: "/search", label: "Search", icon: Search },
+  { href: "/curator", label: "AI Curator", icon: Sparkles },
+  { href: "/radio", label: "Radio", icon: RadioIcon },
+  { href: "/taste", label: "Taste", icon: Sliders },
+  { href: "/library", label: "Library", icon: Library },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -138,7 +144,7 @@ export function Sidebar() {
           </button>
         </div>
         <Link
-          href="/taste?tab=ai"
+          href="/curator"
           className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5 text-accent font-semibold text-sm"
         >
           <span className="grid place-items-center h-9 w-9 rounded-md shrink-0 bg-accent/15 text-accent">
@@ -203,41 +209,43 @@ export function Sidebar() {
             </Link>
           ))}
         </div>
-        {p.playerHidden && (
-          <button
-            onClick={p.togglePlayerHidden}
-            className="flex items-center gap-3 px-2.5 py-2 rounded-lg bg-accent/10 hover:bg-accent/20 text-accent text-sm w-full font-bold transition-all animate-pulse"
+        <div className="pt-2 mt-auto border-t border-white/5 flex flex-col gap-1 shrink-0">
+          {p.playerHidden && (
+            <button
+              onClick={p.togglePlayerHidden}
+              className="flex items-center gap-3 px-2.5 py-2 rounded-lg bg-accent/10 hover:bg-accent/20 text-accent text-sm w-full font-bold transition-all animate-pulse"
+            >
+              <Eye size={18} />
+              <span>Show Music Player</span>
+            </button>
+          )}
+          <Link
+            href="/admin"
+            onClick={(e) => {
+              if (typeof navigator !== "undefined" && !navigator.onLine) {
+                e.preventDefault();
+                window.location.href = "/admin";
+              }
+            }}
+            className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-accent/10 text-textdim hover:text-accent text-sm font-semibold"
           >
-            <Eye size={18} />
-            <span>Show Music Player</span>
-          </button>
-        )}
-        <Link
-          href="/admin"
-          onClick={(e) => {
-            if (typeof navigator !== "undefined" && !navigator.onLine) {
-              e.preventDefault();
-              window.location.href = "/admin";
-            }
-          }}
-          className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-accent/10 text-textdim hover:text-accent text-sm font-semibold"
-        >
-          <span className="grid place-items-center h-8 w-8 rounded-md bg-accent/20 text-accent">🛡️</span>
-          Admin Access
-        </Link>
-        <Link
-          href="/settings"
-          onClick={(e) => {
-            if (typeof navigator !== "undefined" && !navigator.onLine) {
-              e.preventDefault();
-              window.location.href = "/settings";
-            }
-          }}
-          className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5 text-textdim hover:text-ink text-sm"
-        >
-          <span className="grid place-items-center h-8 w-8 rounded-md bg-white/5">⚙</span>
-          Settings
-        </Link>
+            <span className="grid place-items-center h-8 w-8 rounded-md bg-accent/20 text-accent">🛡️</span>
+            Admin Access
+          </Link>
+          <Link
+            href="/settings"
+            onClick={(e) => {
+              if (typeof navigator !== "undefined" && !navigator.onLine) {
+                e.preventDefault();
+                window.location.href = "/settings";
+              }
+            }}
+            className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5 text-textdim hover:text-ink text-sm"
+          >
+            <span className="grid place-items-center h-8 w-8 rounded-md bg-white/5">⚙</span>
+            Settings
+          </Link>
+        </div>
       </div>
     </aside>
   );
@@ -256,7 +264,7 @@ export function MobileNav() {
 
   return (
     <nav className={clsx(
-      "fixed bottom-0 inset-x-0 z-40 glass border-t border-white/10 flex items-stretch justify-around px-2 py-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)]",
+      "fixed bottom-0 inset-x-0 z-40 glass border-t border-white/10 flex items-stretch justify-around px-1.5 py-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)] min-h-[64px] mobile-bottom-nav",
       viewMode === "auto" ? "md:hidden flex" : "flex"
     )}>
       {MOBILE_NAV.map((n) => {
@@ -274,12 +282,14 @@ export function MobileNav() {
               }
             }}
             className={clsx(
-              "flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-lg flex-1",
-              active ? "text-ink" : "text-textdim",
+              "flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-xl flex-1 min-w-0 transition-all",
+              active ? "text-accent font-bold bg-accent/10" : "text-textdim hover:text-white",
             )}
           >
-            <Icon size={22} strokeWidth={active ? 2.6 : 2} />
-            <span className="text-[10px] font-medium">{n.label}</span>
+            <Icon size={20} strokeWidth={active ? 2.6 : 2} className={active ? "text-accent scale-105 transition-transform" : ""} />
+            <span className="text-[10px] sm:text-[11px] font-semibold truncate w-full text-center leading-tight tracking-tight px-0.5">
+              {n.label}
+            </span>
           </Link>
         );
       })}

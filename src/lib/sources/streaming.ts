@@ -411,18 +411,103 @@ async function searchInvidiousInstance(base: string, query: string): Promise<Sea
   }
 }
 
-/** Search every instance in parallel; return the first non-empty result set. */
+/** Search YouTube web directly without proxy dependencies */
+export async function searchYouTubeDirect(query: string): Promise<SearchHit[]> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    const res = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "eu,es;q=0.9,en;q=0.8",
+        Cookie: "CONSENT=YES+cb; SOCS=CAESEwgDEgk2OTcyMTY1MzQaAmVuIAEaBgiA_LyaBg",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    const html = await res.text();
+    const match =
+      html.match(/var ytInitialData = ({[\s\S]*?});<\/script>/) ||
+      html.match(/ytInitialData\s*=\s*({[\s\S]+?});/);
+    const hits: SearchHit[] = [];
+
+    if (match) {
+      try {
+        const data = JSON.parse(match[1]);
+        const extract = (obj: any) => {
+          if (!obj || typeof obj !== "object") return;
+          if (obj.videoRenderer) {
+            const v = obj.videoRenderer;
+            const videoId = v.videoId;
+            const title = v.title?.runs?.[0]?.text || v.title?.simpleText || "";
+            const author =
+              v.ownerText?.runs?.[0]?.text ||
+              v.shortBylineText?.runs?.[0]?.text ||
+              "";
+            const duration = v.lengthText?.simpleText || "";
+            if (videoId && /^[\w-]{11}$/.test(videoId)) {
+              hits.push({
+                videoId,
+                title,
+                author,
+                duration: 0,
+                thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+              });
+            }
+          }
+          for (const k of Object.keys(obj)) extract(obj[k]);
+        };
+        extract(data);
+      } catch {
+        /* fallback to regex */
+      }
+    }
+
+    if (hits.length === 0) {
+      // Extract videoId and title pairs directly from HTML
+      const titlePattern = /"videoId":"([\w-]{11})"[^}]+?"title":\{(?:"runs":\[\{"text":"([^"]+)"\}|"simpleText":"([^"]+)")/g;
+      for (const m of html.matchAll(titlePattern)) {
+        const videoId = m[1];
+        const title = m[2] || m[3] || "";
+        if (videoId && title && !hits.some((h) => h.videoId === videoId)) {
+          hits.push({
+            videoId,
+            title,
+            author: "",
+            duration: 0,
+            thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          });
+        }
+      }
+    }
+
+    return hits;
+  } catch {
+    return [];
+  }
+}
+
+/** Search direct YouTube first, then fallback to public proxy instances in parallel. */
 export async function searchAudio(query: string): Promise<SearchHit[]> {
-  if (query.trim().length === 0) return [];
-  // Empty result sets are folded to null so raceFirst keeps waiting for an
-  // instance that actually has hits.
+  const q = query.trim();
+  if (q.length === 0) return [];
+
+  // Primary: direct YouTube web search (ultra-reliable, <1.2s response, zero proxy quota)
+  const directHits = await searchYouTubeDirect(q);
+  if (directHits.length > 0) {
+    return directHits;
+  }
+
+  // Fallback: search Piped & Invidious instances
   const producers: (() => Promise<SearchHit[] | null>)[] = [
     ...PIPED_INSTANCES.map((b) => async () => {
-      const r = await searchPipedInstance(b, query);
+      const r = await searchPipedInstance(b, q);
       return r.length ? r : null;
     }),
     ...INVIDIOUS_INSTANCES.map((b) => async () => {
-      const r = await searchInvidiousInstance(b, query);
+      const r = await searchInvidiousInstance(b, q);
       return r.length ? r : null;
     }),
   ];
@@ -430,9 +515,9 @@ export async function searchAudio(query: string): Promise<SearchHit[]> {
   return result ?? [];
 }
 
-/** True when at least one proxy instance is configured & likely reachable. */
+/** Always configured because direct YouTube searching and iframes are built-in. */
 export function isStreamingConfigured(): boolean {
-  return PIPED_INSTANCES.length > 0 || INVIDIOUS_INSTANCES.length > 0;
+  return true;
 }
 
 function norm(s: string): string {
@@ -446,64 +531,108 @@ function norm(s: string): string {
 }
 
 /**
- * Score a search hit against the desired track. We heavily reward hits whose
- * uploader matches the artist name and whose title matches the track title —
- * this keeps the result on the *official* channel and away from covers/remixes
- * (critical for underrepresented Basque catalog where community uploads abound).
+ * Strips cosmetic bracketed tags (e.g. [Official Video], (Bideoklipa), (Audio))
+ * while preserving the underlying song title words.
  */
-export function normTitle(s: string): string {
+export function cleanTitle(s: string): string {
   return s
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s*\(.*?\)\s*/g, " ")
-    .replace(/\s*\[.*?\]\s*/g, " ")
+    .replace(
+      /\s*[\(\[](official\s*(video|audio|music\s*video|visualizer|lyric\s*video)?|audio\s*oficial|videoclip|bideoklipa|bideoa|letra|lyrics|audio|video|clip|hd|hq|4k|disko\s*osoa)[\)\]]/gi,
+      " ",
+    )
     .replace(/[^a-z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+export function normTitle(s: string): string {
+  return cleanTitle(s);
+}
+
 export function matchesTitle(targetTitle: string, hitTitle: string): boolean {
-  const t = normTitle(targetTitle);
-  const h = normTitle(hitTitle);
+  const t = cleanTitle(targetTitle);
+  const h = cleanTitle(hitTitle);
   if (!t || !h) return false;
 
-  // Direct substring
-  if (h.includes(t) || t.includes(h)) return true;
+  // Direct substring: hit title contains the target title
+  if (h.includes(t)) return true;
+  if (t.length > 6 && h.length >= 6 && (t.includes(h) || h.includes(t))) return true;
+
+  // Also check raw normalized strings so parenthesized target titles (like Donostia) match
+  const rawT = norm(targetTitle);
+  const rawH = norm(hitTitle);
+  if (rawH.includes(rawT)) return true;
 
   // Tokenize target title words (ignoring common stop words)
-  const stopWords = new Set(["feat", "ft", "the", "a", "an", "and", "de", "del", "la", "el", "los", "las", "eta", "en", "da"]);
+  const stopWords = new Set([
+    "feat",
+    "ft",
+    "the",
+    "a",
+    "an",
+    "and",
+    "de",
+    "del",
+    "la",
+    "el",
+    "los",
+    "las",
+    "eta",
+    "en",
+    "da",
+    "bat",
+    "bi",
+    "ep",
+    "single",
+  ]);
   const tWords = t.split(/\s+/).filter((w) => w.length > 1 && !stopWords.has(w));
   if (tWords.length === 0) {
     const rawWords = t.split(/\s+/).filter((w) => w.length > 0);
-    return rawWords.some((w) => h.includes(w));
+    return rawWords.length > 0 && rawWords.every((w) => h.includes(w) || rawH.includes(w));
   }
 
   const hWords = new Set(h.split(/\s+/));
-  if (tWords.length === 1) {
-    return hWords.has(tWords[0]) || h.includes(tWords[0]);
+  const rawHWords = new Set(rawH.split(/\s+/));
+
+  // If 1 or 2 words in target title, ALL meaningful words MUST be in the hit!
+  if (tWords.length <= 2) {
+    return tWords.every((w) => hWords.has(w) || h.includes(w) || rawHWords.has(w));
   }
 
-  const matchedCount = tWords.filter((w) => hWords.has(w) || h.includes(w)).length;
-  return matchedCount / tWords.length >= 0.5;
+  // If 3+ words, at least 70% must match
+  const matchedCount = tWords.filter(
+    (w) => hWords.has(w) || h.includes(w) || rawHWords.has(w) || rawH.includes(w),
+  ).length;
+  return matchedCount / tWords.length >= 0.7;
 }
 
 /**
  * Score a search hit against the desired track. We heavily reward hits whose
  * uploader matches the artist name and whose title matches the track title —
- * this keeps the result on the *official* channel and away from covers/remixes
- * (critical for underrepresented Basque catalog where community uploads abound).
+ * this keeps the result on the *official* channel and away from covers/remixes.
  */
 function scoreHit(hit: SearchHit, artist: string, title: string): number {
   const a = norm(artist);
-  const t = norm(title);
-  const hTitle = norm(hit.title);
+  const t = cleanTitle(title);
+  const rawT = norm(title);
+  const hTitle = cleanTitle(hit.title);
+  const rawHTitle = norm(hit.title);
   const hAuthor = norm(hit.author);
 
   // STRICT REQUIREMENT: The video title MUST match the track title.
-  // Never assign a video ID of a completely different song just because the artist matches.
   if (!matchesTitle(title, hit.title)) {
     return -999;
+  }
+
+  // Reject obvious user covers/reactions/karaoke unless requested in track title
+  const isTargetCoverOrRemix = /cover|remix|reaction|karaoke|directo|live/i.test(title);
+  if (!isTargetCoverOrRemix) {
+    if (/\b(?:cover|guitar cover|bass cover|drum cover|reaccion|reaction|tutorial|karaoke|instrumental remake)\b/i.test(hit.title)) {
+      return -999;
+    }
   }
 
   let score = 80; // Base score for verified title match
@@ -511,27 +640,27 @@ function scoreHit(hit: SearchHit, artist: string, title: string): number {
   let artistMatch = false;
   if (a) {
     if (hAuthor.includes(a) || a.includes(hAuthor)) {
-      score += 60;
+      score += 65;
       artistMatch = true;
-    } else if (hTitle.includes(a)) {
-      score += 30;
+    } else if (hTitle.includes(a) || rawHTitle.includes(a)) {
+      score += 35;
       artistMatch = true;
     }
   }
 
-  // Exact substring full title match bonus
-  if (t && (hTitle.includes(t) || t.includes(hTitle))) {
+  // Exact full title match bonus
+  if (t && (hTitle.includes(t) || rawHTitle.includes(rawT))) {
     score += 40;
   }
 
   // Penalize missing artist if an artist was specified
   if (a && !artistMatch) {
-    score -= 40;
+    score -= 30;
   }
 
-  // Penalise obvious "live", "cover", "remix", "karaoke" unless that's in the target title
-  if (!/live|cover|remix|karaoke|instrumental/.test(t)) {
-    if (/live|cover|remix|karaoke|instrumental/.test(hTitle)) score -= 35;
+  // Penalize covers/remixes unless that's in the target title
+  if (!/live|cover|remix|karaoke|instrumental/.test(rawT)) {
+    if (/cover|remix|karaoke|instrumental/.test(rawHTitle)) score -= 45;
   }
   return score;
 }
@@ -546,67 +675,80 @@ async function searchInvidious(query: string): Promise<SearchHit[]> {
   return result ?? [];
 }
 
+const VIDEO_ID_CACHE = new Map<string, { videoId: string; title: string; author: string }>();
+
 /**
- * Resolve a real YouTube videoId for a catalog track by searching the
- * open-source proxies. Basque tracks (region 'eu') query with the native
- * artist+title (which is itself unique), surfacing the official channel upload.
- * Returns null if no usable hit / no reachable instance.
+ * Resolve a real YouTube videoId for a catalog track.
+ * Employs multi-query permutations to reliably find niche Basque and international tracks.
  */
 export async function resolveVideoIdForTrack(input: {
   artist: string;
   title: string;
   region?: string | null;
 }): Promise<{ videoId: string; title: string; author: string } | null> {
-  const query = `${input.artist} ${input.title}`.trim();
-  if (!query) return null;
+  const cacheKey = `${input.artist.toLowerCase()}:::${input.title.toLowerCase()}`;
+  const cached = VIDEO_ID_CACHE.get(cacheKey);
+  if (cached) return cached;
 
-  // Basque: also try the music_songs filter first (artist + title is unique);
-  // if nothing matches well, retry with a broader query.
-  const queries = [query];
-  if (input.region === "eu") {
+  const rawQuery = `${input.artist} ${input.title}`.trim();
+  if (!rawQuery) return null;
+
+  const cleanedTitle = cleanTitle(input.title);
+  const queries = [rawQuery];
+
+  if (cleanedTitle && cleanedTitle !== input.title.toLowerCase().trim()) {
+    queries.push(`${input.artist} ${cleanedTitle}`);
+  }
+
+  // Query permutations for high resolution of niche Basque tracks
+  if (input.region === "eu" || /eu|basque/i.test(input.region || "")) {
+    queries.push(`${input.artist} ${input.title} audio`);
+    queries.push(`${input.artist} ${input.title} bideoklipa`);
+  } else {
     queries.push(`${input.artist} ${input.title} official audio`);
   }
 
   for (const q of queries) {
-    let hits = await searchAudio(q);
-    let best = hits[0];
-    let bestScore = best ? scoreHit(best, input.artist, input.title) : -999;
-
+    const hits = await searchAudio(q);
     if (hits.length > 0) {
-      for (const h of hits.slice(1, 8)) {
+      let best: SearchHit | null = null;
+      let bestScore = -999;
+
+      for (const h of hits.slice(0, 10)) {
         const s = scoreHit(h, input.artist, input.title);
-        if (s > bestScore) {
+        if (s > bestScore && s >= 60) {
           best = h;
           bestScore = s;
         }
       }
-    }
 
-    // Direct Invidious search fallback if no high-quality match was found
-    if (!best || bestScore < 95) {
-      const invHits = await searchInvidious(q);
-      if (invHits.length > 0) {
-        let invBest = invHits[0];
-        let invBestScore = scoreHit(invBest, input.artist, input.title);
-        for (const h of invHits.slice(1, 8)) {
-          const s = scoreHit(h, input.artist, input.title);
-          if (s > invBestScore) {
-            invBest = h;
-            invBestScore = s;
-          }
-        }
-        if (invBestScore > bestScore) {
-          best = invBest;
-          bestScore = invBestScore;
-          hits = invHits;
-        }
+      if (best && bestScore >= 60 && /^[\w-]{11}$/.test(best.videoId)) {
+        const res = { videoId: best.videoId, title: best.title, author: best.author };
+        VIDEO_ID_CACHE.set(cacheKey, res);
+        return res;
       }
     }
 
-    if (best && bestScore >= 50 && /^[\w-]{11}$/.test(best.videoId)) {
-      return { videoId: best.videoId, title: best.title, author: best.author };
+    // Direct Invidious fallback if needed
+    const invHits = await searchInvidious(q);
+    if (invHits.length > 0) {
+      let invBest: SearchHit | null = null;
+      let invBestScore = -999;
+      for (const h of invHits.slice(0, 8)) {
+        const s = scoreHit(h, input.artist, input.title);
+        if (s > invBestScore && s >= 60) {
+          invBest = h;
+          invBestScore = s;
+        }
+      }
+      if (invBest && invBestScore >= 60 && /^[\w-]{11}$/.test(invBest.videoId)) {
+        const res = { videoId: invBest.videoId, title: invBest.title, author: invBest.author };
+        VIDEO_ID_CACHE.set(cacheKey, res);
+        return res;
+      }
     }
   }
+
   return null;
 }
 

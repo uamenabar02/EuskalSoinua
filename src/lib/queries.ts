@@ -20,6 +20,9 @@ import {
   asc,
   inArray,
   and,
+  not,
+  notIlike,
+  isNull,
 } from "drizzle-orm";
 import { mapTrack, mapArtist, mapAlbum } from "@/lib/mappers";
 import type { Track, Artist, Album } from "@/lib/types";
@@ -358,35 +361,107 @@ export async function getHomeSections(syncKey: string = "default", requestedSect
 }
 
 export async function searchCatalog(q: string) {
-  const term = `%${q.trim()}%`;
+  const rawQ = q.trim().toLowerCase();
+  if (!rawQ) {
+    return { tracks: [], artists: [], albums: [] };
+  }
+
   const [liked, followed, saved] = await Promise.all([
     likedIds(),
     followedIds(),
     savedAlbumIds(),
   ]);
 
+  const tokens = rawQ.split(/\s+/).filter(Boolean);
+  const cleanQ = rawQ.replace(/['"_\-.]/g, "");
+  const lastToken = tokens[tokens.length - 1] || rawQ;
+
+  // Track search: tokenized across title + artist + album + genre with punctuation insensitivity
+  const trackTokenConditions = tokens.map((tok) => {
+    const cleanTok = tok.replace(/['"_\-.]/g, "");
+    return or(
+      sql`LOWER(${tracks.title} || ' ' || ${tracks.artistName} || ' ' || COALESCE(${tracks.albumName}, '') || ' ' || COALESCE(${tracks.genre}, '')) LIKE ${'%' + tok + '%'}`,
+      cleanTok
+        ? sql`LOWER(REPLACE(REPLACE(REPLACE(${tracks.title} || ' ' || ${tracks.artistName}, '''', ''), '-', ' '), '.', '')) LIKE ${'%' + cleanTok + '%'}`
+        : sql`TRUE`
+    );
+  });
+
+  const trackWhere = or(
+    ilike(tracks.title, `%${rawQ}%`),
+    ilike(tracks.artistName, `%${rawQ}%`),
+    and(...trackTokenConditions),
+    sql`LOWER(REPLACE(REPLACE(${tracks.title}, '''', ''), '-', ' ')) LIKE ${'%' + cleanQ + '%'}`
+  );
+
+  // Relevance ranking: exact artist -> exact title -> artist startsWith -> title startsWith -> title contains last word -> rest
+  const trackRank = sql`CASE 
+    WHEN LOWER(${tracks.artistName}) = ${rawQ} THEN 1
+    WHEN LOWER(${tracks.title}) = ${rawQ} THEN 2
+    WHEN LOWER(${tracks.artistName}) LIKE ${rawQ + '%'} THEN 3
+    WHEN LOWER(${tracks.title}) LIKE ${rawQ + '%'} THEN 4
+    WHEN LOWER(${tracks.title}) LIKE ${'%' + lastToken + '%'} THEN 5
+    ELSE 6
+  END`;
+
   const trackRows = await db
     .select()
     .from(tracks)
-    .where(
-      or(ilike(tracks.title, term), ilike(tracks.artistName, term)),
-    )
-    .orderBy(desc(tracks.playCount))
-    .limit(25);
+    .where(trackWhere)
+    .orderBy(asc(trackRank), desc(tracks.playCount))
+    .limit(30);
+
+  // Artist search: tokenized and ranked
+  const artistTokenConditions = tokens.map((tok) => {
+    const cleanTok = tok.replace(/['"_\-.]/g, "");
+    return or(
+      sql`LOWER(${artists.name} || ' ' || COALESCE(${artists.genre}, '')) LIKE ${'%' + tok + '%'}`,
+      cleanTok
+        ? sql`LOWER(REPLACE(REPLACE(REPLACE(${artists.name}, '''', ''), '-', ' '), '.', '')) LIKE ${'%' + cleanTok + '%'}`
+        : sql`TRUE`
+    );
+  });
+  const artistWhere = or(
+    ilike(artists.name, `%${rawQ}%`),
+    ilike(artists.genre, `%${rawQ}%`),
+    and(...artistTokenConditions)
+  );
+
+  const artistRank = sql`CASE
+    WHEN LOWER(${artists.name}) = ${rawQ} THEN 1
+    WHEN LOWER(${artists.name}) LIKE ${rawQ + '%'} THEN 2
+    ELSE 3
+  END`;
 
   const artistRows = await db
     .select()
     .from(artists)
-    .where(or(ilike(artists.name, term), ilike(artists.genre, term)))
-    .orderBy(desc(artists.monthlyListeners))
-    .limit(12);
+    .where(artistWhere)
+    .orderBy(asc(artistRank), desc(artists.monthlyListeners))
+    .limit(15);
+
+  // Album search: tokenized
+  const albumTokenConditions = tokens.map((tok) => {
+    const cleanTok = tok.replace(/['"_\-.]/g, "");
+    return or(
+      sql`LOWER(${albums.title} || ' ' || ${albums.artistName}) LIKE ${'%' + tok + '%'}`,
+      cleanTok
+        ? sql`LOWER(REPLACE(REPLACE(REPLACE(${albums.title}, '''', ''), '-', ' '), '.', '')) LIKE ${'%' + cleanTok + '%'}`
+        : sql`TRUE`
+    );
+  });
+  const albumWhere = or(
+    ilike(albums.title, `%${rawQ}%`),
+    ilike(albums.artistName, `%${rawQ}%`),
+    and(...albumTokenConditions)
+  );
 
   const albumRows = await db
     .select()
     .from(albums)
-    .where(or(ilike(albums.title, term), ilike(albums.artistName, term)))
+    .where(albumWhere)
     .orderBy(desc(albums.year))
-    .limit(12);
+    .limit(15);
 
   const filteredTracks = trackRows.filter((t: any) =>
     isValidMatchForArtist(t.artistName, { title: t.title, album: t.albumName, genre: t.genre })
@@ -601,7 +676,33 @@ export async function getPlaylists(syncKey: string = "default") {
   return db
     .select()
     .from(playlists)
-    .where(and(eq(playlists.type, "user"), eq(playlists.syncKey, syncKey)))
+    .where(
+      and(
+        eq(playlists.syncKey, syncKey),
+        eq(playlists.type, "user"),
+        or(
+          isNull(playlists.description),
+          notIlike(playlists.description, "%Gemini%")
+        )
+      )
+    )
+    .orderBy(desc(playlists.createdAt));
+}
+
+export async function getAiCuratedPlaylists(syncKey: string = "default") {
+  return db
+    .select()
+    .from(playlists)
+    .where(
+      and(
+        eq(playlists.syncKey, syncKey),
+        or(
+          eq(playlists.type, "ai_curated"),
+          ilike(playlists.description, "%Gemini%"),
+          ilike(playlists.description, "%AI%")
+        )
+      )
+    )
     .orderBy(desc(playlists.createdAt));
 }
 
@@ -609,7 +710,16 @@ export async function getRadioPlaylists(syncKey: string = "default") {
   return db
     .select()
     .from(playlists)
-    .where(and(eq(playlists.type, "radio"), eq(playlists.syncKey, syncKey)))
+    .where(
+      and(
+        eq(playlists.syncKey, syncKey),
+        eq(playlists.type, "radio"),
+        or(
+          isNull(playlists.description),
+          notIlike(playlists.description, "%Gemini%")
+        )
+      )
+    )
     .orderBy(desc(playlists.createdAt));
 }
 

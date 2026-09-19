@@ -48,39 +48,39 @@ export function PlayerBar() {
       {isSmartphoneView && (
         <div
           className={clsx(
-            "fixed bottom-[calc(60px+env(safe-area-inset-bottom))] inset-x-2 z-40 glass border border-white/10 px-3 py-2 rounded-xl shadow-lg shadow-black/40",
+            "fixed bottom-[calc(64px+env(safe-area-inset-bottom))] inset-x-2 sm:inset-x-4 z-40 glass border border-white/10 px-3 py-2.5 rounded-2xl shadow-2xl shadow-black/50 max-w-2xl mx-auto",
             viewMode === "auto" ? "md:hidden block" : "block"
           )}
         >
           <button
             onClick={p.openNowPlaying}
-            className="w-full flex items-center gap-3"
+            className="w-full flex items-center gap-3 cursor-pointer"
           >
             <CoverArt
               seed={seed}
               artwork={p.isLiveRadio ? null : c?.artworkUrl}
               label={title}
-              rounded="rounded-md"
-              className="h-11 w-11 shrink-0"
+              rounded="rounded-xl"
+              className="h-12 w-12 shrink-0 shadow-md"
             />
             <div className="min-w-0 flex-1 text-left">
-              <div className="truncate text-sm font-semibold flex items-center gap-1.5">
+              <div className="truncate text-sm font-bold flex items-center gap-1.5">
                 {p.isLiveRadio ? <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" /> : null}
                 {title}
               </div>
-              <ArtistLinks artistName={artist} primaryArtistId={c?.artistId} />
+              <ArtistLinks artistName={artist} primaryArtistId={c?.artistId} className="text-xs" />
             </div>
             <span
               onClick={(e) => {
                 e.stopPropagation();
                 p.togglePlay();
               }}
-              className="grid place-items-center h-9 w-9"
+              className="grid place-items-center h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 transition"
             >
               {p.isPlaying ? (
-                <Pause size={22} fill="currentColor" />
+                <Pause size={20} fill="currentColor" />
               ) : (
-                <Play size={22} fill="currentColor" />
+                <Play size={20} fill="currentColor" className="ml-0.5" />
               )}
             </span>
             <span
@@ -90,14 +90,14 @@ export function PlayerBar() {
                   p.togglePlayerHidden();
                 }
               }}
-              className="grid place-items-center h-9 w-9 text-textdim hover:text-ink shrink-0"
+              className="grid place-items-center h-10 w-10 text-textdim hover:text-ink shrink-0 cursor-pointer"
               title="Hide player"
             >
               <EyeOff size={18} />
             </span>
           </button>
-          <div className="mt-1 h-1 rounded-full bg-white/10 overflow-hidden">
-            <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
+          <div className="mt-1.5 h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-full bg-accent transition-all duration-200" style={{ width: `${pct}%` }} />
           </div>
         </div>
       )}
@@ -106,8 +106,8 @@ export function PlayerBar() {
       {isDesktopView && (
         <div
           className={clsx(
-            "fixed bottom-0 inset-x-0 z-30 grid-cols-[1fr_2fr_1fr] items-center gap-4 glass border-t border-white/10 px-4 h-[88px]",
-            viewMode === "desktop" ? "grid" : "hidden md:grid"
+            "fixed bottom-0 right-0 z-30 grid-cols-[1fr_2fr_1fr] items-center gap-4 glass border-t border-l border-white/10 pl-6 pr-8 sm:pr-10 md:pr-12 h-[88px]",
+            viewMode === "desktop" ? "left-64 grid" : "left-0 md:left-64 hidden md:grid"
           )}
         >
         {/* now playing */}
@@ -272,13 +272,13 @@ export function PlayerBar() {
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 ml-1 w-28">
-            <button onClick={p.toggleMute} className="text-textdim hover:text-ink">
+          <div className="flex items-center gap-2 ml-2 mr-2 w-28 lg:w-32 shrink-0">
+            <button onClick={p.toggleMute} className="text-textdim hover:text-ink cursor-pointer">
               {p.muted || p.volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
             </button>
             <input
               type="range"
-              className="slider flex-1"
+              className="slider flex-1 cursor-pointer"
               min={0}
               max={1}
               step={0.01}

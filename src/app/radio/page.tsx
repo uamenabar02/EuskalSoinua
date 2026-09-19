@@ -91,14 +91,21 @@ export default function RadioPage() {
       });
   }, []);
 
-  const runBrowse = useCallback(() => {
+  const runBrowse = useCallback((overrideQuery?: string, overrideCountry?: string) => {
+    const q = typeof overrideQuery === "string" ? overrideQuery : browseQuery;
+    const c = typeof overrideCountry === "string" ? overrideCountry : country;
+    if (!q.trim() && !c) {
+      setBrowse([]);
+      return;
+    }
     setBrowsing(true);
     const params = new URLSearchParams();
-    if (browseQuery.trim()) params.set("q", browseQuery.trim());
-    if (country) params.set("country", country);
+    if (q.trim()) params.set("q", q.trim());
+    if (c) params.set("country", c);
     fetch(`/api/radio-stations?${params.toString()}`)
       .then((r) => r.json())
       .then((d) => setBrowse(d.browse ?? []))
+      .catch(() => setBrowse([]))
       .finally(() => setBrowsing(false));
   }, [browseQuery, country]);
 
@@ -204,7 +211,14 @@ export default function RadioPage() {
             />
             {browseQuery ? (
               <button
-                onClick={() => setBrowseQuery("")}
+                onClick={() => {
+                  setBrowseQuery("");
+                  if (country) {
+                    runBrowse("", country);
+                  } else {
+                    setBrowse([]);
+                  }
+                }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-textdim hover:text-white"
               >
                 <X size={16} />
@@ -214,8 +228,9 @@ export default function RadioPage() {
           <select
             value={country}
             onChange={(e) => {
-              setCountry(e.target.value);
-              setTimeout(runBrowse, 50);
+              const newCountry = e.target.value;
+              setCountry(newCountry);
+              runBrowse(browseQuery, newCountry);
             }}
             className="bg-white/10 rounded-full px-4 py-3 text-sm outline-none cursor-pointer"
           >
@@ -226,7 +241,7 @@ export default function RadioPage() {
             ))}
           </select>
           <button
-            onClick={runBrowse}
+            onClick={() => runBrowse(browseQuery, country)}
             disabled={browsing}
             className="bg-accent text-black font-bold text-sm px-5 py-3 rounded-full hover:scale-105 transition disabled:opacity-50 whitespace-nowrap"
           >

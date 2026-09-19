@@ -30,11 +30,14 @@ function groupByAlbum(tracks: (Track & { liked?: boolean })[]): {
   singles: (Track & { liked?: boolean })[];
 } {
   const map = new Map<string, AlbumGroup>();
-  const singles: (Track & { liked?: boolean })[] = [];
+  const singlesMap = new Map<string, Track & { liked?: boolean }>();
   for (const t of tracks) {
     const name = t.albumName?.trim();
+    const trackKey = t.title.toLowerCase().replace(/[^a-z0-9\u00C0-\u024F]/g, "").trim() || t.id.toString();
     if (!name || !t.albumId) {
-      singles.push(t);
+      if (!singlesMap.has(trackKey)) {
+        singlesMap.set(trackKey, t);
+      }
       continue;
     }
     let g = map.get(name);
@@ -49,11 +52,13 @@ function groupByAlbum(tracks: (Track & { liked?: boolean })[]): {
       };
       map.set(name, g);
     }
-    g.tracks.push(t);
+    if (!g.tracks.some(existing => (existing.title.toLowerCase().replace(/[^a-z0-9\u00C0-\u024F]/g, "").trim() || existing.id.toString()) === trackKey)) {
+      g.tracks.push(t);
+    }
   }
   // sort albums by track count desc then name
   const albums = [...map.values()].sort((a, b) => b.tracks.length - a.tracks.length || a.name.localeCompare(b.name));
-  return { albums, singles };
+  return { albums, singles: Array.from(singlesMap.values()) };
 }
 
 export default function ArtistPage({ params }: { params: Promise<{ id: string }> }) {

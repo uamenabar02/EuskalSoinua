@@ -39,10 +39,11 @@ const SEED: SeedArtist[] = [
     listeners: 184230,
     bio: "Legendaria euskal rock alternatiboko taldea Nafarroako Lakuntzatik. Rock energeia eta poesiaren arteko fusioa.",
     tracks: [
-      { title: "Denak Ez Du Balio", album: "Denak Ez Du Balio", year: 2017, duration: 218 },
-      { title: "Hondarrea", album: "Infrakultura", year: 2014, duration: 245 },
-      { title: "Oreka", album: "Sakonak Sakonera", year: 2011, duration: 232 },
-      { title: "Euli Goxoa", album: "Bizi Bizi", year: 2017, duration: 201 },
+      { title: "Denak Ez Du Balio", album: "Ikasten", year: 1999, duration: 218 },
+      { title: "Oreka", album: "Libre ©", year: 2003, duration: 232 },
+      { title: "Maravillas", album: "Payola", year: 2009, duration: 225 },
+      { title: "Jaio.Musika.Hil", album: "Jaio.Musika.Hil", year: 2005, duration: 210 },
+      { title: "Lemak, Aingurak", album: "Haria", year: 2011, duration: 205 },
     ],
   },
   {
@@ -53,9 +54,12 @@ const SEED: SeedArtist[] = [
     listeners: 96540,
     bio: "Bergarako trikitia eta pop folk modernoa. 'Aldapan Gora' euskal musikaren fenomenoa bihurtu zen.",
     tracks: [
-      { title: "Aldapan Gora", album: "Aldapan Gora", year: 2017, duration: 198 },
-      { title: "Balearen Biziak", album: "Egun Dizdiratsu Bat", year: 2020, duration: 223 },
-      { title: "Harri Orri Ar", album: "Aldapan Gora", year: 2017, duration: 176 },
+      { title: "Aldapan Gora", album: "Ertzetatik", year: 2016, duration: 198 },
+      { title: "Buruz Behera", album: "Xilema", year: 2018, duration: 228 },
+      { title: "Lasai, Lasai", album: "Xilema", year: 2018, duration: 215 },
+      { title: "Promesetan", album: "Xilema", year: 2018, duration: 210 },
+      { title: "Deabruak Gara", album: "Xilema", year: 2018, duration: 205 },
+      { title: "Iñundik Iñora", album: "Ertzetatik", year: 2016, duration: 212 },
     ],
   },
   {
@@ -78,8 +82,8 @@ const SEED: SeedArtist[] = [
     listeners: 78900,
     bio: "Trikitilari maisua eta Grammy irabazlea. Euskal herritar musika tradizionalaren enbaxadorea munduan.",
     tracks: [
-      { title: "Barkamena", album: "Kalejira Alaiak", year: 1994, duration: 254 },
-      { title: "Haurtxo Txiki", album: "Lau Eskuetara", year: 2008, duration: 233 },
+      { title: "Bok-Espok", album: "Bilbao 00:00h", year: 1998, duration: 254 },
+      { title: "Marea Gora", album: "Kemen", year: 1997, duration: 233 },
     ],
   },
   {
@@ -90,9 +94,10 @@ const SEED: SeedArtist[] = [
     listeners: 132100,
     bio: "Gernikako rock taldea, euskara erruz erabiltzen duena. 'Bang Bang' ezagun bihurtu zen belaunaldi osoentzat.",
     tracks: [
-      { title: "Bang Bang", album: "Zoramena", year: 2010, duration: 211 },
-      { title: "Euritan Dantzan", album: "Aske Maitte, Aske Bizi", year: 2014, duration: 198 },
-      { title: "Loreak", album: "Zoramena", year: 2010, duration: 224 },
+      { title: "Bang Bang", album: "Zoramena", year: 2002, duration: 211 },
+      { title: "Euritan Dantzan", album: "Euritan Dantzan", year: 2014, duration: 198 },
+      { title: "Musturrek Sartunde", album: "Zoramena", year: 2002, duration: 224 },
+      { title: "Aske Maitte, Aske Bizi", album: "Euritan Dantzan", year: 2014, duration: 215 },
     ],
   },
   {
@@ -103,8 +108,9 @@ const SEED: SeedArtist[] = [
     listeners: 53700,
     bio: "Iruñeko reggae eta ska taldea. Euskal kultura eta Karibeko erritmoak nahasten ditu.",
     tracks: [
-      { title: "Esne Beltza", album: "Esne Beltza", year: 2009, duration: 240 },
-      { title: "Bidea", album: "Egin Dut Egin", year: 2013, duration: 219 },
+      { title: "Bozgorailuetatik", album: "Made in Euskal Herria", year: 2008, duration: 240 },
+      { title: "Gogoak", album: "Noa", year: 2010, duration: 219 },
+      { title: "Pasodoble", album: "Esna", year: 2015, duration: 210 },
     ],
   },
   {
@@ -115,8 +121,9 @@ const SEED: SeedArtist[] = [
     listeners: 61500,
     bio: "Gipuzkoako rock alternatiboa. Energia zuzeneko emanaldiengatik ezagunak.",
     tracks: [
-      { title: "Larraun", album: "Atea", year: 2012, duration: 207 },
-      { title: "Bizi Gara", album: "Harro", year: 2017, duration: 195 },
+      { title: "Negua Joan Da Ta", album: "Era", year: 2010, duration: 207 },
+      { title: "Elektrizitatea", album: "Elektrizitatea", year: 2000, duration: 195 },
+      { title: "Kukutza III", album: "Era", year: 2010, duration: 215 },
     ],
   },
   {
@@ -127,8 +134,12 @@ const SEED: SeedArtist[] = [
     listeners: 47300,
     bio: "Iruñeko punk-rock taldea. Erlijio eta gizarte gaiei buruzko letra sarkorrak.",
     tracks: [
-      { title: "Pake Lasterketa", album: "Pake Lasterketa", year: 2005, duration: 167 },
-      { title: "Zer Gara", album: "Mundu Bat Berria", year: 2010, duration: 181 },
+      { title: "Pao Pao Pao", album: "13", year: 2014, duration: 205 },
+      { title: "Begitara Begira", album: "Vendetta", year: 2009, duration: 215 },
+      { title: "Egunero", album: "Vendetta", year: 2009, duration: 198 },
+      { title: "Udarako Gau Luzeak", album: "Atzo, Gaur eta Bihar", year: 2012, duration: 210 },
+      { title: "Le Souvenir", album: "Atzo, Gaur eta Bihar", year: 2012, duration: 220 },
+      { title: "Ilunpetan", album: "13", year: 2014, duration: 225 },
     ],
   },
   {
@@ -139,7 +150,8 @@ const SEED: SeedArtist[] = [
     listeners: 31800,
     bio: "Bilboko elektronika eta folk taldea. Soinu esperimentalak euskal sustraietatik.",
     tracks: [
-      { title: "Itotzen", album: "Gose", year: 2011, duration: 298 },
+      { title: "Eutsi", album: "Gose II", year: 2007, duration: 240 },
+      { title: "Kasting", album: "Gose III", year: 2008, duration: 225 },
     ],
   },
   {
@@ -150,8 +162,8 @@ const SEED: SeedArtist[] = [
     listeners: 110400,
     bio: "Duncan Dhuko abeslari ohiak egindako pop karrerak arrakasta handia lortu zuen bi hizkuntzetan.",
     tracks: [
-      { title: "La Orilla de Carla", album: "El Abrazo del Erizo", year: 1995, duration: 256 },
-      { title: "Saldremos a la Lluvia", album: "El Abrazo del Erizo", year: 1995, duration: 241 },
+      { title: "A Un Minuto De Ti", album: "Naufragios", year: 1992, duration: 236 },
+      { title: "Mañana", album: "El Abrazo del Erizo", year: 1995, duration: 241 },
     ],
   },
   {
@@ -162,18 +174,21 @@ const SEED: SeedArtist[] = [
     listeners: 58900,
     bio: "Legazpiko heavy rock taldea. 'Euskal Herriko rock gogorra' definitu dutenak.",
     tracks: [
-      { title: "Bidé", album: "Hegemonia", year: 2008, duration: 234 },
+      { title: "Jo Ta Ke", album: "Jaiotze Basatia", year: 1991, duration: 210 },
+      { title: "Mari", album: "Jaiotze Basatia", year: 1991, duration: 245 },
+      { title: "David Eta Goliath", album: "Homo Sapiens?", year: 1999, duration: 230 },
     ],
   },
   {
     name: "Hesian",
-    genre: "Rap",
+    genre: "Punk Rock",
     region: "eu",
     language: "eu",
     listeners: 29400,
-    bio: "Euskal hip-hop aitzindariak. Letra sozialki konprometituak erritmo gogorren gainean.",
+    bio: "Sakanako punk-rock eta melodiko taldea. Letra sozialki konprometituak erritmo indartsuen gainean.",
     tracks: [
-      { title: "Etorkizuna", album: "Euskal Herria", year: 2016, duration: 213 },
+      { title: "Behar Zaitut", album: "Hitzetik", year: 2013, duration: 215 },
+      { title: "Guregatik", album: "Hesian", year: 2011, duration: 220 },
     ],
   },
   // --- General catalog (global, for recommendation contrast) ---
@@ -352,7 +367,7 @@ const SEED_MODERN: SeedArtist[] = [
       { title: "Hamen", album: "Folklorea", year: 2019, duration: 198 },
       { title: "Nahidudana", album: "Nahidudana", year: 2021, duration: 215 },
       { title: "Beldurrik ez", album: "Folklorea", year: 2019, duration: 204 },
-      { title: "DMT", album: "Concepto", year: 2021, duration: 186 },
+      { title: "Otsaportillo", album: "De Un Pueblo Llamado Agurain", year: 2024, duration: 190 },
       { title: "Dantzatzera at!", album: "Folklorea", year: 2019, duration: 210 },
       { title: "Ezer ez da berdina", album: "De Agurain a Kontrazaharra", year: 2022, duration: 192 },
       { title: "Gure zakarra", album: "De Agurain a Kontrazaharra", year: 2022, duration: 180 },
@@ -521,10 +536,151 @@ async function runSeed(): Promise<void> {
     }
   }
 
+  await purgeHallucinatedAndMismatchedTracks();
+  await ensureSeedTracks();
   await ensureModernTracks();
   await ensureGroundTruthCatalog();
   await ensureDefaults();
   await cleanupDisambiguatedTracks();
+}
+
+async function ensureSeedTracks(): Promise<void> {
+  try {
+    for (const a of SEED) {
+      let [artistRow] = await db
+        .select({ id: artists.id })
+        .from(artists)
+        .where(sql`lower(${artists.name}) = lower(${a.name})`)
+        .limit(1);
+
+      if (!artistRow) {
+        const [inserted] = await db
+          .insert(artists)
+          .values({
+            name: a.name,
+            genre: a.genre,
+            region: a.region,
+            language: a.language,
+            bio: a.bio,
+            monthlyListeners: a.listeners,
+            source: "local",
+          })
+          .returning({ id: artists.id });
+        artistRow = inserted;
+      }
+
+      for (const t of a.tracks) {
+        const [existingTrack] = await db
+          .select({ id: tracks.id })
+          .from(tracks)
+          .where(sql`lower(${tracks.title}) = lower(${t.title}) and ${tracks.artistId} = ${artistRow.id}`)
+          .limit(1);
+
+        if (!existingTrack) {
+          let [albumRow] = await db
+            .select({ id: albums.id })
+            .from(albums)
+            .where(sql`lower(${albums.title}) = lower(${t.album}) and ${albums.artistId} = ${artistRow.id}`)
+            .limit(1);
+
+          if (!albumRow) {
+            const [insertedAlb] = await db
+              .insert(albums)
+              .values({
+                title: t.album,
+                artistId: artistRow.id,
+                artistName: a.name,
+                year: t.year,
+                genre: a.genre,
+                region: a.region,
+                source: "local",
+              })
+              .returning({ id: albums.id });
+            albumRow = insertedAlb;
+          }
+
+          await db.insert(tracks).values({
+            title: t.title,
+            artistId: artistRow.id,
+            artistName: a.name,
+            albumId: albumRow.id,
+            albumName: t.album,
+            duration: t.duration,
+            genre: a.genre,
+            region: a.region,
+            language: a.language,
+            source: "local",
+            playCount: Math.floor(Math.random() * 8000) + 1500,
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error("ensureSeedTracks error:", e);
+  }
+}
+
+async function purgeHallucinatedAndMismatchedTracks(): Promise<void> {
+  try {
+    const invalidTitles = [
+      "harri orri ar",
+      "balearen biziak",
+      "dmt",
+      "dtm",
+      "pake lasterketa",
+      "zer gara",
+      "hondarrea",
+      "euli goxoa",
+      "larraun",
+      "bizi gara",
+      "bidé",
+      "bide",
+      "etorkizuna",
+      "barkamena",
+      "haurtxo txiki",
+      "loreak",
+      "bidea",
+      "itotzen",
+    ];
+
+    for (const title of invalidTitles) {
+      await db.delete(tracks).where(sql`lower(${tracks.title}) = ${title}`);
+    }
+
+    // Also purge French rap tracks ingested under Vendetta
+    const frenchVendettaKeywords = [
+      "requiem",
+      "mieux qu'hier",
+      "étoile",
+      "etoile",
+      "bec âne",
+      "bec ane",
+      "merci",
+      "addict",
+      "sierra leone",
+      "les démons",
+      "les demons",
+      "shayo",
+      "broski",
+      "formidable",
+      "making off",
+      "hotshot",
+      "r.r",
+      "8014",
+      "ia",
+      "here you come again",
+    ];
+    for (const kw of frenchVendettaKeywords) {
+      await db.delete(tracks).where(
+        sql`lower(${tracks.artistName}) = 'vendetta' and (lower(${tracks.title}) like ${'%' + kw + '%'} or lower(${tracks.albumName}) like ${'%' + kw + '%'})`
+      );
+      await db.delete(albums).where(
+        sql`lower(${albums.artistName}) = 'vendetta' and lower(${albums.title}) like ${'%' + kw + '%'}`
+      );
+    }
+  } catch (err) {
+    console.error("purgeHallucinatedAndMismatchedTracks error:", err);
+  }
 }
 
 async function cleanupDisambiguatedTracks(): Promise<void> {
@@ -543,7 +699,7 @@ async function cleanupDisambiguatedTracks(): Promise<void> {
 
         for (const t of trackRows) {
           if (!isValidMatchForArtist(aRow.name, { title: t.title, album: t.albumName, genre: t.genre })) {
-            await db.update(tracks).set({ artistId: null }).where(eq(tracks.id, t.id));
+            await db.delete(tracks).where(eq(tracks.id, t.id));
           }
         }
 
@@ -554,8 +710,20 @@ async function cleanupDisambiguatedTracks(): Promise<void> {
 
         for (const alb of albumRows) {
           if (!isValidMatchForArtist(aRow.name, { title: alb.title, album: alb.title, genre: alb.genre })) {
-            await db.update(albums).set({ artistId: null }).where(eq(albums.id, alb.id));
+            await db.delete(albums).where(eq(albums.id, alb.id));
           }
+        }
+      }
+
+      // Also clean up by artistName string
+      const looseTracks = await db
+        .select({ id: tracks.id, title: tracks.title, albumName: tracks.albumName, genre: tracks.genre, artistName: tracks.artistName })
+        .from(tracks)
+        .where(sql`lower(${tracks.artistName}) = ${key}`);
+
+      for (const t of looseTracks) {
+        if (!isValidMatchForArtist(key, { title: t.title, album: t.albumName, genre: t.genre })) {
+          await db.delete(tracks).where(eq(tracks.id, t.id));
         }
       }
     }
@@ -899,6 +1067,161 @@ export const GROUND_TRUTH_DATA = [
       },
     ],
   },
+  {
+    artist: "Huntza",
+    genre: "Folk",
+    region: "eu",
+    language: "eu",
+    bio: "Bergarako trikitia eta pop folk modernoa. 'Aldapan Gora' euskal musikaren fenomeno handia bihurtu zen.",
+    tracks: [
+      {
+        title: "Aldapan Gora",
+        album: "Ertzetatik",
+        year: 2016,
+        duration: 198,
+        externalId: "ONsp-SMT6is",
+      },
+      {
+        title: "Buruz Behera",
+        album: "Xilema",
+        year: 2018,
+        duration: 228,
+        externalId: "-oYevoMY2TM",
+      },
+      {
+        title: "Lasai, Lasai",
+        album: "Xilema",
+        year: 2018,
+        duration: 215,
+        externalId: "0e4L2fDszc8",
+      },
+      {
+        title: "Promesetan",
+        album: "Xilema",
+        year: 2018,
+        duration: 210,
+        externalId: "m2Tf_N4153k",
+      },
+      {
+        title: "Deabruak Gara",
+        album: "Xilema",
+        year: 2018,
+        duration: 205,
+        externalId: "YJ8-WpW3v8I",
+      },
+    ],
+  },
+  {
+    artist: "Dupla",
+    genre: "Euskal Pop / Urban",
+    region: "eu",
+    language: "eu",
+    bio: "Aguraingo musika talde urbano eta elektronikoa. Tradizioa eta soinu moderno digitalak uztartzen dituzte.",
+    tracks: [
+      {
+        title: "30's",
+        album: "De Un Pueblo Llamado Agurain",
+        year: 2024,
+        duration: 197,
+        externalId: "OnR6rHG2GuU",
+      },
+      {
+        title: "Ongi Etorri",
+        album: "De Un Pueblo Llamado Agurain",
+        year: 2024,
+        duration: 163,
+        externalId: "m7PrpkZcqm8",
+      },
+      {
+        title: "Tirikitrauki",
+        album: "De Un Pueblo Llamado Agurain",
+        year: 2024,
+        duration: 185,
+        externalId: "73VqjTVxEmk",
+      },
+      {
+        title: "Hamen",
+        album: "Folklorea",
+        year: 2019,
+        duration: 198,
+        externalId: "fB8N0cZ9fHQ",
+      },
+      {
+        title: "Nahidudana",
+        album: "Nahidudana",
+        year: 2021,
+        duration: 215,
+        externalId: "L7c5mC_t0_U",
+      },
+      {
+        title: "Beldurrik ez",
+        album: "Folklorea",
+        year: 2019,
+        duration: 204,
+        externalId: "LWH6h3-fbM8",
+      },
+    ],
+  },
+  {
+    artist: "Vendetta",
+    genre: "Punk",
+    region: "eu",
+    language: "eu",
+    bio: "Iruñeko ska, rock eta punk taldea. Euskal musika eszenako talde ezagunenetako bat.",
+    tracks: [
+      {
+        title: "Pao Pao Pao",
+        album: "13",
+        year: 2014,
+        duration: 205,
+        externalId: "4L9R1Ym-zZg",
+      },
+      {
+        title: "Begitara Begira",
+        album: "Vendetta",
+        year: 2009,
+        duration: 215,
+        externalId: "WdI7gD0b4rI",
+      },
+      {
+        title: "Egunero",
+        album: "Vendetta",
+        year: 2009,
+        duration: 198,
+        externalId: "5y3l_P09t0M",
+      },
+      {
+        title: "Udarako Gau Luzeak",
+        album: "Atzo, Gaur eta Bihar",
+        year: 2012,
+        duration: 210,
+        externalId: "G_s0CgR1RkU",
+      },
+      {
+        title: "Le Souvenir",
+        album: "Atzo, Gaur eta Bihar",
+        year: 2012,
+        duration: 220,
+        externalId: "mD5lT8f1E0s",
+      },
+    ],
+  },
+  {
+    artist: "Gartxot",
+    genre: "Basque Indie Pop",
+    region: "eu",
+    language: "eu",
+    bio: "Gartxot Unsain Letona donostiar musikariaren proiektu pertsonala.",
+    tracks: [
+      {
+        title: "Donostia",
+        album: "Gartxot",
+        year: 2023,
+        duration: 195,
+        externalId: "6X_K8q24YvE",
+      },
+    ],
+  },
 ];
 
 export async function ensureGroundTruthCatalog(): Promise<void> {
@@ -981,7 +1304,7 @@ export async function ensureGroundTruthCatalog(): Promise<void> {
                 albumName: t.album,
                 duration: t.duration,
                 externalId: t.externalId,
-                previewUrlAlt: t.previewUrlAlt,
+                previewUrlAlt: (t as { previewUrlAlt?: string }).previewUrlAlt ?? null,
                 source: "youtube",
                 genre: item.genre,
                 region: item.region,
@@ -1001,7 +1324,7 @@ export async function ensureGroundTruthCatalog(): Promise<void> {
             region: item.region,
             language: item.language,
             externalId: t.externalId,
-            previewUrlAlt: t.previewUrlAlt,
+            previewUrlAlt: (t as { previewUrlAlt?: string }).previewUrlAlt ?? null,
             source: "youtube",
             playCount: 4500,
           });
@@ -1012,7 +1335,7 @@ export async function ensureGroundTruthCatalog(): Promise<void> {
           .update(tracks)
           .set({
             externalId: t.externalId,
-            previewUrlAlt: t.previewUrlAlt,
+            previewUrlAlt: (t as { previewUrlAlt?: string }).previewUrlAlt ?? null,
             source: "youtube",
           })
           .where(
