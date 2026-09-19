@@ -30,3 +30,5 @@ yarn-error.log*
 .vscode/
 *.tsbuildinfo
 next-env.d.ts
+.access_data.json
+*.access_data.json

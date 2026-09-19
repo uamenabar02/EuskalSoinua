@@ -25,7 +25,7 @@ export interface DeviceAccessRecord {
 }
 
 // Memory / File fallback store for environments where PostgreSQL pool is disconnected
-const LOCAL_STORE_FILE = process.env.VERCEL
+const LOCAL_STORE_FILE = fs.existsSync("/tmp")
   ? path.join("/tmp", ".access_data.json")
   : path.join(process.cwd(), ".access_data.json");
 
