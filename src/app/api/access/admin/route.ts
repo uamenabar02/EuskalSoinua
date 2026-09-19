@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getAdminConfig,
-  setAdminConfig,
+  verifyAdminPasscode,
+  updateAdminPasscode,
   addAdminSessionToken,
   isValidAdminSessionToken,
   getAllDeviceAccessRequests,
@@ -11,6 +12,7 @@ import {
   markAdminInitialized,
   isAdminInitialized,
 } from "@/lib/access-db";
+import { getClientIp, checkRateLimit, resetRateLimit } from "@/lib/rate-limit";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -48,22 +50,42 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const { action } = body;
+    const clientIp = getClientIp(req.headers);
 
     // --- Action: LOGIN ---
     if (action === "login") {
+      // Rate Limit check: max 5 attempts per 15 min per IP
+      const rateLimitKey = `admin_login:${clientIp}`;
+      const rateStatus = checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000);
+
+      if (!rateStatus.allowed) {
+        return NextResponse.json(
+          {
+            error: `Too many login attempts. Please wait ${Math.ceil(rateStatus.retryAfterSeconds / 60)} minutes before trying again.`,
+            retryAfterSeconds: rateStatus.retryAfterSeconds,
+          },
+          { status: 429 }
+        );
+      }
+
       const { email, passcode, deviceId, deviceName } = body;
       const expectedEmail = await getAdminConfig("admin_email", "uamenabar02@gmail.com");
-      const expectedPasscode = await getAdminConfig("admin_passcode", "EuskalAdmin2026");
 
-      if (
-        email?.trim().toLowerCase() !== expectedEmail.toLowerCase() ||
-        passcode !== expectedPasscode
-      ) {
+      const emailMatches = email?.trim().toLowerCase() === expectedEmail.toLowerCase();
+      const isPasscodeValid = emailMatches && (await verifyAdminPasscode(passcode?.trim() || ""));
+
+      if (!emailMatches || !isPasscodeValid) {
         return NextResponse.json(
-          { error: "Invalid admin email or passcode. First-time default passcode is 'EuskalAdmin2026'." },
+          {
+            error: "Invalid admin email or passcode.",
+            remainingAttempts: rateStatus.remaining,
+          },
           { status: 401 }
         );
       }
+
+      // Success! Reset login rate limit
+      resetRateLimit(rateLimitKey);
 
       // Generate secure session token
       const token = `adm_${crypto.randomBytes(24).toString("hex")}`;
@@ -77,7 +99,7 @@ export async function POST(req: NextRequest) {
           deviceName: deviceName || "Admin Device",
           userName: "Admin (uamenabar02@gmail.com)",
           userEmail: expectedEmail,
-          ipAddress: req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "127.0.0.1",
+          ipAddress: clientIp,
           status: "accepted",
           adminNotes: "Admin Synced Device",
         });
@@ -122,20 +144,20 @@ export async function POST(req: NextRequest) {
     // --- Action: UPDATE PASSCODE ---
     if (action === "update_passcode") {
       const { oldPasscode, newPasscode } = body;
-      const currentPasscode = await getAdminConfig("admin_passcode", "EuskalAdmin2026");
+      const isOldValid = await verifyAdminPasscode(oldPasscode?.trim() || "");
 
-      if (oldPasscode !== currentPasscode) {
+      if (!isOldValid) {
         return NextResponse.json({ error: "Current passcode is incorrect." }, { status: 400 });
       }
 
-      if (!newPasscode || newPasscode.length < 6) {
+      if (!newPasscode || newPasscode.trim().length < 6) {
         return NextResponse.json(
           { error: "New passcode must be at least 6 characters long." },
           { status: 400 }
         );
       }
 
-      await setAdminConfig("admin_passcode", newPasscode);
+      await updateAdminPasscode(newPasscode.trim());
       return NextResponse.json({ success: true, message: "Admin passcode updated successfully." });
     }
 
@@ -168,7 +190,7 @@ export async function POST(req: NextRequest) {
         deviceName: deviceName?.trim() || current?.deviceName || "Device",
         userName: userName?.trim() || current?.userName || null,
         userEmail: userEmail?.trim() || current?.userEmail || null,
-        ipAddress: current?.ipAddress || "127.0.0.1",
+        ipAddress: current?.ipAddress || clientIp,
         country: current?.country,
         city: current?.city,
         regionName: current?.regionName,

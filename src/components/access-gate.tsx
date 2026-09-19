@@ -52,10 +52,29 @@ export function AccessGate({ children }: AccessGateProps) {
   const [adminError, setAdminError] = useState("");
   const [adminSubmitting, setAdminSubmitting] = useState(false);
 
+  const getOrCreateDeviceId = useCallback(() => {
+    if (typeof window === "undefined") return "";
+    let d = localStorage.getItem("euskalsoinua-device-id");
+    if (!d) {
+      d = `dev_${Math.random().toString(36).substring(2, 11)}`;
+      localStorage.setItem("euskalsoinua-device-id", d);
+    }
+    const isIframe = window.self !== window.top;
+    const cookieSuffix = isIframe && window.location.protocol === "https:"
+      ? "; path=/; max-age=31536000; SameSite=None; Secure"
+      : "; path=/; max-age=31536000; SameSite=Lax";
+    document.cookie = `device_id=${d}${cookieSuffix}`;
+    return d;
+  }, []);
+
   const checkStatus = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
     try {
-      const res = await fetch("/api/access/check", { cache: "no-store" });
+      const devId = getOrCreateDeviceId();
+      const res = await fetch(`/api/access/check?deviceId=${encodeURIComponent(devId)}`, {
+        headers: devId ? { "x-device-id": devId } : {},
+        cache: "no-store",
+      });
       const data = await res.json();
       setStatusData(data);
     } catch (err) {
@@ -63,14 +82,18 @@ export function AccessGate({ children }: AccessGateProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getOrCreateDeviceId]);
 
   useEffect(() => {
     let isMounted = true;
 
     const checkAccess = async () => {
       try {
-        const res = await fetch("/api/access/check", { cache: "no-store" });
+        const devId = getOrCreateDeviceId();
+        const res = await fetch(`/api/access/check?deviceId=${encodeURIComponent(devId)}`, {
+          headers: devId ? { "x-device-id": devId } : {},
+          cache: "no-store",
+        });
         if (res.ok) {
           const data = await res.json();
           if (isMounted) {
@@ -93,7 +116,7 @@ export function AccessGate({ children }: AccessGateProps) {
       isMounted = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [getOrCreateDeviceId]);
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -485,11 +508,10 @@ export function AccessGate({ children }: AccessGateProps) {
             {!statusData?.adminInitialized && !statusData?.isAdmin && (
               <div className="bg-accent/10 border border-accent/20 rounded-2xl p-3.5 text-xs text-accent leading-relaxed">
                 <p className="font-semibold flex items-center gap-1.5 mb-1">
-                  <Info size={14} /> First-time Admin Access Info
+                  <Info size={14} /> Admin Access Authentication
                 </p>
                 Admin Email: <span className="font-bold underline">uamenabar02@gmail.com</span><br />
-                Initial Default Passcode: <span className="font-mono font-bold bg-accent/20 px-1.5 py-0.5 rounded text-white">EuskalAdmin2026</span><br />
-                (You can change this passcode in Admin Settings anytime).
+                <span className="text-textdim">Use the 12-character administrator passcode generated in the server logs on first startup.</span>
               </div>
             )}
 

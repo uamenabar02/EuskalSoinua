@@ -5,12 +5,27 @@ import {
   fetchIpGeolocation,
   checkIPRejected,
 } from "@/lib/access-db";
+import { getClientIp, checkRateLimit } from "@/lib/rate-limit";
 import { sendAdminNotification } from "../notify/route";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
+    const clientIp = getClientIp(req.headers);
+
+    // Rate Limit check: max 5 requests per 15 min per IP
+    const rateStatus = checkRateLimit(`access_request:${clientIp}`, 5, 15 * 60 * 1000);
+    if (!rateStatus.allowed) {
+      return NextResponse.json(
+        {
+          error: `Too many access requests from this IP. Please wait ${Math.ceil(rateStatus.retryAfterSeconds / 60)} minutes.`,
+          retryAfterSeconds: rateStatus.retryAfterSeconds,
+        },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const {
       deviceId,
@@ -29,12 +44,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Extract client public IP
-    const forwardedFor = req.headers.get("x-forwarded-for");
-    const ipAddress = forwardedFor
-      ? forwardedFor.split(",")[0].trim()
-      : req.headers.get("x-real-ip") || "127.0.0.1";
-
     // 1. Check if device is already rejected
     const existing = await getDeviceAccessRequest(deviceId);
     if (existing && existing.status === "rejected") {
@@ -45,7 +54,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Check if IP address is blocked
-    const ipBlocked = await checkIPRejected(ipAddress);
+    const ipBlocked = await checkIPRejected(clientIp);
     if (ipBlocked) {
       return NextResponse.json(
         { error: "Access requests from this IP address have been rejected." },
@@ -54,7 +63,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Fetch localization & GeoIP info
-    const geo = await fetchIpGeolocation(ipAddress);
+    const geo = await fetchIpGeolocation(clientIp);
     const userAgent = req.headers.get("user-agent") || undefined;
 
     // 4. Create or update access request record with pending status
@@ -64,7 +73,7 @@ export async function POST(req: NextRequest) {
       userName: userName?.trim() || "Anonymous User",
       userEmail: userEmail?.trim() || null,
       requestNote: requestNote?.trim() || null,
-      ipAddress,
+      ipAddress: clientIp,
       country: geo.country,
       city: geo.city,
       regionName: geo.regionName,

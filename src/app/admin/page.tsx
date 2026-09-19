@@ -425,8 +425,8 @@ export default function AdminPage() {
               className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
             />
             {!adminInitialized && (
-              <p className="text-[11px] text-accent mt-1.5 font-medium">
-                First-time default passcode: <span className="font-mono underline">EuskalAdmin2026</span>
+              <p className="text-[11px] text-textdim mt-1.5">
+                First-time setup: Check your server logs for the generated 12-character passcode.
               </p>
             )}
           </div>
