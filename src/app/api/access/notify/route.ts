@@ -58,6 +58,78 @@ Admin Email: ${adminEmail}
   return { ok: true, recipient: adminEmail };
 }
 
+export async function sendAdminPasswordRecoveryNotification({
+  otp,
+  expiresInMinutes,
+  ipAddress,
+  country,
+  city,
+  userAgent,
+}: {
+  otp: string;
+  expiresInMinutes: number;
+  ipAddress: string;
+  country?: string;
+  city?: string;
+  userAgent?: string;
+}) {
+  const adminEmail = await getAdminConfig("admin_email", "uamenabar02@gmail.com");
+
+  const subject = `🔐 [EuskalSoinua Security] Admin Passcode Recovery Code: ${otp}`;
+  const textBody = `
+Admin Passcode Recovery Request
+==================================================
+Your 6-digit one-time passcode recovery code is:
+
+                 ${otp}
+
+This verification code is valid for ${expiresInMinutes} minutes.
+Enter this code along with your new admin passcode on the Admin Login screen.
+
+Request Origin & Security Details:
+- Recipient: ${adminEmail}
+- Requesting IP: ${ipAddress}
+- Location: ${city || ""} ${country ? `(${country})` : ""}
+- Device Agent: ${userAgent || "N/A"}
+- Requested At: ${new Date().toISOString()}
+
+Security Notice:
+If you did NOT request this recovery code, someone may be attempting to access
+your Admin Dashboard. Your current passcode remains unchanged until this code is submitted.
+==================================================
+`;
+
+  console.log("\n==================================================================");
+  console.log("🔐 [EuskalSoinua Security] ADMIN PASSCODE RECOVERY CODE GENERATED");
+  console.log(`Recipient:                  ${adminEmail}`);
+  console.log(`6-Digit Verification OTP:   ${otp}`);
+  console.log(`Expires In:                 ${expiresInMinutes} minutes`);
+  console.log(`Requesting IP:              ${ipAddress}`);
+  console.log("==================================================================\n");
+
+  if (process.env.RESEND_API_KEY) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: "EuskalSoinua Security <security@resend.dev>",
+          to: [adminEmail],
+          subject: subject,
+          text: textBody,
+        }),
+      });
+    } catch (e) {
+      console.error("[Notify] Failed sending recovery email via Resend:", e);
+    }
+  }
+
+  return { ok: true, recipient: adminEmail };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));

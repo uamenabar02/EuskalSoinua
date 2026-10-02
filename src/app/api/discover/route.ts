@@ -10,6 +10,7 @@ import {
   followedArtists,
   savedAlbums,
   playlists,
+  settings,
 } from "@/db/schema";
 import { desc, sql, eq, and, gte, inArray, or, isNull } from "drizzle-orm";
 import { mapTrack } from "@/lib/mappers";
@@ -50,20 +51,29 @@ export async function GET(request: Request) {
   const excludeTrackIds = excludeStr ? excludeStr.split(",").map(Number).filter(Boolean) : [];
   const excludeSet = new Set<number>(excludeTrackIds);
 
-  // 1. Gather User Preferences across all 5 requested signal sources
+  // 1. Gather User Preferences across all signal sources + explicit taste preferences
   const [
     userLikedTracks,
     userFollowedArtists,
     userSavedAlbums,
     userPlaylists,
     userListenEvents,
+    preferenceRows,
   ] = await Promise.all([
     getLikedTracks(syncKey),
     getFollowedArtists(syncKey),
     getSavedAlbums(syncKey),
     getPlaylists(syncKey),
     db.select().from(listenEvents).where(eq(listenEvents.syncKey, syncKey)),
+    db.select().from(settings).where(and(eq(settings.key, "music_preferences"), eq(settings.syncKey, syncKey))),
   ]);
+
+  let explicitPreferences: any = { genres: [], favoriteArtists: [], excludedGenres: [], energy: "balanced", moods: [] };
+  if (preferenceRows.length > 0) {
+    try {
+      explicitPreferences = JSON.parse(preferenceRows[0].value);
+    } catch (e) {}
+  }
 
   // Track sets for filtering and weighting
   const likedTrackIds = new Set<number>(userLikedTracks.map((t: any) => t.id));
@@ -175,8 +185,13 @@ export async function GET(request: Request) {
   });
 
   // Prepare structured summaries for Gemini AI Agent
+  const combinedGenres = Array.from(new Set([...preferredGenres, ...(explicitPreferences.genres || [])]));
   const userTasteProfile = {
-    favoriteGenres: Array.from(preferredGenres),
+    favoriteGenres: combinedGenres,
+    pinnedFavoriteArtists: explicitPreferences.favoriteArtists || [],
+    avoidedGenres: explicitPreferences.excludedGenres || [],
+    energyPreference: explicitPreferences.energy || "balanced",
+    moodPreferences: explicitPreferences.moods || [],
     alreadyLikedArtists: Array.from(knownArtistNames),
     likedSongsSample: userLikedTracks.slice(0, 10).map((t: any) => `${t.title} by ${t.artistName}`),
     likedAlbumsSample: userSavedAlbums.slice(0, 5).map((a: any) => `${a.title} by ${a.artistName}`),

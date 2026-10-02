@@ -1,9 +1,10 @@
 import { resolveTrackForPlayback } from "@/lib/playback";
 import { resolveStream, clearStreamMemo, configuredInstances } from "@/lib/sources/streaming";
 import { clearTrackPreview } from "@/lib/queries";
+import { extractFullTrackAudioUrl } from "@/lib/sources/full-track-download";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 function getProxyCandidates(originalUrl: string, invidiousInstances: string[]): string[] {
   try {
@@ -65,6 +66,12 @@ export async function GET(request: Request) {
 
   // Fast direct royalty-free fallback for instantaneous recovery from network errors
   if (isFallback) {
+    if (mode === "full") {
+      return new Response(JSON.stringify({ error: "Royalty-free fallback blocked in Full Track Mode" }), {
+        status: 403,
+        headers: { "content-type": "application/json" },
+      });
+    }
     const fb = await resolveStream({ videoId: null, trackId, duration: 0 });
     const range = request.headers.get("range");
     const upstreamHeaders: Record<string, string> = {};
@@ -119,8 +126,17 @@ export async function GET(request: Request) {
       resolution.previewUrl,    // Deezer — token
     ].filter((u): u is string => !!u);
   } else if (mode === "full") {
-    // Try full stream URLs first
-    if (resolution.result.provider === "piped" || resolution.result.provider === "invidious" || resolution.result.provider === "lbry") {
+    // Try full stream audio first
+    let fullTrackDirectUrl: string | null = null;
+    if (resolution.videoId) {
+      try {
+        fullTrackDirectUrl = await extractFullTrackAudioUrl(resolution.videoId);
+      } catch {}
+    }
+
+    if (fullTrackDirectUrl) {
+      candidates = [fullTrackDirectUrl];
+    } else if (resolution.result.provider === "piped" || resolution.result.provider === "invidious" || resolution.result.provider === "lbry") {
       const { invidious: invidiousInstances } = configuredInstances();
       const orig = resolution.result.originalUrl || resolution.result.url;
       const proxyCandidates = getProxyCandidates(orig, invidiousInstances);
@@ -207,8 +223,14 @@ export async function GET(request: Request) {
     }
   }
 
-  // 3) distinct fallback (always ensures playable audio, never dead-ends with 503)
+  // 3) distinct fallback (in Full Track Mode, we strictly reject demo fallback)
   if (!upstream) {
+    if (mode === "full") {
+      return new Response(JSON.stringify({ error: "Full track unavailable on YouTube" }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      });
+    }
     const fb = await resolveStream({ videoId: null, trackId, duration: 0 });
     upstream = await tryFetch(fb.url, upstreamHeaders);
     provider = fb.provider;

@@ -16,6 +16,12 @@ import {
   Mail,
   User,
   Info,
+  ArrowLeft,
+  Send,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  Key,
 } from "lucide-react";
 
 interface AccessGateProps {
@@ -51,6 +57,20 @@ export function AccessGate({ children }: AccessGateProps) {
   const [adminPasscode, setAdminPasscode] = useState("");
   const [adminError, setAdminError] = useState("");
   const [adminSubmitting, setAdminSubmitting] = useState(false);
+
+  // Admin Recovery states within modal
+  const [modalViewMode, setModalViewMode] = useState<"login" | "recovery_otp" | "recovery_master">("login");
+  const [recoveryEmail, setRecoveryEmail] = useState("uamenabar02@gmail.com");
+  const [recoveryOtp, setRecoveryOtp] = useState("");
+  const [recoveryNewPasscode, setRecoveryNewPasscode] = useState("");
+  const [recoveryConfirmPasscode, setRecoveryConfirmPasscode] = useState("");
+  const [recoveryMasterKey, setRecoveryMasterKey] = useState("");
+  const [recoveryStep, setRecoveryStep] = useState<"request" | "verify">("request");
+  const [recoverySuccessMsg, setRecoverySuccessMsg] = useState("");
+  const [recoveryErrorMsg, setRecoveryErrorMsg] = useState("");
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [maskedSentEmail, setMaskedSentEmail] = useState("");
 
   const getOrCreateDeviceId = useCallback(() => {
     if (typeof window === "undefined") return "";
@@ -213,6 +233,145 @@ export function AccessGate({ children }: AccessGateProps) {
       setAdminError(err.message || "Login failed.");
     } finally {
       setAdminSubmitting(false);
+    }
+  };
+
+  const handleRequestRecoveryOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryErrorMsg("");
+    setRecoverySuccessMsg("");
+    setRecoveryLoading(true);
+    try {
+      const res = await fetch("/api/access/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "request_recovery",
+          email: recoveryEmail.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setRecoveryErrorMsg(data.error || "Failed to request recovery code.");
+      } else {
+        setMaskedSentEmail(data.maskedEmail || recoveryEmail);
+        if (data.simulatedOtp) {
+          setRecoveryOtp(data.simulatedOtp);
+          setRecoverySuccessMsg(`Verification code: ${data.simulatedOtp} (auto-filled below). In this environment, email service is offline.`);
+        } else {
+          setRecoverySuccessMsg(data.message || `A 6-digit recovery code has been sent to ${data.maskedEmail}.`);
+        }
+        setRecoveryStep("verify");
+      }
+    } catch (err: any) {
+      setRecoveryErrorMsg(err.message || "Network error requesting recovery code.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleVerifyRecoveryOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryErrorMsg("");
+    setRecoverySuccessMsg("");
+
+    if (recoveryNewPasscode.trim().length < 6) {
+      setRecoveryErrorMsg("New passcode must be at least 6 characters long.");
+      return;
+    }
+
+    if (recoveryNewPasscode !== recoveryConfirmPasscode) {
+      setRecoveryErrorMsg("The entered passcodes do not match.");
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const deviceId = localStorage.getItem("euskalsoinua-device-id") || "";
+      const deviceName = localStorage.getItem("euskalsoinua-device-name") || "Admin Browser";
+
+      const res = await fetch("/api/access/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "verify_recovery_otp",
+          email: recoveryEmail.trim(),
+          otp: recoveryOtp.trim(),
+          newPasscode: recoveryNewPasscode.trim(),
+          deviceId,
+          deviceName,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setRecoveryErrorMsg(data.error || "Invalid or expired recovery code.");
+      } else {
+        setRecoverySuccessMsg("Passcode successfully reset! Authenticating...");
+        setTimeout(() => {
+          setShowAdminModal(false);
+          window.location.reload();
+        }, 1000);
+      }
+    } catch (err: any) {
+      setRecoveryErrorMsg(err.message || "Failed to reset passcode.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleVerifyMasterKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryErrorMsg("");
+    setRecoverySuccessMsg("");
+
+    if (!recoveryMasterKey.trim()) {
+      setRecoveryErrorMsg("Please enter your Emergency Master Recovery Key.");
+      return;
+    }
+
+    if (recoveryNewPasscode.trim().length < 6) {
+      setRecoveryErrorMsg("New passcode must be at least 6 characters long.");
+      return;
+    }
+
+    if (recoveryNewPasscode !== recoveryConfirmPasscode) {
+      setRecoveryErrorMsg("The entered passcodes do not match.");
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const deviceId = localStorage.getItem("euskalsoinua-device-id") || "";
+      const deviceName = localStorage.getItem("euskalsoinua-device-name") || "Admin Browser";
+
+      const res = await fetch("/api/access/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "verify_master_key",
+          masterKey: recoveryMasterKey.trim(),
+          newPasscode: recoveryNewPasscode.trim(),
+          deviceId,
+          deviceName,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setRecoveryErrorMsg(data.error || "Invalid Emergency Master Recovery Key.");
+      } else {
+        setRecoverySuccessMsg("Passcode reset via Master Key! Authenticating...");
+        setTimeout(() => {
+          setShowAdminModal(false);
+          window.location.reload();
+        }, 1000);
+      }
+    } catch (err: any) {
+      setRecoveryErrorMsg(err.message || "Failed to reset passcode.");
+    } finally {
+      setRecoveryLoading(false);
     }
   };
 
@@ -490,78 +649,366 @@ export function AccessGate({ children }: AccessGateProps) {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <div className="h-9 w-9 rounded-xl bg-accent/20 text-accent flex items-center justify-center">
-                  <KeyRound size={20} />
+                  {modalViewMode === "login" ? (
+                    <KeyRound size={20} />
+                  ) : modalViewMode === "recovery_otp" ? (
+                    <Mail size={20} />
+                  ) : (
+                    <Key size={20} />
+                  )}
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg text-white">Administrator Login</h3>
-                  <p className="text-xs text-textdim">App Developer Admin Access</p>
+                  <h3 className="font-bold text-lg text-white">
+                    {modalViewMode === "login"
+                      ? "Administrator Login"
+                      : modalViewMode === "recovery_otp"
+                      ? "Passcode Recovery"
+                      : "Emergency Recovery"}
+                  </h3>
+                  <p className="text-xs text-textdim">
+                    {modalViewMode === "login"
+                      ? "App Developer Admin Access"
+                      : modalViewMode === "recovery_otp"
+                      ? "Reset passcode with 6-digit email code"
+                      : "Reset passcode with Master Recovery Key"}
+                  </p>
                 </div>
               </div>
               <button
-                onClick={() => setShowAdminModal(false)}
+                onClick={() => {
+                  setShowAdminModal(false);
+                  setModalViewMode("login");
+                }}
                 className="text-textdim hover:text-white p-1 rounded-lg bg-white/5"
               >
                 ✕
               </button>
             </div>
 
-            {!statusData?.adminInitialized && !statusData?.isAdmin && (
-              <div className="bg-accent/10 border border-accent/20 rounded-2xl p-3.5 text-xs text-accent leading-relaxed">
-                <p className="font-semibold flex items-center gap-1.5 mb-1">
-                  <Info size={14} /> Admin Access Authentication
-                </p>
-                Admin Email: <span className="font-bold underline">uamenabar02@gmail.com</span><br />
-                <span className="text-textdim">Use the 12-character administrator passcode generated in the server logs on first startup.</span>
+            {/* VIEW 1: STANDARD ADMIN LOGIN */}
+            {modalViewMode === "login" && (
+              <>
+                {!statusData?.adminInitialized && !statusData?.isAdmin && (
+                  <div className="bg-accent/10 border border-accent/20 rounded-2xl p-3.5 text-xs text-accent leading-relaxed">
+                    <p className="font-semibold flex items-center gap-1.5 mb-1">
+                      <Info size={14} /> Admin Access Authentication
+                    </p>
+                    Admin Email: <span className="font-bold underline">uamenabar02@gmail.com</span><br />
+                    <span className="text-textdim">Use the 12-character administrator passcode generated in the server logs on first startup.</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleAdminLogin} className="space-y-4">
+                  {adminError && (
+                    <div className="bg-red-950/60 border border-red-500/50 rounded-xl p-3 text-xs text-red-300">
+                      {adminError}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-semibold text-textdim mb-1">Admin Email</label>
+                    <input
+                      type="email"
+                      required
+                      value={adminEmail}
+                      onChange={(e) => setAdminEmail(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-xs font-semibold text-textdim">Admin Passcode</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalViewMode("recovery_otp");
+                          setRecoveryStep("request");
+                          setRecoveryErrorMsg("");
+                          setRecoverySuccessMsg("");
+                        }}
+                        className="text-[11px] font-semibold text-accent hover:underline focus:outline-none"
+                      >
+                        Forgot passcode?
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required
+                        placeholder="Enter passcode..."
+                        value={adminPasscode}
+                        onChange={(e) => setAdminPasscode(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 pl-3.5 pr-10 text-sm text-white focus:outline-none focus:border-accent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-textdim hover:text-white"
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminModal(false)}
+                      className="w-1/2 bg-white/5 hover:bg-white/10 text-white font-semibold py-3 rounded-xl transition-all text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={adminSubmitting}
+                      className="w-1/2 bg-accent hover:bg-accent/90 disabled:opacity-50 text-black font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-1.5"
+                    >
+                      {adminSubmitting ? "Verifying..." : "Log In as Admin"}
+                    </button>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-textdim">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalViewMode("recovery_otp");
+                        setRecoveryStep("request");
+                        setRecoveryErrorMsg("");
+                        setRecoverySuccessMsg("");
+                      }}
+                      className="hover:text-white flex items-center gap-1 transition-colors"
+                    >
+                      <Mail size={13} className="text-accent" /> Recover via Email
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalViewMode("recovery_master");
+                        setRecoveryErrorMsg("");
+                        setRecoverySuccessMsg("");
+                      }}
+                      className="hover:text-white flex items-center gap-1 transition-colors"
+                    >
+                      <Key size={13} className="text-amber-400" /> Master Key
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+
+            {/* VIEW 2: EMAIL OTP RECOVERY */}
+            {modalViewMode === "recovery_otp" && (
+              <div className="space-y-4">
+                {recoverySuccessMsg && (
+                  <div className="bg-emerald-950/60 border border-emerald-500/50 rounded-xl p-3 text-xs text-emerald-300">
+                    {recoverySuccessMsg}
+                  </div>
+                )}
+                {recoveryErrorMsg && (
+                  <div className="bg-red-950/60 border border-red-500/50 rounded-xl p-3 text-xs text-red-300">
+                    {recoveryErrorMsg}
+                  </div>
+                )}
+
+                {recoveryStep === "request" ? (
+                  <form onSubmit={handleRequestRecoveryOtp} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-textdim mb-1">Admin Email</label>
+                      <input
+                        type="email"
+                        required
+                        value={recoveryEmail}
+                        onChange={(e) => setRecoveryEmail(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
+                      />
+                      <p className="text-[11px] text-textdim mt-1.5">
+                        A 6-digit code valid for 15 minutes will be dispatched to your registered address.
+                      </p>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={recoveryLoading}
+                      className="w-full bg-accent hover:bg-accent/90 disabled:opacity-50 text-black font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2"
+                    >
+                      <Send size={15} />
+                      {recoveryLoading ? "Dispatching..." : "Send 6-Digit Code"}
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleVerifyRecoveryOtp} className="space-y-3">
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 text-xs text-textdim flex items-center justify-between">
+                      <span>Sent to: <strong className="text-white">{maskedSentEmail || recoveryEmail}</strong></span>
+                      <button
+                        type="button"
+                        onClick={() => setRecoveryStep("request")}
+                        className="text-accent hover:underline text-[11px] font-semibold"
+                      >
+                        Change
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-textdim mb-1">6-Digit Code</label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={6}
+                        placeholder="123456"
+                        value={recoveryOtp}
+                        onChange={(e) => setRecoveryOtp(e.target.value.replace(/\D/g, ""))}
+                        className="w-full bg-black/50 border border-accent/40 rounded-xl py-2 px-3 text-center font-mono text-lg tracking-[0.3em] text-white focus:outline-none focus:border-accent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-textdim mb-1">New Passcode</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="At least 6 characters..."
+                        value={recoveryNewPasscode}
+                        onChange={(e) => setRecoveryNewPasscode(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-accent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-textdim mb-1">Confirm New Passcode</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="Re-enter passcode..."
+                        value={recoveryConfirmPasscode}
+                        onChange={(e) => setRecoveryConfirmPasscode(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-accent"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={recoveryLoading}
+                      className="w-full bg-accent hover:bg-accent/90 disabled:opacity-50 text-black font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2"
+                    >
+                      <KeyRound size={16} />
+                      {recoveryLoading ? "Resetting..." : "Reset Passcode & Log In"}
+                    </button>
+                  </form>
+                )}
+
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-textdim">
+                  <button
+                    type="button"
+                    onClick={() => setModalViewMode("login")}
+                    className="hover:text-white flex items-center gap-1 transition-colors"
+                  >
+                    <ArrowLeft size={13} /> Back to Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalViewMode("recovery_master");
+                      setRecoveryErrorMsg("");
+                      setRecoverySuccessMsg("");
+                    }}
+                    className="hover:text-white flex items-center gap-1 transition-colors"
+                  >
+                    <Key size={13} className="text-amber-400" /> Use Master Key
+                  </button>
+                </div>
               </div>
             )}
 
-            <form onSubmit={handleAdminLogin} className="space-y-4">
-              {adminError && (
-                <div className="bg-red-950/60 border border-red-500/50 rounded-xl p-3 text-xs text-red-300">
-                  {adminError}
+            {/* VIEW 3: EMERGENCY MASTER RECOVERY KEY */}
+            {modalViewMode === "recovery_master" && (
+              <form onSubmit={handleVerifyMasterKey} className="space-y-3">
+                {recoverySuccessMsg && (
+                  <div className="bg-emerald-950/60 border border-emerald-500/50 rounded-xl p-3 text-xs text-emerald-300">
+                    {recoverySuccessMsg}
+                  </div>
+                )}
+                {recoveryErrorMsg && (
+                  <div className="bg-red-950/60 border border-red-500/50 rounded-xl p-3 text-xs text-red-300">
+                    {recoveryErrorMsg}
+                  </div>
+                )}
+
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300">
+                  <p className="font-semibold flex items-center gap-1 mb-0.5">
+                    <AlertTriangle size={13} /> Air-Gapped Emergency Key
+                  </p>
+                  Enter your 24-character master key generated during server initialization.
                 </div>
-              )}
 
-              <div>
-                <label className="block text-xs font-semibold text-textdim mb-1">Admin Email</label>
-                <input
-                  type="email"
-                  required
-                  value={adminEmail}
-                  onChange={(e) => setAdminEmail(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-semibold text-textdim mb-1">Emergency Master Key</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ESK-XXXX-XXXX-XXXX-XXXX"
+                    value={recoveryMasterKey}
+                    onChange={(e) => setRecoveryMasterKey(e.target.value.toUpperCase())}
+                    className="w-full bg-black/50 border border-amber-500/40 rounded-xl py-2 px-3 text-center font-mono text-xs tracking-wider text-amber-300 focus:outline-none focus:border-amber-400"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-textdim mb-1">Admin Passcode</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="Enter passcode..."
-                  value={adminPasscode}
-                  onChange={(e) => setAdminPasscode(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-semibold text-textdim mb-1">New Admin Passcode</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="At least 6 characters..."
+                    value={recoveryNewPasscode}
+                    onChange={(e) => setRecoveryNewPasscode(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
 
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAdminModal(false)}
-                  className="w-1/2 bg-white/5 hover:bg-white/10 text-white font-semibold py-3 rounded-xl transition-all text-sm"
-                >
-                  Cancel
-                </button>
+                <div>
+                  <label className="block text-xs font-semibold text-textdim mb-1">Confirm New Passcode</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Re-enter passcode..."
+                    value={recoveryConfirmPasscode}
+                    onChange={(e) => setRecoveryConfirmPasscode(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+
                 <button
                   type="submit"
-                  disabled={adminSubmitting}
-                  className="w-1/2 bg-accent hover:bg-accent/90 disabled:opacity-50 text-black font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-1.5"
+                  disabled={recoveryLoading}
+                  className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-black font-bold py-3 rounded-xl transition-all text-sm flex items-center justify-center gap-2"
                 >
-                  {adminSubmitting ? "Verifying..." : "Log In as Admin"}
+                  <Key size={16} />
+                  {recoveryLoading ? "Resetting..." : "Reset Passcode with Master Key"}
                 </button>
-              </div>
-            </form>
+
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-textdim">
+                  <button
+                    type="button"
+                    onClick={() => setModalViewMode("login")}
+                    className="hover:text-white flex items-center gap-1 transition-colors"
+                  >
+                    <ArrowLeft size={13} /> Back to Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalViewMode("recovery_otp");
+                      setRecoveryStep("request");
+                      setRecoveryErrorMsg("");
+                      setRecoverySuccessMsg("");
+                    }}
+                    className="hover:text-white flex items-center gap-1 transition-colors"
+                  >
+                    <Mail size={13} className="text-accent" /> Recover via Email
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

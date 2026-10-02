@@ -15,10 +15,20 @@ export async function GET() {
   const rows = await db.select().from(settings).where(eq(settings.syncKey, syncKey));
   const map: Record<string, string> = {};
   for (const r of rows) map[r.key] = r.value;
-  let musicPrefs = { genres: [], regions: [] };
+  let musicPrefs = {
+    genres: [] as string[],
+    regions: ["eu", "global"] as string[],
+    favoriteArtists: [] as string[],
+    energy: 3,
+    discoveryMode: "balanced",
+    eras: ["contemporary_20s", "modern_10s"] as string[],
+    languagePreference: "multilingual",
+    moods: ["chill", "focus"] as string[],
+  };
   if (map.music_preferences) {
     try {
-      musicPrefs = JSON.parse(map.music_preferences);
+      const parsed = JSON.parse(map.music_preferences);
+      musicPrefs = { ...musicPrefs, ...parsed };
     } catch (e) {
       console.error("Failed to parse music_preferences:", e);
     }
@@ -28,7 +38,7 @@ export async function GET() {
     eq_preset: map.eq_preset ?? "Flat",
     sponsorblock: map.sponsorblock !== "false",
     shuffle: map.shuffle === "true",
-    full_track: map.full_track === "true",
+    full_track: map.full_track !== undefined ? map.full_track === "true" : true,
     crossfade: Number(map.crossfade ?? "0") || 0,
     music_preferences: musicPrefs,
   });

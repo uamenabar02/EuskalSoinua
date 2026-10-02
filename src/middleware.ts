@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isDeviceAccepted, isValidAdminSessionToken } from "@/lib/access-db";
+import { isDeviceAccepted, isValidAdminSessionToken, verifySignedDeviceId } from "@/lib/access-db";
 
 export const runtime = "nodejs";
 
@@ -20,8 +20,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. Extract admin session token and device ID from cookies or headers
+  // 2. Extract admin session token, signed device token, and device ID from cookies or headers
   const adminToken = req.cookies.get("admin_session")?.value || req.headers.get("x-admin-token");
+  const deviceAuth = req.cookies.get("device_auth")?.value || req.headers.get("x-device-auth");
   const deviceId = req.cookies.get("device_id")?.value || req.headers.get("x-device-id");
 
   // 3. Check admin session first
@@ -32,7 +33,18 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // 4. Check if device is accepted
+  // 4. Check cryptographically signed device authorization token if present
+  if (deviceAuth) {
+    const { valid, deviceId: signedDeviceId } = verifySignedDeviceId(deviceAuth);
+    if (valid && signedDeviceId) {
+      const accepted = await isDeviceAccepted(signedDeviceId);
+      if (accepted) {
+        return NextResponse.next();
+      }
+    }
+  }
+
+  // 5. Check if device is accepted
   if (deviceId) {
     const accepted = await isDeviceAccepted(deviceId);
     if (accepted) {
@@ -40,7 +52,7 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // 5. Unauthorized
+  // 6. Unauthorized
   return NextResponse.json(
     {
       error: "Forbidden: Device access not authorized or approval pending.",
@@ -49,3 +61,4 @@ export async function middleware(req: NextRequest) {
     { status: 403 }
   );
 }
+

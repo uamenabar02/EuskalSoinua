@@ -16,18 +16,9 @@ import {
 } from "lucide-react";
 import { usePlayer } from "@/lib/player-context";
 import { useToast } from "@/lib/toast";
+import { useTranslation } from "@/lib/i18n";
 import { Track } from "@/lib/types";
 import { clsx } from "@/lib/utils";
-
-const PROMPT_SUGGESTIONS = [
-  "High-energy Basque Punk & Rock for driving",
-  "Acoustic Trikitia and traditional Folk for studying",
-  "Reggaeton & Latin party vibes for summer weekend",
-  "Melancholic Basque indie pop for a rainy evening",
-  "Upbeat modern electronic, synth-pop & dance mix",
-  "Late night chilled urban pop with Bengo, Rosalia, and Tatta",
-  "Iconic 90s and 2000s Rock anthems",
-];
 
 const MOODS = [
   { id: "Any vibe (No preference)", label: "✨ Any Vibe (Free Selection)" },
@@ -112,6 +103,7 @@ export function AiPlaylistGenerator() {
   const router = useRouter();
   const p = usePlayer();
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   const [curationMode, setCurationMode] = useState<"form" | "prompt">("form");
 
@@ -146,9 +138,9 @@ export function AiPlaylistGenerator() {
       .then((d) => {
         const artistsSet = new Set<string>();
         if (Array.isArray(d?.liked)) {
-          d.liked.forEach((t: Track) => {
-            if (t.artistName && t.artistName.trim()) {
-              artistsSet.add(t.artistName.trim());
+          d.liked.forEach((trk: Track) => {
+            if (trk.artistName && trk.artistName.trim()) {
+              artistsSet.add(trk.artistName.trim());
             }
           });
         }
@@ -180,6 +172,43 @@ export function AiPlaylistGenerator() {
       if (items.some((i) => i.toLowerCase() === name.toLowerCase())) return prev;
       return items.length > 0 ? `${prev}, ${name}` : name;
     });
+  };
+
+  const loadMyTaste = async () => {
+    try {
+      const res = await fetch("/api/taste/profile");
+      const data = await res.json();
+      if (data?.preferences) {
+        const prefs = data.preferences;
+        if (Array.isArray(prefs.genres) && prefs.genres.length > 0) {
+          setFormGenres(prefs.genres);
+        }
+        if (Array.isArray(prefs.favoriteArtists) && prefs.favoriteArtists.length > 0) {
+          setFormInspirations(prefs.favoriteArtists.join(", "));
+        }
+        if (prefs.energy === "chill") setFormTempo("Slow / Downtempo (< 90 BPM)");
+        else if (prefs.energy === "high") setFormTempo("Upbeat / High (120–140 BPM)");
+        else if (prefs.energy === "intense") setFormTempo("Fast / Intense (140+ BPM)");
+        else if (prefs.energy === "balanced") setFormTempo("Moderate / Mid-tempo (90–120 BPM)");
+
+        if (prefs.era === "modern") setFormEra("2020s (Modern / Fresh)");
+        else if (prefs.era === "2010s") setFormEra("2010s");
+        else if (prefs.era === "2000s") setFormEra("2000s");
+        else if (prefs.era === "90s80s") setFormEra("80s & 90s (Classics)");
+
+        if (typeof prefs.basqueAffinity === "number") {
+          if (prefs.basqueAffinity >= 80) setFormBasqueInfluence("100% Basque Artists");
+          else if (prefs.basqueAffinity >= 60) setFormBasqueInfluence("75% Basque / 25% Global");
+          else if (prefs.basqueAffinity >= 40) setFormBasqueInfluence("50% Basque / 50% Global");
+          else if (prefs.basqueAffinity >= 20) setFormBasqueInfluence("25% Basque / 75% Global");
+          else setFormBasqueInfluence("0% (Pure International / No Basque)");
+        }
+
+        toast(t("curator.tasteProfileLoaded"), "✨");
+      }
+    } catch (e) {
+      console.error("Failed to load taste profile into form:", e);
+    }
   };
 
   const handleGenerate = async (overridePrompt?: string) => {
@@ -218,7 +247,7 @@ export function AiPlaylistGenerator() {
       }
 
       setResult(data);
-      toast(`Successfully curated "${data.name}" (${data.tracks.length} tracks)!`, "✨");
+      toast(t("curator.playlistCreatedSuccess") || `Curated "${data.name}"`, "✨");
       window.dispatchEvent(new Event("playlists-changed"));
     } catch (err: any) {
       console.error("AI Playlist generation error:", err);
@@ -227,6 +256,18 @@ export function AiPlaylistGenerator() {
       setLoading(false);
     }
   };
+
+  const quickPromptsList = Array.isArray(t("curator.quickPrompts"))
+    ? (t("curator.quickPrompts") as unknown as string[])
+    : [
+        "High-energy Basque Punk & Rock for driving",
+        "Acoustic Trikitia and traditional Folk for studying",
+        "Reggaeton & Latin party vibes for summer weekend",
+        "Melancholic Basque indie pop for a rainy evening",
+        "Upbeat modern electronic, synth-pop & dance mix",
+        "Late night chilled urban pop with Bengo, Rosalia, and Tatta",
+        "Iconic 90s and 2000s Rock anthems",
+      ];
 
   return (
     <div className="bg-panel border border-white/10 rounded-2xl p-4 sm:p-7 space-y-6 shadow-xl relative overflow-hidden">
@@ -238,13 +279,13 @@ export function AiPlaylistGenerator() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative">
         <div className="space-y-1">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/15 border border-accent/20 text-accent text-xs font-black uppercase tracking-wider non-critical-detail">
-            <Sparkles size={14} /> Gemini 3.8 Flash Curation Engine
+            <Sparkles size={14} /> {t("curator.geminiIntelligence")}
           </div>
           <h3 className="text-lg sm:text-2xl font-black text-white tracking-tight">
-            Gemini AI Smart Playlist Curator
+            {t("curator.title")}
           </h3>
           <p className="text-xs sm:text-sm text-textdim max-w-2xl leading-relaxed non-critical-detail">
-            Create custom playlists by providing an open conversational prompt or tuning specific moods, global & Basque genres, and inspirations.
+            {t("curator.subtitle")}
           </p>
         </div>
 
@@ -260,7 +301,7 @@ export function AiPlaylistGenerator() {
                 : "text-textdim hover:text-white"
             )}
           >
-            <Sliders size={13} /> Structured Form
+            <Sliders size={13} /> {t("curator.formMode")}
           </button>
           <button
             type="button"
@@ -272,7 +313,7 @@ export function AiPlaylistGenerator() {
                 : "text-textdim hover:text-white"
             )}
           >
-            <PenTool size={13} /> Conversational Prompt
+            <PenTool size={13} /> {t("curator.promptMode")}
           </button>
         </div>
       </div>
@@ -282,10 +323,10 @@ export function AiPlaylistGenerator() {
         <div className="space-y-4 animate-fade-up">
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-white uppercase tracking-wider">
-              Natural Language Prompt
+              {t("curator.customPromptLabel")}
             </label>
             <p className="text-xs text-textdim">
-              Describe your scenario, moods, favorite bands, cultural context, or energy level.
+              {t("curator.subtitle")}
             </p>
           </div>
 
@@ -294,14 +335,14 @@ export function AiPlaylistGenerator() {
               rows={3}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g. Late night road trip with energetic reggaeton, pop, and rock songs like Rosalía, Bengo, and Arctic Monkeys..."
+              placeholder={t("curator.promptPlaceholder")}
               className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white placeholder-white/40 focus:outline-none focus:border-accent resize-none leading-relaxed"
             />
           </div>
 
           <div className="flex items-center justify-between flex-wrap gap-4 pt-1">
             <div className="flex items-center gap-3">
-              <span className="text-xs text-textdim font-bold">Tracks to generate (1–50):</span>
+              <span className="text-xs text-textdim font-bold">{t("curator.trackCountLabel")} (1–50):</span>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
@@ -340,17 +381,17 @@ export function AiPlaylistGenerator() {
               className="bg-accent text-black font-extrabold px-6 py-2.5 rounded-full text-xs hover:scale-105 transition disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-lg shadow-accent/20"
             >
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              <span>{loading ? "Curating with Gemini…" : "Curate Playlist"}</span>
+              <span>{loading ? t("curator.generating") : t("curator.generateButton")}</span>
             </button>
           </div>
 
           {/* Prompt Suggestions */}
           <div className="space-y-2 pt-2 border-t border-white/5">
             <span className="text-[11px] font-bold text-textfaint uppercase tracking-wider">
-              Try these curated prompts:
+              {t("curator.vibeSuggestions")}
             </span>
             <div className="flex flex-wrap gap-2">
-              {PROMPT_SUGGESTIONS.map((s) => (
+              {quickPromptsList.map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -372,24 +413,42 @@ export function AiPlaylistGenerator() {
       {/* Mode 2: STRUCTURED FORM */}
       {curationMode === "form" && (
         <div className="space-y-6 animate-fade-up">
+          {/* Quick-Fill with Taste DNA Profile Banner */}
+          <div className="flex items-center justify-between p-3.5 rounded-xl bg-accent/10 border border-accent/20 flex-wrap gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="text-base">🧬</span>
+              <div>
+                <span className="block text-xs font-bold text-white">{t("curator.loadTasteProfile")}</span>
+                <span className="block text-[11px] text-textdim">{t("curator.tasteProfileHint")}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={loadMyTaste}
+              className="px-3.5 py-1.5 rounded-full bg-accent text-black font-extrabold text-xs hover:scale-105 transition cursor-pointer shadow-sm flex items-center gap-1.5"
+            >
+              <Sparkles size={13} /> {t("curator.loadTasteProfile")}
+            </button>
+          </div>
+
           {/* Row 1: Playlist Name & Mood */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div className="space-y-2">
               <label className="text-xs font-bold text-white uppercase tracking-wider">
-                Playlist Name (Optional)
+                {t("nav.newPlaylistPrompt")} ({t("common.options")})
               </label>
               <input
                 type="text"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
-                placeholder="e.g. Summer Sunset Vibes (or leave blank for AI title)"
+                placeholder={t("nav.defaultPlaylistName")}
                 className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-accent"
               />
             </div>
 
             <div className="space-y-2">
               <label className="text-xs font-bold text-white uppercase tracking-wider">
-                Mood & Vibe
+                {t("curator.vibeMoodLabel")}
               </label>
               <select
                 value={formMood}
@@ -410,10 +469,10 @@ export function AiPlaylistGenerator() {
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <label className="text-xs font-bold text-white uppercase tracking-wider">
-                  Genres (Select one or more)
+                  {t("curator.selectGenresLabel")}
                 </label>
                 <span className="text-[11px] text-textdim font-medium">
-                  {formGenres.length === 0 ? "✨ Mix of everything (No restriction)" : `${formGenres.length} selected`}
+                  {formGenres.length === 0 ? "✨ All styles" : `${formGenres.length} selected`}
                 </span>
               </div>
               {formGenres.length > 0 && (
@@ -422,7 +481,7 @@ export function AiPlaylistGenerator() {
                   onClick={clearGenres}
                   className="text-xs text-accent hover:underline cursor-pointer flex items-center gap-1 font-semibold"
                 >
-                  <X size={12} /> Clear all (Mix of everything)
+                  <X size={12} /> {t("common.cancel")}
                 </button>
               )}
             </div>
@@ -439,7 +498,7 @@ export function AiPlaylistGenerator() {
                 )}
               >
                 {formGenres.length === 0 && <Check size={13} className="stroke-[3]" />}
-                <span>🎲 Mix of Everything / Any</span>
+                <span>🎲 {t("common.all")}</span>
               </button>
 
               {GENRES_OPTIONS.map((genre) => {
@@ -468,16 +527,16 @@ export function AiPlaylistGenerator() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div className="space-y-2">
               <label className="text-xs font-bold text-white uppercase tracking-wider">
-                Tempo & Energy
+                {t("curator.tempoLabel")}
               </label>
               <select
                 value={formTempo}
                 onChange={(e) => setFormTempo(e.target.value)}
                 className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-accent cursor-pointer"
               >
-                {TEMPOS.map((t) => (
-                  <option key={t.id} value={t.id} className="bg-panel text-white">
-                    {t.label}
+                {TEMPOS.map((tempo) => (
+                  <option key={tempo.id} value={tempo.id} className="bg-panel text-white">
+                    {tempo.label}
                   </option>
                 ))}
               </select>
@@ -485,7 +544,7 @@ export function AiPlaylistGenerator() {
 
             <div className="space-y-2">
               <label className="text-xs font-bold text-white uppercase tracking-wider">
-                Era / Decade
+                {t("curator.eraLabel")}
               </label>
               <select
                 value={formEra}
@@ -505,11 +564,8 @@ export function AiPlaylistGenerator() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-white uppercase tracking-wider">
-                Basque Music Influence Level
+                {t("curator.basqueInfluenceLabel")}
               </label>
-              <span className="text-[11px] text-textdim">
-                Optional quota constraint
-              </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
               {BASQUE_INFLUENCE_OPTIONS.map((opt) => {
@@ -548,13 +604,13 @@ export function AiPlaylistGenerator() {
           <div className="space-y-3">
             <div className="space-y-1">
               <label className="text-xs font-bold text-white uppercase tracking-wider">
-                Target Artist Inspirations
+                {t("curator.inspirationsLabel")}
               </label>
               <input
                 type="text"
                 value={formInspirations}
                 onChange={(e) => setFormInspirations(e.target.value)}
-                placeholder="e.g. Bad Bunny, Rosalía, Bengo, ZETAK, Berri Txarrak, Arctic Monkeys..."
+                placeholder={t("curator.inspirationsPlaceholder")}
                 className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-accent"
               />
             </div>
@@ -564,7 +620,7 @@ export function AiPlaylistGenerator() {
               <div className="space-y-1.5 p-3 rounded-xl bg-accent/5 border border-accent/15">
                 <div className="flex items-center gap-1.5 text-accent text-[11px] font-bold">
                   <Heart size={12} fill="currentColor" />
-                  <span>Your Liked & Saved Artists (Tap to add as inspiration):</span>
+                  <span>{t("curator.yourLikedArtists")}</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1 no-scrollbar">
                   {userLikedArtists.map((artist) => (
@@ -585,7 +641,7 @@ export function AiPlaylistGenerator() {
             {/* Popular & Basque Quick Add */}
             <div className="flex flex-wrap items-center gap-1.5 pt-1">
               <span className="text-[10px] text-textfaint font-bold uppercase tracking-wider mr-1">
-                Top Suggestions:
+                {t("curator.popularInspirations")}
               </span>
               {GLOBAL_INSPIRATIONS.map((artist) => (
                 <button
@@ -600,10 +656,10 @@ export function AiPlaylistGenerator() {
             </div>
           </div>
 
-          {/* Bottom Bar: Track Count (1-50) & Generate Button */}
+          {/* Bottom Bar: Track Count & Generate Button */}
           <div className="flex items-center justify-between flex-wrap gap-4 pt-4 border-t border-white/5">
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-xs font-bold text-textdim">Tracks to generate (1–50):</span>
+              <span className="text-xs font-bold text-textdim">{t("curator.trackCountLabel")} (1–50):</span>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
@@ -644,7 +700,7 @@ export function AiPlaylistGenerator() {
               className="bg-accent text-black font-extrabold px-8 py-3 rounded-full text-sm hover:scale-105 transition disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-xl shadow-accent/20"
             >
               {loading ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-              <span>{loading ? "Generating tailored playlist…" : `Generate ${formTrackCount} Tracks`}</span>
+              <span>{loading ? t("curator.generating") : t("curator.generateButton")}</span>
             </button>
           </div>
         </div>
@@ -656,7 +712,7 @@ export function AiPlaylistGenerator() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
             <div>
               <span className="text-[10px] font-black uppercase tracking-widest text-accent bg-accent/10 px-2.5 py-1 rounded-md border border-accent/20">
-                AI Curated Playlist
+                {t("curator.resultsTitle")}
               </span>
               <h4 className="text-xl sm:text-2xl font-black text-white mt-2">
                 {result.name}
@@ -673,7 +729,7 @@ export function AiPlaylistGenerator() {
                   onClick={() => router.push(`/playlist/${result.playlistId}`)}
                   className="px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center gap-2 transition cursor-pointer border border-white/10"
                 >
-                  <ExternalLink size={14} /> Open Playlist
+                  <ExternalLink size={14} /> {t("curator.savePlaylist")}
                 </button>
               )}
               <button
@@ -681,15 +737,15 @@ export function AiPlaylistGenerator() {
                 onClick={() => p.playQueue(result.tracks, 0)}
                 className="bg-accent text-black font-extrabold px-5 py-2.5 rounded-full text-xs flex items-center gap-2 hover:scale-105 transition shadow-lg shadow-accent/25 cursor-pointer"
               >
-                <Play size={15} fill="currentColor" /> Play All ({result.tracks.length})
+                <Play size={15} fill="currentColor" /> {t("curator.playAll")} ({result.tracks.length})
               </button>
             </div>
           </div>
 
           <div className="space-y-1 divide-y divide-white/5 max-h-80 overflow-y-auto pr-1 no-scrollbar">
-            {result.tracks.map((t, i) => (
+            {result.tracks.map((track, i) => (
               <div
-                key={`${t.id}-${i}`}
+                key={`${track.id}-${i}`}
                 onClick={() => p.playQueue(result.tracks, i)}
                 className="flex items-center justify-between p-2.5 rounded-xl hover:bg-white/5 transition cursor-pointer group text-xs"
               >
@@ -699,24 +755,24 @@ export function AiPlaylistGenerator() {
                   </span>
                   <div className="min-w-0">
                     <span className="block font-bold text-white truncate text-sm group-hover:text-accent transition-colors">
-                      {t.title}
+                      {track.title}
                     </span>
                     <span className="block text-xs text-textdim truncate mt-0.5">
-                      {t.artistName} {t.albumName ? `• ${t.albumName}` : ""}
+                      {track.artistName} {track.albumName ? `• ${track.albumName}` : ""}
                     </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
                   <span className="text-[11px] text-textfaint font-mono hidden sm:inline">
-                    {Math.floor(t.duration / 60)}:{(t.duration % 60).toString().padStart(2, "0")}
+                    {Math.floor(track.duration / 60)}:{(track.duration % 60).toString().padStart(2, "0")}
                   </span>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      p.addToQueue(t);
-                      toast(`Added "${t.title}" to queue`, "➕");
+                      p.addToQueue(track);
+                      toast(`Added "${track.title}" to queue`, "➕");
                     }}
                     title="Add to queue"
                     className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition cursor-pointer"

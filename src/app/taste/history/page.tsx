@@ -459,9 +459,11 @@ export default function HistoryPage() {
                     <div className="flex items-center gap-3.5 min-w-0 flex-1">
                       <div className="relative h-12 w-12 rounded-xl bg-black/30 overflow-hidden flex items-center justify-center border border-white/5 shrink-0 select-none">
                         {item.track.thumbnail ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
                           <img
                             src={item.track.thumbnail}
                             alt={item.track.title}
+                            referrerPolicy="no-referrer"
                             className="h-full w-full object-cover"
                           />
                         ) : (

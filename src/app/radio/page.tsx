@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { usePlayer } from "@/lib/player-context";
+import { useTranslation } from "@/lib/i18n";
 import { CoverArt } from "@/components/cover";
 import { Search as SearchIcon, Loader2, Radio as RadioIcon, Globe2, X } from "lucide-react";
 import { clsx } from "@/lib/utils";
@@ -12,21 +13,9 @@ interface RadioData {
   browse: RadioStation[];
 }
 
-const COUNTRY_OPTIONS = [
-  { code: "", name: "All countries" },
-  { code: "ES", name: "🇪🇸 España" },
-  { code: "FR", name: "🇫🇷 France" },
-  { code: "GB", name: "🇬🇧 UK" },
-  { code: "US", name: "🇺🇸 USA" },
-  { code: "DE", name: "🇩🇪 Alemania" },
-  { code: "IT", name: "🇮🇹 Italia" },
-  { code: "PT", name: "🇵🇹 Portugal" },
-  { code: "MX", name: "🇲🇽 México" },
-  { code: "AR", name: "🇦🇷 Argentina" },
-];
-
 export default function RadioPage() {
   const { playLiveRadio, isLiveRadio, radioStation, isPlaying, togglePlay } = usePlayer();
+  const { t } = useTranslation();
   const radioPlayingId = isLiveRadio ? radioStation?.id : null;
 
   const [data, setData] = useState<RadioData | null>(null);
@@ -40,6 +29,19 @@ export default function RadioPage() {
     }
     return false;
   });
+
+  const countryOptions = [
+    { code: "", name: t("radio.allCountries") },
+    { code: "ES", name: "🇪🇸 España" },
+    { code: "FR", name: "🇫🇷 France" },
+    { code: "GB", name: "🇬🇧 UK" },
+    { code: "US", name: "🇺🇸 USA" },
+    { code: "DE", name: "🇩🇪 Alemania" },
+    { code: "IT", name: "🇮🇹 Italia" },
+    { code: "PT", name: "🇵🇹 Portugal" },
+    { code: "MX", name: "🇲🇽 México" },
+    { code: "AR", name: "🇦🇷 Argentina" },
+  ];
 
   useEffect(() => {
     if (typeof navigator !== "undefined") {
@@ -131,9 +133,9 @@ export default function RadioPage() {
             <RadioIcon size={26} className="text-white" />
           </span>
           <div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Live Radio</h1>
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">{t("radio.title")}</h1>
             <p className="text-textdim text-sm mt-0.5">
-              Basque &amp; international live radio stations — Iratxo bizia! 🎙️
+              {t("radio.subtitle")}
             </p>
           </div>
         </div>
@@ -142,10 +144,7 @@ export default function RadioPage() {
       {isOffline && (
         <div className="mb-6 rounded-xl bg-amber-500/10 border border-amber-500/20 p-4 text-sm text-amber-200 animate-fade-up">
           <p className="font-semibold flex items-center gap-1.5">
-            ⚠️ Live Radio is unavailable offline
-          </p>
-          <p className="mt-1 text-xs text-textdim">
-            Connect to the internet to search and stream live radio stations.
+            ⚠️ {t("radio.offlineNotice")}
           </p>
         </div>
       )}
@@ -160,14 +159,14 @@ export default function RadioPage() {
           <div className="flex-1 min-w-0">
             <div className="font-bold truncate">{radioStation.name}</div>
             <div className="text-xs text-textdim">
-              {radioStation.category} • LIVE
+              {radioStation.category} • {t("radio.playingLive")}
             </div>
           </div>
           <button
             onClick={togglePlay}
             className="bg-accent text-black font-bold text-sm px-4 py-1.5 rounded-full"
           >
-            {isPlaying ? "Pause" : "Play"}
+            {isPlaying ? t("common.pause") : t("common.play")}
           </button>
         </div>
       ) : null}
@@ -176,7 +175,7 @@ export default function RadioPage() {
       {regions.map(({ region, stations }) => (
         <section key={region} className="mb-8">
           <h2 className="text-lg sm:text-xl font-bold mb-3 flex items-center gap-2">
-            {region === "Euskadi" ? "🟠" : region === "España" ? "🇪🇸" : "🌍"} {region}
+            {region === "Euskadi" ? "🔴⚪🟢" : region === "España" ? "🇪🇸" : "🌍"} {region}
             <span className="text-textfaint font-normal text-sm">({stations.length})</span>
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -184,6 +183,7 @@ export default function RadioPage() {
               <StationCard
                 key={s.id}
                 station={s}
+                liveLabel={t("radio.playingLive")}
                 playing={radioPlayingId === s.id && isPlaying}
                 onClick={() =>
                   radioPlayingId === s.id ? togglePlay() : playLiveRadio(s)
@@ -197,7 +197,7 @@ export default function RadioPage() {
       {/* Browser — Radio Browser API */}
       <section className="mt-8">
         <h2 className="text-lg sm:text-xl font-bold mb-3 flex items-center gap-2">
-          <Globe2 size={20} className="text-accent" /> Browse 50,000+ stations
+          <Globe2 size={20} className="text-accent" /> {t("radio.worldwideStations")}
         </h2>
         <div className="flex flex-col sm:flex-row gap-2 mb-4">
           <div className="relative flex-1">
@@ -206,7 +206,7 @@ export default function RadioPage() {
               value={browseQuery}
               onChange={(e) => setBrowseQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && runBrowse()}
-              placeholder="Search any station, genre, city…"
+              placeholder={t("radio.searchPlaceholder")}
               className="w-full bg-white/10 rounded-full pl-11 pr-10 py-3 text-sm outline-none placeholder:text-textdim"
             />
             {browseQuery ? (
@@ -234,7 +234,7 @@ export default function RadioPage() {
             }}
             className="bg-white/10 rounded-full px-4 py-3 text-sm outline-none cursor-pointer"
           >
-            {COUNTRY_OPTIONS.map((c) => (
+            {countryOptions.map((c) => (
               <option key={c.code} value={c.code} className="bg-bg-soft">
                 {c.name}
               </option>
@@ -243,9 +243,9 @@ export default function RadioPage() {
           <button
             onClick={() => runBrowse(browseQuery, country)}
             disabled={browsing}
-            className="bg-accent text-black font-bold text-sm px-5 py-3 rounded-full hover:scale-105 transition disabled:opacity-50 whitespace-nowrap"
+            className="bg-accent text-black font-bold text-sm px-5 py-3 rounded-full hover:scale-105 transition disabled:opacity-50 whitespace-nowrap cursor-pointer"
           >
-            {browsing ? "Searching…" : "Search"}
+            {browsing ? t("common.loading") : t("common.search")}
           </button>
         </div>
 
@@ -255,6 +255,7 @@ export default function RadioPage() {
               <StationCard
                 key={s.id}
                 station={s}
+                liveLabel={t("radio.playingLive")}
                 playing={radioPlayingId === s.id && isPlaying}
                 onClick={() =>
                   radioPlayingId === s.id ? togglePlay() : playLiveRadio(s)
@@ -269,8 +270,7 @@ export default function RadioPage() {
           </div>
         ) : (
           <p className="text-textdim text-sm px-1">
-            Search to discover thousands of live stations worldwide via the
-            community Radio Browser directory.
+            {t("radio.subtitle")}
           </p>
         )}
       </section>
@@ -283,17 +283,19 @@ function StationCard({
   playing,
   onClick,
   compact,
+  liveLabel = "LIVE",
 }: {
   station: RadioStation;
   playing: boolean;
   onClick: () => void;
   compact?: boolean;
+  liveLabel?: string;
 }) {
   return (
     <button
       onClick={onClick}
       className={clsx(
-        "group relative flex items-center gap-3 rounded-xl p-3 transition text-left",
+        "group relative flex items-center gap-3 rounded-xl p-3 transition text-left cursor-pointer",
         playing ? "bg-accent/15 ring-1 ring-accent/40" : "bg-panel hover:bg-panel-hover",
       )}
     >
@@ -341,7 +343,7 @@ function StationCard({
         )}
         {playing ? (
           <span className="text-[10px] font-bold text-red-500 uppercase tracking-wide flex items-center gap-1 mt-0.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> LIVE
+            <span className="h-1.5 w-1.5 rounded-full bg-red-500" /> {liveLabel}
           </span>
         ) : null}
       </div>
@@ -370,5 +372,3 @@ function groupByRegion(stations: RadioStation[]) {
       return a.region.localeCompare(b.region);
     });
 }
-
-

@@ -6,27 +6,9 @@ import { usePathname } from "next/navigation";
 import { Home, Search, Library, Disc3, Plus, Radio as RadioIcon, Eye, Settings, Sparkles, Sliders } from "lucide-react";
 import { usePlayer } from "@/lib/player-context";
 import { useViewMode } from "@/lib/view-mode-context";
+import { useTranslation } from "@/lib/i18n";
 import { clsx } from "@/lib/utils";
 import type { Playlist } from "@/lib/types";
-
-const NAV = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/search", label: "Search", icon: Search },
-  { href: "/curator", label: "AI Curation", icon: Sparkles },
-  { href: "/radio", label: "Radio", icon: RadioIcon },
-  { href: "/taste", label: "Let me know", icon: Sliders },
-  { href: "/library", label: "Your Library", icon: Library },
-];
-
-const MOBILE_NAV = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/search", label: "Search", icon: Search },
-  { href: "/curator", label: "AI Curator", icon: Sparkles },
-  { href: "/radio", label: "Radio", icon: RadioIcon },
-  { href: "/taste", label: "Taste", icon: Sliders },
-  { href: "/library", label: "Library", icon: Library },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
 
 function NavItem({
   href,
@@ -63,7 +45,17 @@ export function Sidebar() {
   const pathname = usePathname();
   const p = usePlayer();
   const { viewMode, isSmartphoneView } = useViewMode();
+  const { t } = useTranslation();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
+
+  const navItems = [
+    { href: "/", label: t("nav.home"), icon: Home },
+    { href: "/search", label: t("nav.search"), icon: Search },
+    { href: "/curator", label: t("nav.curator"), icon: Sparkles },
+    { href: "/radio", label: t("nav.radio"), icon: RadioIcon },
+    { href: "/taste", label: t("nav.taste"), icon: Sliders },
+    { href: "/library", label: t("nav.library"), icon: Library },
+  ];
 
   const refreshPlaylists = () =>
     fetch("/api/playlists")
@@ -86,7 +78,7 @@ export function Sidebar() {
   if (isSmartphoneView) return null;
 
   const createPlaylist = async () => {
-    const name = window.prompt("Playlist name", "My Playlist");
+    const name = window.prompt(t("nav.newPlaylistPrompt"), t("nav.defaultPlaylistName"));
     if (!name) return;
     await fetch("/api/playlists", {
       method: "POST",
@@ -98,7 +90,7 @@ export function Sidebar() {
 
   return (
     <aside className={clsx("flex-col gap-2 w-64 shrink-0 p-2", viewMode === "auto" ? "hidden md:flex" : "flex")}>
-      <div className="flex items-center gap-2 px-3 py-5">
+      <div className="flex items-center gap-2 px-3 py-4">
         <div
           className="grid place-items-center h-9 w-9 rounded-lg"
           style={{ background: "linear-gradient(135deg,#1ed760,#0ea5e9)" }}
@@ -108,12 +100,12 @@ export function Sidebar() {
         <div className="leading-tight">
           <div className="font-extrabold tracking-tight">EuskalSoinua</div>
           <div className="text-[10px] text-textfaint uppercase tracking-widest">
-            Ad-free • Open
+            {t("nav.tagline")}
           </div>
         </div>
       </div>
       <nav className="flex flex-col gap-1 bg-bg-soft rounded-xl p-2">
-        {NAV.map((n) => (
+        {navItems.map((n) => (
           <NavItem
             key={n.href}
             {...n}
@@ -133,12 +125,12 @@ export function Sidebar() {
             }}
             className="flex items-center gap-2 text-textfaint text-xs font-bold uppercase tracking-wide hover:text-ink"
           >
-            <Library size={14} /> Your Library
+            <Library size={14} /> {t("nav.library")}
           </Link>
           <button
             onClick={createPlaylist}
-            title="Create playlist"
-            className="grid place-items-center h-7 w-7 rounded-full text-textdim hover:text-ink hover:bg-white/10"
+            title={t("nav.createPlaylist")}
+            className="grid place-items-center h-7 w-7 rounded-full text-textdim hover:text-ink hover:bg-white/10 cursor-pointer"
           >
             <Plus size={16} />
           </button>
@@ -151,8 +143,8 @@ export function Sidebar() {
             <Sparkles size={16} />
           </span>
           <div className="min-w-0">
-            <div className="font-bold truncate text-xs">AI Playlist Curator</div>
-            <div className="text-[10px] text-textdim truncate">Generate with Gemini</div>
+            <div className="font-bold truncate text-xs">{t("nav.aiPlaylistCurator")}</div>
+            <div className="text-[10px] text-textdim truncate">{t("nav.aiCuratorDesc")}</div>
           </div>
         </Link>
         <Link
@@ -172,8 +164,8 @@ export function Sidebar() {
             <span className="text-ink text-sm">♥</span>
           </span>
           <div className="min-w-0">
-            <div className="font-medium truncate">Liked Songs</div>
-            <div className="text-[11px] text-textfaint">Playlist</div>
+            <div className="font-medium truncate">{t("nav.likedSongs")}</div>
+            <div className="text-[11px] text-textfaint">{t("common.playlist")}</div>
           </div>
         </Link>
         <div className="flex-1 overflow-y-auto no-scrollbar -mx-1 px-1">
@@ -203,7 +195,7 @@ export function Sidebar() {
               <div className="min-w-0">
                 <div className="font-medium truncate">{pl.name}</div>
                 <div className="text-[11px] text-textfaint truncate">
-                  Playlist • {pl.trackCount} song{pl.trackCount === 1 ? "" : "s"}
+                  {t("common.playlist")} • {pl.trackCount} {pl.trackCount === 1 ? t("common.songSingular") : t("common.songs")}
                 </div>
               </div>
             </Link>
@@ -213,10 +205,10 @@ export function Sidebar() {
           {p.playerHidden && (
             <button
               onClick={p.togglePlayerHidden}
-              className="flex items-center gap-3 px-2.5 py-2 rounded-lg bg-accent/10 hover:bg-accent/20 text-accent text-sm w-full font-bold transition-all animate-pulse"
+              className="flex items-center gap-3 px-2.5 py-2 rounded-lg bg-accent/10 hover:bg-accent/20 text-accent text-sm w-full font-bold transition-all animate-pulse cursor-pointer"
             >
               <Eye size={18} />
-              <span>Show Music Player</span>
+              <span>{t("nav.showMusicPlayer")}</span>
             </button>
           )}
           <Link
@@ -230,7 +222,7 @@ export function Sidebar() {
             className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-accent/10 text-textdim hover:text-accent text-sm font-semibold"
           >
             <span className="grid place-items-center h-8 w-8 rounded-md bg-accent/20 text-accent">🛡️</span>
-            Admin Access
+            {t("nav.admin")}
           </Link>
           <Link
             href="/settings"
@@ -243,7 +235,7 @@ export function Sidebar() {
             className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5 text-textdim hover:text-ink text-sm"
           >
             <span className="grid place-items-center h-8 w-8 rounded-md bg-white/5">⚙</span>
-            Settings
+            {t("nav.settings")}
           </Link>
         </div>
       </div>
@@ -259,6 +251,17 @@ function playlistColor(id: number): string {
 export function MobileNav() {
   const pathname = usePathname();
   const { viewMode, isDesktopView } = useViewMode();
+  const { t } = useTranslation();
+
+  const mobileNavItems = [
+    { href: "/", label: t("nav.home"), icon: Home },
+    { href: "/search", label: t("nav.search"), icon: Search },
+    { href: "/curator", label: t("nav.curatorMobile"), icon: Sparkles },
+    { href: "/radio", label: t("nav.radio"), icon: RadioIcon },
+    { href: "/taste", label: t("nav.tasteMobile"), icon: Sliders },
+    { href: "/library", label: t("nav.libraryMobile"), icon: Library },
+    { href: "/settings", label: t("nav.settings"), icon: Settings },
+  ];
 
   if (isDesktopView) return null;
 
@@ -267,7 +270,7 @@ export function MobileNav() {
       "fixed bottom-0 inset-x-0 z-40 glass border-t border-white/10 flex items-stretch justify-around px-1.5 py-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)] min-h-[64px] mobile-bottom-nav",
       viewMode === "auto" ? "md:hidden flex" : "flex"
     )}>
-      {MOBILE_NAV.map((n) => {
+      {mobileNavItems.map((n) => {
         const active =
           pathname === n.href || (n.href !== "/" && pathname.startsWith(n.href));
         const Icon = n.icon;
@@ -296,3 +299,4 @@ export function MobileNav() {
     </nav>
   );
 }
+

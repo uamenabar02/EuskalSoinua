@@ -33,6 +33,10 @@ interface LocalStore {
   adminEmail: string;
   adminPasscodeHash: string;
   adminInitialized?: boolean;
+  adminMasterKeyHash?: string;
+  adminRecoveryOtpHash?: string;
+  adminRecoveryExpiresAt?: number;
+  adminRecoveryAttempts?: number;
   adminSessions: string[]; // session tokens for authenticated admin devices
   requests: Record<string, DeviceAccessRecord>;
 }
@@ -40,6 +44,10 @@ interface LocalStore {
 const defaultStore: LocalStore = {
   adminEmail: "uamenabar02@gmail.com",
   adminPasscodeHash: "",
+  adminMasterKeyHash: "",
+  adminRecoveryOtpHash: "",
+  adminRecoveryExpiresAt: 0,
+  adminRecoveryAttempts: 0,
   adminSessions: [],
   requests: {},
 };
@@ -79,6 +87,19 @@ function generateRandom12CharPasscode(): string {
     passcode += chars[bytes[i] % chars.length];
   }
   return passcode;
+}
+
+/**
+ * Generates an Emergency Master Recovery Key formatted as ESK-XXXX-XXXX-XXXX-XXXX.
+ */
+function generateFormattedMasterKey(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.randomBytes(16);
+  let raw = "";
+  for (let i = 0; i < 16; i++) {
+    raw += chars[bytes[i] % chars.length];
+  }
+  return `ESK-${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}`;
 }
 
 let tablesInitialized = false;
@@ -171,6 +192,26 @@ export async function ensureAccessTables(): Promise<void> {
       const store = readLocalStore();
       store.adminEmail = "uamenabar02@gmail.com";
       store.adminPasscodeHash = hash;
+
+      // Also generate initial Emergency Master Key
+      const initialMasterKey = generateFormattedMasterKey();
+      const masterSalt = bcrypt.genSaltSync(10);
+      const masterHash = bcrypt.hashSync(initialMasterKey, masterSalt);
+      store.adminMasterKeyHash = masterHash;
+
+      if (pool) {
+        try {
+          await pool.query(
+            `INSERT INTO admin_config (key, value, updated_at)
+             VALUES ('admin_master_key_hash', $1, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+            [masterHash]
+          );
+        } catch (e) {
+          console.error("[AccessDB] Failed to persist master key hash in DB:", e);
+        }
+      }
+
       writeLocalStore(store);
 
       // PRINT ONLY ONCE TO SERVER CONSOLE LOGS
@@ -178,7 +219,53 @@ export async function ensureAccessTables(): Promise<void> {
       console.log("🔐 [EuskalSoinua Security] FIRST STARTUP ADMIN CREDENTIALS GENERATED");
       console.log("Admin Email: uamenabar02@gmail.com");
       console.log(`Generated Admin Passcode (12-char): ${generatedPasscode}`);
-      console.log("NOTE: This random passcode is hashed with bcrypt and logged ONLY ONCE.");
+      console.log(`Emergency Master Recovery Key:     ${initialMasterKey}`);
+      console.log("NOTE: These credentials are encrypted with bcrypt and logged ONLY ONCE.");
+      console.log("Save the Emergency Master Recovery Key in a secure offline vault.");
+      console.log("==================================================================\n");
+    }
+
+    // Ensure Emergency Master Recovery Key exists even if database was created earlier
+    let currentMasterHash = "";
+    if (pool) {
+      try {
+        const res = await pool.query(`SELECT value FROM admin_config WHERE key = 'admin_master_key_hash'`);
+        if (res.rows.length > 0) {
+          currentMasterHash = res.rows[0].value;
+        }
+      } catch {}
+    }
+    if (!currentMasterHash) {
+      const store = readLocalStore();
+      if (store.adminMasterKeyHash) {
+        currentMasterHash = store.adminMasterKeyHash;
+      }
+    }
+    if (!currentMasterHash) {
+      const newMasterKey = generateFormattedMasterKey();
+      const masterSalt = bcrypt.genSaltSync(10);
+      const masterHash = bcrypt.hashSync(newMasterKey, masterSalt);
+
+      if (pool) {
+        try {
+          await pool.query(
+            `INSERT INTO admin_config (key, value, updated_at)
+             VALUES ('admin_master_key_hash', $1, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+            [masterHash]
+          );
+        } catch (e) {
+          console.error("[AccessDB] Failed to persist master key hash in DB:", e);
+        }
+      }
+
+      const store = readLocalStore();
+      store.adminMasterKeyHash = masterHash;
+      writeLocalStore(store);
+
+      console.log("\n==================================================================");
+      console.log("🔐 [EuskalSoinua Security] EMERGENCY MASTER RECOVERY KEY PROVISIONED");
+      console.log(`Emergency Master Recovery Key: ${newMasterKey}`);
       console.log("==================================================================\n");
     }
 
@@ -205,6 +292,10 @@ export async function getAdminConfig(key: string, defaultValue = ""): Promise<st
   const store = readLocalStore();
   if (key === "admin_email") return store.adminEmail;
   if (key === "admin_passcode_hash") return store.adminPasscodeHash;
+  if (key === "admin_master_key_hash") return store.adminMasterKeyHash || defaultValue;
+  if (key === "admin_recovery_otp_hash") return store.adminRecoveryOtpHash || defaultValue;
+  if (key === "admin_recovery_expires_at") return store.adminRecoveryExpiresAt ? String(store.adminRecoveryExpiresAt) : defaultValue;
+  if (key === "admin_recovery_attempts") return store.adminRecoveryAttempts !== undefined ? String(store.adminRecoveryAttempts) : defaultValue;
   if (key === "admin_initialized") return store.adminInitialized ? "true" : defaultValue;
   return defaultValue;
 }
@@ -228,6 +319,10 @@ export async function setAdminConfig(key: string, value: string): Promise<boolea
   const store = readLocalStore();
   if (key === "admin_email") store.adminEmail = value;
   if (key === "admin_passcode_hash") store.adminPasscodeHash = value;
+  if (key === "admin_master_key_hash") store.adminMasterKeyHash = value;
+  if (key === "admin_recovery_otp_hash") store.adminRecoveryOtpHash = value;
+  if (key === "admin_recovery_expires_at") store.adminRecoveryExpiresAt = Number(value) || 0;
+  if (key === "admin_recovery_attempts") store.adminRecoveryAttempts = Number(value) || 0;
   if (key === "admin_initialized") store.adminInitialized = value === "true";
   writeLocalStore(store);
   return dbSuccess || true;
@@ -268,6 +363,180 @@ export async function isAdminInitialized(): Promise<boolean> {
 
 export async function markAdminInitialized(): Promise<void> {
   await setAdminConfig("admin_initialized", "true");
+}
+
+// ---------------------------------------------------------------------------
+// PASSWORD RECOVERY & EMERGENCY RECOVERY HELPERS
+// ---------------------------------------------------------------------------
+
+/**
+ * Checks if an Emergency Master Recovery Key is provisioned.
+ */
+export async function hasMasterRecoveryKey(): Promise<boolean> {
+  const hash = await getAdminConfig("admin_master_key_hash", "");
+  return !!hash;
+}
+
+/**
+ * Generates and saves a new Emergency Master Recovery Key.
+ * Returns the raw key for the admin to record offline.
+ */
+export async function generateMasterRecoveryKey(): Promise<string> {
+  const rawKey = generateFormattedMasterKey();
+  const salt = bcrypt.genSaltSync(10);
+  const hash = bcrypt.hashSync(rawKey, salt);
+  await setAdminConfig("admin_master_key_hash", hash);
+  return rawKey;
+}
+
+/**
+ * Verifies an Emergency Master Recovery Key against the stored bcrypt hash.
+ */
+export async function verifyMasterRecoveryKey(enteredKey: string): Promise<boolean> {
+  if (!enteredKey) return false;
+  const sanitized = enteredKey.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "");
+  const storedHash = await getAdminConfig("admin_master_key_hash", "");
+  if (!storedHash) return false;
+
+  try {
+    return bcrypt.compareSync(sanitized, storedHash);
+  } catch (err) {
+    console.error("[AccessDB] Master key verify error:", err);
+    return false;
+  }
+}
+
+/**
+ * Uses the Emergency Master Recovery Key to reset the admin passcode.
+ */
+export async function verifyMasterKeyAndReset(
+  masterKey: string,
+  newPasscode: string
+): Promise<{ success: boolean; token?: string; error?: string }> {
+  if (!newPasscode || newPasscode.trim().length < 6) {
+    return { success: false, error: "New passcode must be at least 6 characters long." };
+  }
+
+  const isValid = await verifyMasterRecoveryKey(masterKey);
+  if (!isValid) {
+    return { success: false, error: "Invalid Emergency Master Recovery Key." };
+  }
+
+  await updateAdminPasscode(newPasscode.trim());
+  await markAdminInitialized();
+
+  // Clear any pending OTP recovery sessions
+  await setAdminConfig("admin_recovery_otp_hash", "");
+  await setAdminConfig("admin_recovery_expires_at", "0");
+  await setAdminConfig("admin_recovery_attempts", "0");
+
+  const sessionToken = `adm_${crypto.randomBytes(24).toString("hex")}`;
+  await addAdminSessionToken(sessionToken);
+
+  return { success: true, token: sessionToken };
+}
+
+/**
+ * Generates a 6-digit one-time password (OTP) for admin passcode recovery.
+ * Valid for 15 minutes.
+ */
+export async function generateAdminRecoveryOtp(): Promise<{
+  otp: string;
+  expiresInMinutes: number;
+  expiresAt: number;
+}> {
+  // Generate 6-digit numeric OTP (e.g. "492815")
+  const otpNumber = crypto.randomInt(100000, 1000000);
+  const otp = otpNumber.toString();
+  const expiresInMinutes = 15;
+  const expiresAt = Date.now() + expiresInMinutes * 60 * 1000;
+
+  const salt = bcrypt.genSaltSync(10);
+  const hash = bcrypt.hashSync(otp, salt);
+
+  await setAdminConfig("admin_recovery_otp_hash", hash);
+  await setAdminConfig("admin_recovery_expires_at", String(expiresAt));
+  await setAdminConfig("admin_recovery_attempts", "0");
+
+  return {
+    otp,
+    expiresInMinutes,
+    expiresAt,
+  };
+}
+
+/**
+ * Verifies the 6-digit OTP and resets the admin passcode if valid.
+ */
+export async function verifyAdminRecoveryOtpAndReset(
+  otp: string,
+  newPasscode: string
+): Promise<{ success: boolean; token?: string; error?: string }> {
+  if (!otp || !otp.trim()) {
+    return { success: false, error: "Please enter the 6-digit recovery code." };
+  }
+
+  if (!newPasscode || newPasscode.trim().length < 6) {
+    return { success: false, error: "New passcode must be at least 6 characters long." };
+  }
+
+  const storedOtpHash = await getAdminConfig("admin_recovery_otp_hash", "");
+  const expiresAtStr = await getAdminConfig("admin_recovery_expires_at", "0");
+  const attemptsStr = await getAdminConfig("admin_recovery_attempts", "0");
+
+  const expiresAt = Number(expiresAtStr) || 0;
+  const attempts = Number(attemptsStr) || 0;
+
+  if (!storedOtpHash || expiresAt === 0) {
+    return { success: false, error: "No active password recovery request found. Please request a new code." };
+  }
+
+  if (Date.now() > expiresAt) {
+    // Expired
+    await setAdminConfig("admin_recovery_otp_hash", "");
+    await setAdminConfig("admin_recovery_expires_at", "0");
+    return { success: false, error: "Recovery code has expired. Please request a fresh code." };
+  }
+
+  if (attempts >= 5) {
+    await setAdminConfig("admin_recovery_otp_hash", "");
+    await setAdminConfig("admin_recovery_expires_at", "0");
+    return { success: false, error: "Too many incorrect attempts. For security, please request a new code." };
+  }
+
+  const cleanOtp = otp.trim().replace(/\s+/g, "");
+  let isValid = false;
+  try {
+    isValid = bcrypt.compareSync(cleanOtp, storedOtpHash);
+  } catch {
+    isValid = false;
+  }
+
+  if (!isValid) {
+    const newAttempts = attempts + 1;
+    await setAdminConfig("admin_recovery_attempts", String(newAttempts));
+    const remaining = 5 - newAttempts;
+    return {
+      success: false,
+      error: `Invalid recovery code. ${remaining > 0 ? `${remaining} attempts remaining.` : "Please request a new code."}`,
+    };
+  }
+
+  // OTP is valid! Apply new passcode
+  await updateAdminPasscode(newPasscode.trim());
+  await markAdminInitialized();
+
+  // Clear recovery state
+  await setAdminConfig("admin_recovery_otp_hash", "");
+  await setAdminConfig("admin_recovery_expires_at", "0");
+  await setAdminConfig("admin_recovery_attempts", "0");
+  await setAdminConfig("admin_last_recovery_at", new Date().toISOString());
+
+  // Generate session token
+  const sessionToken = `adm_${crypto.randomBytes(24).toString("hex")}`;
+  await addAdminSessionToken(sessionToken);
+
+  return { success: true, token: sessionToken };
 }
 
 // ---------------------------------------------------------------------------
@@ -548,4 +817,37 @@ export async function fetchIpGeolocation(ip: string) {
     locationCoords: null,
     timezone: null,
   };
+}
+
+const HMAC_SECRET = process.env.ACCESS_HMAC_SECRET || "euskalsoinua-device-auth-secret-key-2026";
+
+/**
+ * Creates a cryptographically signed device authorization token.
+ */
+export function signDeviceId(deviceId: string): string {
+  const hmac = crypto.createHmac("sha256", HMAC_SECRET).update(deviceId).digest("hex");
+  return `${deviceId}.${hmac}`;
+}
+
+/**
+ * Verifies a cryptographically signed device authorization token.
+ */
+export function verifySignedDeviceId(token: string | null | undefined): { valid: boolean; deviceId: string | null } {
+  if (!token || typeof token !== "string") return { valid: false, deviceId: null };
+  const parts = token.split(".");
+  if (parts.length !== 2) return { valid: false, deviceId: null };
+  const [deviceId, hmac] = parts;
+  if (!deviceId || !hmac) return { valid: false, deviceId: null };
+
+  const expected = crypto.createHmac("sha256", HMAC_SECRET).update(deviceId).digest("hex");
+  try {
+    const a = Buffer.from(hmac, "utf8");
+    const b = Buffer.from(expected, "utf8");
+    if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+      return { valid: true, deviceId };
+    }
+  } catch {
+    return { valid: false, deviceId: null };
+  }
+  return { valid: false, deviceId: null };
 }

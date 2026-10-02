@@ -2,9 +2,12 @@
 
 import { AiPlaylistGenerator } from "@/components/ai-playlist-generator";
 import { DetailToggle } from "@/components/detail-toggle";
+import { useTranslation } from "@/lib/i18n";
 import { Sparkles, Music2, ShieldCheck, Flame } from "lucide-react";
 
 export default function CuratorPage() {
+  const { t } = useTranslation();
+
   return (
     <div className="w-full max-w-5xl mx-auto px-2 sm:px-6 pt-4 sm:pt-6 pb-28 space-y-6 sm:space-y-8 animate-fade-up">
       {/* Top Banner */}
@@ -12,13 +15,13 @@ export default function CuratorPage() {
         <div className="space-y-1 sm:space-y-2">
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-accent">
             <Sparkles size={16} />
-            <span>Gemini-Powered Intelligence</span>
+            <span>{t("curator.geminiIntelligence")}</span>
           </div>
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight">
-            AI Smart Playlist Curation
+            {t("curator.title")}
           </h1>
           <p className="text-xs sm:text-sm text-textdim max-w-2xl leading-relaxed non-critical-detail">
-            Curate tailored playlists using either full conversational prompts or precision musical parameters. Every track is resolved to real audio with full ad-free playback.
+            {t("curator.subtitle")}
           </p>
         </div>
         <div className="shrink-0 self-start sm:self-auto">
@@ -34,34 +37,33 @@ export default function CuratorPage() {
         <div className="p-4 rounded-xl bg-panel border border-white/5 space-y-2">
           <div className="flex items-center gap-2 text-accent text-sm font-bold">
             <Flame size={16} />
-            <span>Basque Ground Truth</span>
+            <span>{t("curator.basqueGroundTruthTitle")}</span>
           </div>
           <p className="text-xs text-textdim leading-relaxed">
-            Deep contextual knowledge of Basque artists, from historic punk legends (Kortatu, Berri Txarrak) to modern urban trap & pop (Bengo, ZETAK, Tatta).
+            {t("curator.basqueGroundTruthDesc")}
           </p>
         </div>
 
         <div className="p-4 rounded-xl bg-panel border border-white/5 space-y-2">
           <div className="flex items-center gap-2 text-accent text-sm font-bold">
             <Music2 size={16} />
-            <span>Influence Customization</span>
+            <span>{t("curator.influenceCustomizationTitle")}</span>
           </div>
           <p className="text-xs text-textdim leading-relaxed">
-            Choose exactly how much Basque music you want: from 100% pure Euskal musika to a 50/50 international mix or 100% global artists.
+            {t("curator.influenceCustomizationDesc")}
           </p>
         </div>
 
         <div className="p-4 rounded-xl bg-panel border border-white/5 space-y-2">
           <div className="flex items-center gap-2 text-accent text-sm font-bold">
             <ShieldCheck size={16} />
-            <span>Real Playable Tracks</span>
+            <span>{t("curator.realPlayableTracksTitle")}</span>
           </div>
           <p className="text-xs text-textdim leading-relaxed">
-            No mock data or fake names. Every curated item is resolved to real streaming sources with audio previews and full YouTube playback.
+            {t("curator.realPlayableTracksDesc")}
           </p>
         </div>
       </div>
     </div>
   );
 }
-

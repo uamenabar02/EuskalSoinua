@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { usePlayer } from "@/lib/player-context";
+import { useTranslation } from "@/lib/i18n";
+import LanguageSelector from "@/components/language-selector";
 import {
   ShieldCheck,
   Sparkles,
@@ -20,6 +22,7 @@ import {
   Laptop,
   Smartphone,
   Monitor,
+  Globe,
 } from "lucide-react";
 import { clsx } from "@/lib/utils";
 import { useTheme, THEMES } from "@/lib/theme-context";
@@ -42,6 +45,7 @@ export default function SettingsPage() {
   const p = usePlayer();
   const { theme, setTheme } = useTheme();
   const { viewMode, setViewMode } = useViewMode();
+  const { t } = useTranslation();
   const [status, setStatus] = useState<StreamingStatus | null>(null);
   const [eqEnabled, setEqEnabled] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -100,8 +104,8 @@ export default function SettingsPage() {
   const handleUnlinkDevice = async (deviceId: string) => {
     const isCurrent = deviceId === currentDeviceId;
     const msg = isCurrent
-      ? "Are you sure you want to unlink this current device? It will be removed from the list of synchronized devices, and you will need to reconnect it later."
-      : "Are you sure you want to unlink this device? Its connection to this Sync Code will be forgotten.";
+      ? t("settings.unlinkConfirmCurrent")
+      : t("settings.unlinkConfirmOther");
     
     if (!window.confirm(msg)) return;
 
@@ -137,15 +141,15 @@ export default function SettingsPage() {
   const handleSync = async () => {
     const target = inputKey.trim().toUpperCase();
     if (!target) {
-      setSyncError("Please enter a valid Device Sync Code.");
+      setSyncError(t("settings.syncErrorInvalid"));
       return;
     }
     if (target === currentKey) {
-      setSyncError("This is already your current Device Sync Code.");
+      setSyncError(t("settings.syncErrorCurrent"));
       return;
     }
     if (!target.startsWith("S-") || target.length !== 8) {
-      setSyncError("Invalid Sync Code format. It should look like 'S-XXXXXX'.");
+      setSyncError(t("settings.syncErrorFormat"));
       return;
     }
 
@@ -181,7 +185,7 @@ export default function SettingsPage() {
   };
 
   const handleReset = async (skipConfirm: boolean = false) => {
-    if (!skipConfirm && !window.confirm("Are you sure you want to desynchronize this device and generate a new Sync Code? This device will keep its current library, liked songs, and playlists, but future changes won't affect the other devices.")) {
+    if (!skipConfirm && !window.confirm(t("settings.resetConfirm"))) {
       return;
     }
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -245,33 +249,45 @@ export default function SettingsPage() {
 
   return (
     <div className="px-4 sm:px-6 pt-6 max-w-3xl mx-auto pb-16">
-      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-1">Settings</h1>
+      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-1">{t("settings.title")}</h1>
       <p className="text-textdim text-sm mb-8">
-        Everything here runs locally on your device. No accounts, no tracking.
+        {t("settings.subtitle")}
       </p>
 
+      {/* Language Selector */}
+      <Group title={t("settings.language")}>
+        <div className="px-4 py-2 flex items-center gap-2 text-textdim">
+          <Globe size={18} className="text-accent" />
+          <span className="text-sm font-semibold text-white">{t("settings.language")} / Hizkuntza / Idioma</span>
+        </div>
+        <LanguageSelector variant="grid" />
+        <div className="px-4 pb-3 text-xs text-textfaint">
+          {t("settings.languageNote")}
+        </div>
+      </Group>
+
       {/* Appearance / Themes */}
-      <Group title="Appearance">
+      <Group title={t("settings.appearance")}>
         <div className="px-4 py-2 flex items-center gap-2 text-textdim">
           <Palette size={18} />
-          <span className="text-sm font-medium">Theme</span>
+          <span className="text-sm font-medium">{t("settings.theme")}</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 p-3 pt-1">
-          {THEMES.map((t) => (
+          {THEMES.map((tItem) => (
             <button
-              key={t.id}
-              onClick={() => setTheme(t.id)}
+              key={tItem.id}
+              onClick={() => setTheme(tItem.id)}
               className={clsx(
-                "relative flex flex-col gap-2 rounded-xl p-3 border-2 transition text-left",
-                theme === t.id
+                "relative flex flex-col gap-2 rounded-xl p-3 border-2 transition text-left cursor-pointer",
+                theme === tItem.id
                   ? "border-accent"
                   : "border-transparent hover:border-white/10",
               )}
-              style={{ background: t.swatch[0] }}
+              style={{ background: tItem.swatch[0] }}
             >
               {/* preview swatches */}
               <div className="flex gap-1.5">
-                {t.swatch.map((c, i) => (
+                {tItem.swatch.map((c, i) => (
                   <span
                     key={i}
                     className="h-7 w-7 rounded-md border border-white/10"
@@ -280,9 +296,9 @@ export default function SettingsPage() {
                 ))}
               </div>
               <span className="text-sm font-semibold flex items-center gap-1.5" style={{ color: "#fff" }}>
-                <span>{t.emoji}</span> {t.name}
+                <span>{tItem.emoji}</span> {tItem.name}
               </span>
-              {theme === t.id ? (
+              {theme === tItem.id ? (
                 <span className="absolute top-2 right-2 grid place-items-center h-5 w-5 rounded-full bg-accent text-black">
                   <Check size={13} strokeWidth={3} />
                 </span>
@@ -291,30 +307,30 @@ export default function SettingsPage() {
           ))}
         </div>
         <div className="px-4 pb-3 text-xs text-textfaint">
-          Your choice is saved on this device.
+          {t("settings.themeNote")}
         </div>
       </Group>
 
       {/* View Mode & Layout */}
-      <Group title="View Mode & Layout">
+      <Group title={t("settings.viewModeTitle")}>
         <div className="px-4 py-2 flex items-center gap-2 text-textdim">
           <Smartphone size={18} className="text-accent" />
-          <span className="text-sm font-medium font-semibold text-white">Desktop / Smartphone View Selector</span>
+          <span className="text-sm font-medium font-semibold text-white">{t("settings.viewModeSelector")}</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 pt-1">
           <button
             onClick={() => setViewMode("auto")}
             className={clsx(
-              "relative flex flex-col gap-1.5 rounded-xl p-3.5 border-2 transition text-left bg-white/5 hover:bg-white/10",
+              "relative flex flex-col gap-1.5 rounded-xl p-3.5 border-2 transition text-left bg-white/5 hover:bg-white/10 cursor-pointer",
               viewMode === "auto" ? "border-accent bg-accent/10" : "border-transparent"
             )}
           >
             <div className="flex items-center gap-2 font-bold text-sm text-white">
               <Laptop size={18} className="text-accent shrink-0" />
-              <span>Auto (Responsive)</span>
+              <span>{t("settings.autoMode")}</span>
             </div>
             <p className="text-xs text-textdim leading-relaxed">
-              Adapts automatically based on your device screen width.
+              {t("settings.autoModeDesc")}
             </p>
             {viewMode === "auto" && (
               <span className="absolute top-2.5 right-2.5 grid place-items-center h-5 w-5 rounded-full bg-accent text-black">
@@ -326,16 +342,16 @@ export default function SettingsPage() {
           <button
             onClick={() => setViewMode("smartphone")}
             className={clsx(
-              "relative flex flex-col gap-1.5 rounded-xl p-3.5 border-2 transition text-left bg-white/5 hover:bg-white/10",
+              "relative flex flex-col gap-1.5 rounded-xl p-3.5 border-2 transition text-left bg-white/5 hover:bg-white/10 cursor-pointer",
               viewMode === "smartphone" ? "border-accent bg-accent/10" : "border-transparent"
             )}
           >
             <div className="flex items-center gap-2 font-bold text-sm text-white">
               <Smartphone size={18} className="text-accent shrink-0" />
-              <span>Smartphone View</span>
+              <span>{t("settings.smartphoneMode")}</span>
             </div>
             <p className="text-xs text-textdim leading-relaxed">
-              Forces smartphone layout & bottom tabs. Solves background audio stopping on Android Chrome with &quot;Desktop site&quot; mode ON!
+              {t("settings.smartphoneModeDesc")}
             </p>
             {viewMode === "smartphone" && (
               <span className="absolute top-2.5 right-2.5 grid place-items-center h-5 w-5 rounded-full bg-accent text-black">
@@ -347,16 +363,16 @@ export default function SettingsPage() {
           <button
             onClick={() => setViewMode("desktop")}
             className={clsx(
-              "relative flex flex-col gap-1.5 rounded-xl p-3.5 border-2 transition text-left bg-white/5 hover:bg-white/10",
+              "relative flex flex-col gap-1.5 rounded-xl p-3.5 border-2 transition text-left bg-white/5 hover:bg-white/10 cursor-pointer",
               viewMode === "desktop" ? "border-accent bg-accent/10" : "border-transparent"
             )}
           >
             <div className="flex items-center gap-2 font-bold text-sm text-white">
               <Monitor size={18} className="text-accent shrink-0" />
-              <span>Desktop View</span>
+              <span>{t("settings.desktopMode")}</span>
             </div>
             <p className="text-xs text-textdim leading-relaxed">
-              Forces sidebar navigation and expanded desktop player bar.
+              {t("settings.desktopModeDesc")}
             </p>
             {viewMode === "desktop" && (
               <span className="absolute top-2.5 right-2.5 grid place-items-center h-5 w-5 rounded-full bg-accent text-black">
@@ -366,73 +382,73 @@ export default function SettingsPage() {
           </button>
         </div>
         <div className="px-4 pb-3 text-xs text-textfaint">
-          Saved persistently for this user / device in local storage.
+          {t("settings.viewModeNote")}
         </div>
       </Group>
 
       {/* Recommendation */}
-      <Group title="Recommendations">
+      <Group title={t("settings.recommendations")}>
         <ToggleRow
           icon={<Sparkles size={18} className="text-basque" />}
-          label="Basque & Local Music Booster"
-          desc="Heavily weight regional (Euskal) tags in your For You feed"
+          label={t("settings.basqueBooster")}
+          desc={t("settings.basqueBoosterDesc")}
           checked={p.basqueBooster}
           onChange={p.toggleBooster}
         />
         <ToggleRow
           icon={<Shuffle size={18} className="text-textdim" />}
-          label="Shuffle default"
-          desc="Start playback shuffled by default"
+          label={t("settings.shuffleDefault")}
+          desc={t("settings.shuffleDefaultDesc")}
           checked={p.shuffle}
           onChange={p.toggleShuffle}
         />
       </Group>
 
       {/* External Integrations */}
-      <Group title="External Integrations">
+      <Group title={t("settings.externalIntegrations")}>
         <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex-1">
             <h3 className="text-sm font-semibold text-white flex items-center gap-1.5">
-              <Sparkles size={16} className="text-accent" /> Sync Playlists
+              <Sparkles size={16} className="text-accent" /> {t("settings.syncPlaylists")}
             </h3>
             <p className="text-xs text-textdim mt-1">
-              Import and synchronize playlists from Spotify, YouTube Music, Deezer, etc.
+              {t("settings.syncPlaylistsDesc")}
             </p>
           </div>
           <button
             onClick={() => setIsImportOpen(true)}
-            className="bg-accent text-black font-bold text-xs px-4 py-2.5 rounded-full hover:scale-105 transition self-start sm:self-center shrink-0"
+            className="bg-accent text-black font-bold text-xs px-4 py-2.5 rounded-full hover:scale-105 transition self-start sm:self-center shrink-0 cursor-pointer"
           >
-            Import Playlist
+            {t("settings.importPlaylistBtn")}
           </button>
         </div>
       </Group>
 
       {/* Playback */}
-      <Group title="Playback">
+      <Group title={t("settings.playback")}>
         <ToggleRow
           icon={<Radio size={18} className="text-accent" />}
-          label="Full Track mode"
-          desc="Play complete songs via the official YouTube player (may include ads). Off = ad-free 30s previews."
+          label={t("settings.fullTrackMode")}
+          desc={t("settings.fullTrackDesc")}
           checked={p.fullTrackMode}
           onChange={p.toggleFullTrack}
         />
         {p.fullTrackMode ? (
           <div className="px-4 py-2 text-xs text-amber-300/80 leading-relaxed">
-            {"Full songs are streamed through YouTube's official player. This is the legal way to hear complete tracks — the trade-off is that YouTube may insert ads. The on-device equalizer is disabled in this mode."}
+            {t("settings.fullTrackNotice")}
           </div>
         ) : null}
         <ToggleRow
           icon={<ShieldCheck size={18} className="text-accent" />}
-          label="SponsorBlock auto-skip"
-          desc="Skip sponsor reads, intros, outros & non-music segments"
+          label={t("settings.sponsorblockTitle")}
+          desc={t("settings.sponsorblockDesc")}
           checked={p.sponsorblockEnabled}
           onChange={p.toggleSponsorblock}
         />
         <ToggleRow
           icon={<Music2 size={18} className="text-textdim" />}
-          label="Equalizer"
-          desc="5-band parametric EQ via Web Audio API"
+          label={t("settings.equalizerTitle")}
+          desc={t("settings.equalizerDesc")}
           checked={p.eqEnabled}
           onChange={() => {
             p.toggleEq();
@@ -441,7 +457,7 @@ export default function SettingsPage() {
         />
         {eqEnabled ? (
           <div className="px-4 py-2 text-xs text-textfaint">
-            Open the Now Playing view → Equalizer tab to tune bands & presets.
+            {t("settings.equalizerNote")}
           </div>
         ) : null}
 
@@ -450,13 +466,13 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3 mb-2">
             <Waves size={18} className="text-accent shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium">Crossfade</div>
+              <div className="text-sm font-medium">{t("settings.crossfadeTitle")}</div>
               <div className="text-xs text-textdim">
-                Smoothly overlap the end of a song with the start of the next
+                {t("settings.crossfadeDesc")}
               </div>
             </div>
             <span className="text-sm font-bold text-accent tabular-nums shrink-0">
-              {p.crossfadeSeconds === 0 ? "Off" : `${p.crossfadeSeconds}s`}
+              {p.crossfadeSeconds === 0 ? t("settings.crossfadeOff") : `${p.crossfadeSeconds}s`}
             </span>
           </div>
           <input
@@ -472,7 +488,7 @@ export default function SettingsPage() {
             }}
           />
           <div className="flex justify-between text-[10px] text-textfaint mt-1">
-            <span>Off</span>
+            <span>{t("settings.crossfadeOff")}</span>
             <span>4s</span>
             <span>8s</span>
             <span>12s</span>
@@ -481,42 +497,39 @@ export default function SettingsPage() {
 
         <ToggleRow
           icon={<EyeOff size={18} className="text-textdim" />}
-          label="Hide Music Player"
-          desc="Collapse and hide the persistent bottom music player bar and controls"
+          label={t("settings.hideMusicPlayer")}
+          desc={t("settings.hideMusicPlayerDesc")}
           checked={p.playerHidden}
           onChange={p.togglePlayerHidden}
         />
       </Group>
 
       {/* Architecture / streaming status */}
-      <Group title="Ad-free streaming backend">
+      <Group title={t("settings.streamingBackend")}>
         <Row
           icon={<Server size={18} className="text-accent" />}
-          label="Audio source"
+          label={t("settings.audioSource")}
           value={
             status?.streamingConfigured
-              ? "Piped / Invidious (live, ad-free)"
-              : "Demo audio bank"
+              ? t("settings.audioSourceLive")
+              : t("settings.audioSourceDemo")
           }
           tone={status?.streamingConfigured ? "good" : "warn"}
         />
         <Row
           icon={<Cpu size={18} className="text-textdim" />}
-          label="Proxy instances"
+          label={t("settings.proxyInstances")}
           value={status?.instanceList ?? "—"}
           mono
         />
         <Row
           icon={<ShieldCheck size={18} className="text-textdim" />}
-          label="SponsorBlock endpoint"
+          label={t("settings.sponsorblockEndpoint")}
           value={status?.sponsorblockBase ?? "—"}
           mono
         />
         <div className="px-4 py-3 text-xs text-textfaint leading-relaxed">
-          EuskalSoinua never loads commercial ad-serving wrappers. It resolves a
-          pure audio-only stream through privacy-respecting open-source proxies.
-          Defaults are bundled — override via{" "}
-          <code className="text-textdim">.env</code>:
+          {t("settings.backendNotice")}
           <div className="mt-1 font-mono text-[10px]">
             PIPED_API_URLS, INVIDIOUS_API_URLS, SPONSORBLOCK_API_URL
           </div>
@@ -524,19 +537,19 @@ export default function SettingsPage() {
       </Group>
 
       {/* Multi-Device Synchronization */}
-      <Group title="Device Synchronization">
+      <Group title={t("settings.deviceSync")}>
         <div className="p-4 flex flex-col gap-4">
           <div>
             <h3 className="text-sm font-semibold text-white flex items-center gap-1.5">
-              <Server size={16} className="text-accent" /> Device Sync Code
+              <Server size={16} className="text-accent" /> {t("settings.syncCodeTitle")}
             </h3>
             <p className="text-xs text-textdim mt-1 leading-relaxed">
-              Every device connected to EuskalSoinua is completely separate by default. Your library, liked songs, playlists, and taste profile are stored under your unique Device Sync Code.
+              {t("settings.syncCodeDesc")}
             </p>
           </div>
 
           <div className="flex items-center gap-2.5 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-            <span className="text-xs font-semibold text-textdim uppercase tracking-wider">Your Code:</span>
+            <span className="text-xs font-semibold text-textdim uppercase tracking-wider">{t("settings.yourCode")}</span>
             <span className="text-base font-mono font-bold text-accent select-all">{currentKey || "Loading..."}</span>
           </div>
 
@@ -544,10 +557,10 @@ export default function SettingsPage() {
           {devices.length > 0 && (
             <div className="mt-2 pt-4 border-t border-white/5">
               <h4 className="text-xs font-semibold text-white mb-2 flex items-center gap-1.5">
-                <Check size={14} className="text-accent" /> Synchronized Devices ({devices.length})
+                <Check size={14} className="text-accent" /> {t("settings.syncDevicesCount", { count: devices.length })}
               </h4>
               <p className="text-[11px] text-textdim mb-3 leading-relaxed">
-                The following devices are currently synchronized with this Sync Code. They share your entire library, taste profile, and active history in real-time.
+                {t("settings.syncDevicesListDesc")}
               </p>
               
               <div className="flex flex-col gap-2">
@@ -583,7 +596,7 @@ export default function SettingsPage() {
                                 onClick={() => handleRenameDevice(device.deviceId, editName)}
                                 className="bg-accent text-black text-[10px] font-bold px-2 py-1 rounded hover:bg-accent/90"
                               >
-                                Save
+                                {t("common.save")}
                               </button>
                             </div>
                           ) : (
@@ -593,13 +606,13 @@ export default function SettingsPage() {
                               </span>
                               {isCurrent && (
                                 <span className="text-[9px] bg-accent/20 text-accent px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider scale-90">
-                                  Current
+                                  {t("settings.currentDeviceBadge")}
                                 </span>
                               )}
                             </div>
                           )}
                           <span className="block text-[10px] text-textdim mt-0.5">
-                            Last active: {new Date(device.lastActiveAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                            {t("settings.lastActive", { date: new Date(device.lastActiveAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) })}
                           </span>
                         </div>
                       </div>
@@ -612,7 +625,7 @@ export default function SettingsPage() {
                               setEditName(device.deviceName);
                             }}
                             className="p-1.5 text-textfaint hover:text-white transition rounded-lg hover:bg-white/5"
-                            title="Rename device"
+                            title={t("settings.renameDevice")}
                           >
                             <Edit2 size={13} />
                           </button>
@@ -620,7 +633,7 @@ export default function SettingsPage() {
                         <button
                           onClick={() => handleUnlinkDevice(device.deviceId)}
                           className="p-1.5 text-textfaint hover:text-red-400 transition rounded-lg hover:bg-white/5"
-                          title={isCurrent ? "Unlink this device (generate new code)" : "Disconnect this device"}
+                          title={t("settings.unlinkDevice")}
                         >
                           <Trash2 size={13} />
                         </button>
@@ -633,14 +646,14 @@ export default function SettingsPage() {
           )}
 
           <div className="mt-2 pt-2 border-t border-white/5">
-            <h4 className="text-xs font-semibold text-white mb-2">Connect to Another Device</h4>
+            <h4 className="text-xs font-semibold text-white mb-2">{t("settings.connectAnotherDevice")}</h4>
             <p className="text-[11px] text-textdim mb-3 leading-relaxed">
-              Enter the Device Sync Code of the device you want to synchronize with. This will link this device and merge all your music preferences, likes, and playlists.
+              {t("settings.connectAnotherDesc")}
             </p>
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="e.g. S-A4B7D2"
+                placeholder={t("settings.codePlaceholder")}
                 value={inputKey}
                 onChange={(e) => setInputKey(e.target.value)}
                 className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-textfaint focus:outline-none focus:border-accent/50 flex-1 font-mono uppercase"
@@ -649,9 +662,9 @@ export default function SettingsPage() {
               <button
                 onClick={handleSync}
                 disabled={syncing || syncSuccess || !inputKey.trim()}
-                className="bg-accent hover:bg-accent/90 disabled:opacity-50 text-black font-bold text-xs px-4 py-2.5 rounded-xl transition shrink-0"
+                className="bg-accent hover:bg-accent/90 disabled:opacity-50 text-black font-bold text-xs px-4 py-2.5 rounded-xl transition shrink-0 cursor-pointer"
               >
-                {syncing ? "Syncing..." : syncSuccess ? "Synced!" : "Sync Device"}
+                {syncing ? t("settings.syncingBtn") : syncSuccess ? t("settings.syncedBtn") : t("settings.syncDeviceBtn")}
               </button>
             </div>
 
@@ -659,24 +672,24 @@ export default function SettingsPage() {
               <p className="text-xs text-red-400 mt-2 font-medium">{syncError}</p>
             )}
             {syncSuccess && (
-              <p className="text-xs text-accent mt-2 font-medium">Successfully synchronized! Reloading page...</p>
+              <p className="text-xs text-accent mt-2 font-medium">{t("settings.syncSuccessMsg")}</p>
             )}
           </div>
 
           <div className="pt-2 border-t border-white/5 flex items-center justify-between">
-            <span className="text-[11px] text-textfaint">Want separate libraries on this device?</span>
+            <span className="text-[11px] text-textfaint">{t("settings.separateLibrariesPrompt")}</span>
             <button
               onClick={() => handleReset(false)}
-              className="text-white/40 hover:text-white/80 text-[10px] uppercase tracking-wider font-semibold hover:underline"
+              className="text-white/40 hover:text-white/80 text-[10px] uppercase tracking-wider font-semibold hover:underline cursor-pointer"
             >
-              Generate New Code
+              {t("settings.generateNewCode")}
             </button>
           </div>
         </div>
       </Group>
 
       {/* About */}
-      <Group title="About">
+      <Group title={t("settings.aboutTitle")}>
         <div className="flex items-center gap-3 px-4 py-4">
           <div
             className="grid place-items-center h-11 w-11 rounded-lg shrink-0"
@@ -687,7 +700,7 @@ export default function SettingsPage() {
           <div>
             <div className="font-bold">EuskalSoinua</div>
             <div className="text-xs text-textdim">
-              Open-source media client • 100% ad-free • Basque-first
+              {t("settings.aboutDesc")}
             </div>
           </div>
         </div>
@@ -730,7 +743,7 @@ function ToggleRow({
   return (
     <button
       onClick={onChange}
-      className="w-full flex items-center gap-4 px-4 py-3.5 hover:bg-white/[0.03] transition text-left"
+      className="w-full flex items-center gap-4 px-4 py-3.5 hover:bg-white/[0.03] transition text-left cursor-pointer"
     >
       <span className="shrink-0">{icon}</span>
       <span className="flex-1 min-w-0">
@@ -785,3 +798,4 @@ function Row({
     </div>
   );
 }
+

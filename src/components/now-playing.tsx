@@ -28,11 +28,13 @@ import {
   Wand2,
   Info,
   Loader2,
+  Check,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/lib/toast";
 import { usePlayer } from "@/lib/player-context";
 import { useViewMode } from "@/lib/view-mode-context";
+import { useIsDownloaded } from "@/lib/downloads";
 import { CoverArt } from "@/components/cover";
 import { ArtistLinks } from "@/components/artist-links";
 import { formatTime, clsx } from "@/lib/utils";
@@ -142,6 +144,7 @@ function PlayerTab() {
   const { toast } = useToast();
   const router = useRouter();
   const c = p.current!;
+  const isDownloaded = useIsDownloaded(c.id) || p.provider === "offline" || c.source === "local";
   const pct = p.duration ? (p.currentTime / p.duration) * 100 : 0;
   const touch = useRef<{ x: number; y: number } | null>(null);
 
@@ -183,7 +186,18 @@ function PlayerTab() {
       {/* meta */}
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="min-w-0">
-          <div className="text-xl font-bold truncate">{c.title}</div>
+          <div className="text-xl font-bold truncate flex items-center gap-2">
+            <span className="truncate">{c.title}</span>
+            {isDownloaded && (
+              <span
+                className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-accent/20 text-accent shrink-0"
+                title="Downloaded on device (offline ready)"
+                aria-label="Downloaded"
+              >
+                <Check size={12} strokeWidth={3} />
+              </span>
+            )}
+          </div>
           <ArtistLinks artistName={c.artistName} primaryArtistId={c.artistId} className="text-white/70" />
         </div>
         <button

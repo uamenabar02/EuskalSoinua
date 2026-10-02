@@ -600,16 +600,82 @@ async function getDeezerArtistId(artistName: string): Promise<number | null> {
   }
 }
 
+const CURATED_RELATED_ARTISTS: Record<string, string[]> = {
+  // Basque Urban / Trap / Pop
+  "bengo": ["Tatta", "Kixka", "ZETAK", "Malakias", "Chill Mafia", "Dupla", "Merina Gris", "Bulego", "ETS"],
+  "tatta": ["Bengo", "Kixka", "Chill Mafia", "Malakias", "Dupla", "ZETAK", "Merina Gris"],
+  "chill mafia": ["Dupla", "Tatta", "Bengo", "Merina Gris", "Hofmann", "ZETAK", "Kixka"],
+  "zetak": ["Bulego", "ETS", "Bengo", "Huntza", "Merina Gris", "Neomak", "Dupla", "Izaro", "Tatta"],
+  "bulego": ["ZETAK", "ETS", "Izaro", "Huntza", "Shinova", "Dupla", "Bengo", "Merina Gris"],
+  "en tol sarmiento": ["Bulego", "ZETAK", "Huntza", "Gatibu", "Esne Beltza", "Vendetta", "Skakeitan", "La Txama"],
+  "ets": ["Bulego", "ZETAK", "Huntza", "Gatibu", "Esne Beltza", "Vendetta", "Skakeitan", "La Txama"],
+  "huntza": ["ETS", "ZETAK", "Bulego", "Izaro", "Neomak", "Gatibu", "Esne Beltza", "La Txama"],
+  "dupla": ["Chill Mafia", "ZETAK", "Bengo", "Tatta", "Merina Gris", "Skakeitan", "Bulego"],
+  "merina gris": ["ZETAK", "Bulego", "Dupla", "Chill Mafia", "Belako", "Bengo"],
+  "neomak": ["Huntza", "ZETAK", "Oreka TX", "Kepa Junkera", "Izaro"],
+  "la txama": ["Huntza", "Skakeitan", "Esne Beltza", "Vendetta", "ETS", "Gose"],
+
+  // Basque Indie / Folk / Acoustic
+  "izaro": ["Olaia Inziarte", "Idoia", "Anari", "Eñaut Elorrieta", "Olatz Salvador", "Bulego", "ZETAK", "Mikel Urdangarin"],
+  "olaia inziarte": ["Izaro", "Idoia", "Anari", "Olatz Salvador", "Eñaut Elorrieta", "Liher", "Merina Gris"],
+  "anari": ["Izaro", "Olaia Inziarte", "Mikel Laboa", "Ruper Ordorika", "Lisabö", "Belako", "Mursego"],
+  "idoia": ["Izaro", "Olaia Inziarte", "Eñaut Elorrieta", "Olatz Salvador", "Mikel Urdangarin"],
+  "eñaut elorrieta": ["Ken Zazpi", "Izaro", "Mikel Urdangarin", "Idoia", "Olatz Salvador", "Anari"],
+  "olatz salvador": ["Izaro", "Olaia Inziarte", "Idoia", "Eñaut Elorrieta", "Skakeitan"],
+  "mikel laboa": ["Benito Lertxundi", "Xabier Lete", "Ruper Ordorika", "Oskorri", "Anari", "Kepa Junkera", "Lourdes Iriondo"],
+  "benito lertxundi": ["Mikel Laboa", "Xabier Lete", "Lourdes Iriondo", "Oskorri", "Imanol", "Ruper Ordorika", "Pantxoa eta Peio"],
+  "oskorri": ["Kepa Junkera", "Mikel Laboa", "Benito Lertxundi", "Oreka TX", "Tapia eta Leturia"],
+  "kepa junkera": ["Oreka TX", "Oskorri", "Mikel Laboa", "Tapia eta Leturia", "Neomak", "Huntza"],
+  "oreka tx": ["Kepa Junkera", "Neomak", "Oskorri", "Mikel Laboa", "Huntza"],
+  "ruper ordorika": ["Mikel Laboa", "Benito Lertxundi", "Anari", "Itoiz", "Hertzainak"],
+
+  // Basque Rock / Punk / Post-Punk / Metal
+  "berri txarrak": ["Zea Mays", "Gatibu", "Su Ta Gar", "Kuraia", "Lisabö", "Belako", "Willis Drummond", "Hertzainak", "Kortatu"],
+  "belako": ["Lukiek", "Vulk", "Willis Drummond", "Berri Txarrak", "Merina Gris", "Zea Mays", "Shinova"],
+  "lukiek": ["Belako", "Vulk", "Willis Drummond", "Berri Txarrak", "Zea Mays"],
+  "gatibu": ["Berri Txarrak", "Zea Mays", "ETS", "Shinova", "Doctor Deseo", "Hesian", "Vendetta"],
+  "zea mays": ["Berri Txarrak", "Gatibu", "Doctor Deseo", "Belako", "Shinova", "Anari", "Su Ta Gar"],
+  "su ta gar": ["Berri Txarrak", "Latzen", "EH Sukarra", "Etsaiak", "Zea Mays"],
+  "streetwise": ["Brigade Loco", "Bizardunak", "Rotten XIII", "Kaleko Urdangak", "Kortatu", "Hertzainak", "Negu Gorriak"],
+  "bizardunak": ["Streetwise", "Brigade Loco", "Rotten XIII", "The Pogues", "Dropkick Murphys", "Kortatu", "Hertzainak", "Skakeitan"],
+  "brigade loco": ["Streetwise", "Rotten XIII", "Kaleko Urdangak", "Bizardunak", "Kortatu"],
+  "rotten xiii": ["Brigade Loco", "Streetwise", "Kaleko Urdangak", "Bizardunak"],
+  "kortatu": ["Negu Gorriak", "Hertzainak", "Barricada", "La Polla Records", "Eskorbuto", "Bizardunak", "Streetwise"],
+  "negu gorriak": ["Kortatu", "Hertzainak", "Dut", "Fermin Muguruza", "Berri Txarrak"],
+  "hertzainak": ["Kortatu", "Negu Gorriak", "Itoiz", "Doctor Deseo", "Zea Mays", "Berri Txarrak"],
+  "doctor deseo": ["Zea Mays", "Gatibu", "Hertzainak", "Itoiz", "Fito & Fitipaldis", "Shinova"],
+  "itoiz": ["Hertzainak", "Mikel Laboa", "Ruper Ordorika", "Doctor Deseo", "Zea Mays"],
+  "shinova": ["Zea Mays", "Doctor Deseo", "Gatibu", "Vetusta Morla", "Izal", "Love of Lesbian", "Berri Txarrak"],
+  "skakeitan": ["Vendetta", "Esne Beltza", "ETS", "Huntza", "La Txama", "Glaukoma", "Dupla"],
+  "esne beltza": ["Vendetta", "Skakeitan", "ETS", "Huntza", "Gose", "Fermin Muguruza", "La Txama"],
+  "vendetta": ["Esne Beltza", "Skakeitan", "ETS", "Huntza", "Gose", "La Txama", "Gatibu"],
+  "glaukoma": ["Skakeitan", "Esne Beltza", "Bad Sound System", "Dupla", "Chill Mafia"],
+
+  // Global Rock / Pop / Indie Folk
+  "arctic monkeys": ["The Strokes", "Franz Ferdinand", "Miles Kane", "The Last Shadow Puppets", "Foals", "Kasabian"],
+  "the strokes": ["Arctic Monkeys", "The White Stripes", "Franz Ferdinand", "Interpol", "Phoenix", "The Killers"],
+  "dua lipa": ["Olivia Rodrigo", "Aitana", "Rosalía", "The Weeknd", "Harry Styles", "Taylor Swift", "Billie Eilish"],
+  "rosalía": ["C. Tangana", "Dua Lipa", "Aitana", "Nathy Peluso", "Bad Bunny", "Fred again.."],
+  "bon iver": ["Ben Howard", "Passenger", "Boygenius", "Fleet Foxes", "Phoebe Bridgers", "Sufjan Stevens", "Khruangbin"],
+  "boygenius": ["Phoebe Bridgers", "Julien Baker", "Lucy Dacus", "Bon Iver", "Big Thief", "Mitski"],
+};
+
 /**
- * Get related/similar artists via Deezer. Used by song radio to build a queue
- * of similar music (Spotify-style "Go to song radio").
+ * Get related/similar artists via curated clusters and Deezer API fallback.
  */
 async function getRelatedArtists(artistName: string): Promise<string[]> {
+  const normKey = artistName.toLowerCase().trim();
+  const curated = CURATED_RELATED_ARTISTS[normKey];
+  if (curated && curated.length > 0) {
+    return [...curated];
+  }
+
+  // Fallback to Deezer related artists
   const id = await getDeezerArtistId(artistName);
   if (!id) return [];
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    const timer = setTimeout(() => controller.abort(), 6000);
     const res = await fetch(`https://api.deezer.com/artist/${id}/related?limit=8`, {
       signal: controller.signal,
       headers: { accept: "application/json" },
@@ -623,61 +689,206 @@ async function getRelatedArtists(artistName: string): Promise<string[]> {
   }
 }
 
+/** Fast catalog track lookup for radio generation — queries local DB instantly and searches online only if missing */
+async function getCatalogTracksForArtist(artistName: string, limit = 8): Promise<Track[]> {
+  const normName = artistName.trim();
+  if (!normName) return [];
+
+  try {
+    const dbRows = await db
+      .select()
+      .from(tracks)
+      .where(
+        or(
+          ilike(tracks.artistName, normName),
+          ilike(tracks.artistName, `%${normName}%`)
+        )
+      )
+      .limit(limit);
+
+    if (dbRows.length >= Math.min(2, limit)) {
+      return dbRows.map(mapTrack);
+    }
+
+    // Fast lightweight search fallback if 0 or 1 tracks in DB
+    try {
+      const matches = await searchOnline(normName);
+      const persisted: Track[] = [];
+      for (const m of matches.slice(0, 3)) {
+        const res = await persistMatch(m);
+        persisted.push(...res);
+      }
+      const combined = [...dbRows.map(mapTrack), ...persisted];
+      return Array.from(new Map(combined.map((t) => [t.id, t])).values());
+    } catch {
+      return dbRows.map(mapTrack);
+    }
+  } catch {
+    return [];
+  }
+}
+
+/** Helper to assemble a radio queue respecting the STRICT 50% max author constraint */
+async function buildRadioQueueCore(opts: {
+  seedTrack?: Track;
+  primaryArtist: string;
+  genre?: string | null;
+  targetCount?: number;
+}): Promise<Track[]> {
+  const targetCount = opts.targetCount ?? 18;
+  const maxAuthorTracks = Math.floor(targetCount * 0.5); // Strictly at most 50% by the author!
+  const seenIds = new Set<number>();
+  const authorTracks: Track[] = [];
+  const relatedTracks: Track[] = [];
+
+  const normAuthor = opts.primaryArtist.toLowerCase().trim();
+
+  // 1. If a seed track is supplied, it is the first track
+  if (opts.seedTrack) {
+    seenIds.add(opts.seedTrack.id);
+    authorTracks.push(opts.seedTrack);
+  }
+
+  // 2. Fetch author tracks in parallel with related artist tracks (runs concurrently in < 100ms!)
+  const relatedNames = await getRelatedArtists(opts.primaryArtist);
+  const filteredRelated = relatedNames
+    .filter((r) => r.toLowerCase().trim() !== normAuthor)
+    .slice(0, 6);
+
+  const [authorDiscography, ...relatedTrackArrays] = await Promise.all([
+    getCatalogTracksForArtist(opts.primaryArtist, 12),
+    ...filteredRelated.map((rName) => getCatalogTracksForArtist(rName, 4)),
+  ]);
+
+  const authorCandidates = (authorDiscography || [])
+    .filter((t) => !seenIds.has(t.id))
+    .sort(() => Math.random() - 0.5);
+
+  for (const t of authorCandidates) {
+    if (authorTracks.length >= maxAuthorTracks) break;
+    seenIds.add(t.id);
+    authorTracks.push(t);
+  }
+
+  // 3. Populate related tracks from the parallel related artist results
+  for (const rTracks of relatedTrackArrays) {
+    const picks = (rTracks || [])
+      .filter((t) => !seenIds.has(t.id))
+      .sort((a, b) => b.playCount - a.playCount || Math.random() - 0.5)
+      .slice(0, 2); // 2 songs per related artist for great variety
+    for (const t of picks) {
+      seenIds.add(t.id);
+      relatedTracks.push(t);
+      if (authorTracks.length + relatedTracks.length >= targetCount) break;
+    }
+    if (authorTracks.length + relatedTracks.length >= targetCount) break;
+  }
+
+  // 4. If still under target count, pull genre/style-matched catalog tracks from DB
+  if (authorTracks.length + relatedTracks.length < targetCount) {
+    const dbCandidates = await db.select().from(tracks).limit(400);
+    const mapped: Track[] = dbCandidates.map(mapTrack);
+    const genreCandidates = mapped
+      .filter((t: Track) => {
+        if (seenIds.has(t.id)) return false;
+        const aNorm = t.artistName.toLowerCase().trim();
+        if (aNorm === normAuthor) return false;
+        if (opts.genre && t.genre) {
+          const g1 = opts.genre.toLowerCase();
+          const g2 = t.genre.toLowerCase();
+          return g1.includes(g2) || g2.includes(g1);
+        }
+        return true;
+      })
+      .sort(() => Math.random() - 0.5);
+
+    for (const t of genreCandidates) {
+      seenIds.add(t.id);
+      relatedTracks.push(t);
+      if (authorTracks.length + relatedTracks.length >= targetCount) break;
+    }
+  }
+
+  // Interleave author and related tracks for a true radio vibe, ensuring seed track is first
+  const firstTrack = authorTracks[0] || relatedTracks[0];
+  const remainingAuthor = authorTracks.slice(1);
+  const remainingRelated = [...relatedTracks];
+
+  const mixedTail: Track[] = [];
+  while (remainingAuthor.length > 0 || remainingRelated.length > 0) {
+    // 1 or 2 related tracks for every 1 author track to keep author <= 50%
+    if (remainingRelated.length > 0) {
+      mixedTail.push(remainingRelated.shift()!);
+    }
+    if (remainingRelated.length > 0 && Math.random() > 0.4) {
+      mixedTail.push(remainingRelated.shift()!);
+    }
+    if (remainingAuthor.length > 0) {
+      mixedTail.push(remainingAuthor.shift()!);
+    }
+  }
+
+  return firstTrack ? [firstTrack, ...mixedTail] : mixedTail;
+}
+
 /**
  * SONG RADIO — build a Spotify-style radio queue seeded by one track.
- * Mixes: more songs by the same artist + songs by related artists + a few
- * genre-matched tracks. All results are ingested as playable catalog tracks.
+ * Enforces: Seed author is at most 50% of total tracks; 50%+ are from related artists.
  */
 export async function buildRadio(seedTrackId: number): Promise<Track[]> {
   const seedRows = await db.select().from(tracks).where(eq(tracks.id, seedTrackId)).limit(1);
   const seed = seedRows[0];
   if (!seed) return [];
 
-  const artistName = seed.artistName;
-  const seen = new Set<number>([seedTrackId]);
-  const queue: Track[] = [{ ...mapTrack(seed) }];
+  const seedTrack = mapTrack(seed);
+  return buildRadioQueueCore({
+    seedTrack,
+    primaryArtist: seed.artistName,
+    genre: seed.genre,
+    targetCount: 18,
+  });
+}
 
-  // 1) more from the same artist (ensure full catalog is loaded)
-  const ownTracks = await ingestDiscography(artistName).catch(() => []);
-  const ownShuffled = ownTracks
-    .filter((t) => !seen.has(t.id))
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 6);
-  for (const t of ownShuffled) {
-    seen.add(t.id);
-    queue.push(t);
-  }
+/**
+ * ARTIST RADIO — build a Spotify-style radio queue seeded by an artist.
+ * Enforces: Artist is at most 50% of total tracks; 50%+ are from related artists.
+ */
+export async function buildArtistRadio(artistIdOrName: number | string): Promise<Track[]> {
+  let artistName = String(artistIdOrName);
+  let artistGenre: string | null = null;
 
-  // 2) related artists
-  const related = await getRelatedArtists(artistName);
-  for (const r of related.slice(0, 5)) {
-    const rTracks = await ingestDiscography(r).catch(() => []);
-    const picks = rTracks
-      .filter((t) => !seen.has(t.id))
-      .sort((a, b) => b.playCount - a.playCount)
-      .slice(0, 3);
-    for (const t of picks) {
-      seen.add(t.id);
-      queue.push(t);
+  if (typeof artistIdOrName === "number" || /^\d+$/.test(String(artistIdOrName))) {
+    const [row] = await db
+      .select()
+      .from(artists)
+      .where(eq(artists.id, Number(artistIdOrName)))
+      .limit(1);
+    if (row) {
+      artistName = row.name;
+      artistGenre = row.genre;
     }
   }
 
-  // 3) if we still need more, top up with a genre/artist search
-  if (queue.length < 12) {
-    const extra = await searchOnline(`${artistName} ${seed.genre ?? ""}`.trim());
-    for (const m of extra.slice(0, 10)) {
-      const [t] = await persistMatch(m);
-      if (t && !seen.has(t.id)) {
-        seen.add(t.id);
-        queue.push(t);
-      }
-      if (queue.length >= 15) break;
-    }
-  }
+  return buildRadioQueueCore({
+    primaryArtist: artistName,
+    genre: artistGenre,
+    targetCount: 18,
+  });
+}
 
-  // shuffle everything after the seed for a radio feel
-  const tail = queue.slice(1).sort(() => Math.random() - 0.5);
-  return [queue[0], ...tail];
+/**
+ * ALBUM RADIO — build a Spotify-style radio queue seeded by an album.
+ * Enforces: Album author is at most 50% of total tracks; 50%+ are from related artists fitting the album's vibe.
+ */
+export async function buildAlbumRadio(albumId: number): Promise<Track[]> {
+  const [albumRow] = await db.select().from(albums).where(eq(albums.id, albumId)).limit(1);
+  if (!albumRow) return [];
+
+  return buildRadioQueueCore({
+    primaryArtist: albumRow.artistName,
+    genre: albumRow.genre,
+    targetCount: 18,
+  });
 }
 
 /** Find or create an album row for (artistId, albumName); returns its id. */

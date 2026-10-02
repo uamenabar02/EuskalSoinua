@@ -421,12 +421,16 @@ export async function searchYouTubeDirect(query: string): Promise<SearchHit[]> {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept-Language": "eu,es;q=0.9,en;q=0.8",
-        Cookie: "CONSENT=YES+cb; SOCS=CAESEwgDEgk2OTcyMTY1MzQaAmVuIAEaBgiA_LyaBg",
+        Cookie: "CONSENT=PENDING+999; SOCS=CAESEwgDEgk2OTcyMTY1MzQaAmVuIAEaBgiA_LyaBg",
       },
       signal: controller.signal,
+      redirect: "manual",
     });
     clearTimeout(timer);
-    if (!res.ok) return [];
+    if (!res.ok && res.status !== 200) {
+      // If YouTube returns redirect to consent or blocked, return empty so fallback instances engage
+      return [];
+    }
     const html = await res.text();
     const match =
       html.match(/var ytInitialData = ({[\s\S]*?});<\/script>/) ||
@@ -446,7 +450,6 @@ export async function searchYouTubeDirect(query: string): Promise<SearchHit[]> {
               v.ownerText?.runs?.[0]?.text ||
               v.shortBylineText?.runs?.[0]?.text ||
               "";
-            const duration = v.lengthText?.simpleText || "";
             if (videoId && /^[\w-]{11}$/.test(videoId)) {
               hits.push({
                 videoId,
@@ -531,7 +534,7 @@ function norm(s: string): string {
 }
 
 /**
- * Strips cosmetic bracketed tags (e.g. [Official Video], (Bideoklipa), (Audio))
+ * Strips cosmetic bracketed tags (e.g. [Official Video], (Bideoklipa), (Audio), (feat. ...), (Live))
  * while preserving the underlying song title words.
  */
 export function cleanTitle(s: string): string {
@@ -539,13 +542,25 @@ export function cleanTitle(s: string): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s*[\(\[](?:feat\.?|ft\.?|featuring|with)\s+[^\)\]]+[\)\]]/gi, " ")
     .replace(
-      /\s*[\(\[](official\s*(video|audio|music\s*video|visualizer|lyric\s*video)?|audio\s*oficial|videoclip|bideoklipa|bideoa|letra|lyrics|audio|video|clip|hd|hq|4k|disko\s*osoa)[\)\]]/gi,
+      /\s*[\(\[](?:official\s*(?:video|audio|music\s*video|visualizer|lyric\s*video)?|audio\s*oficial|videoclip|bideoklipa|bideoa|letra|lyrics|audio|video|clip|hd|hq|4k|disko\s*osoa|live|zuzenean|remaster(?:ed)?|radio\s*edit|acoustic|akustikoa|bertsioa|version)[\)\]]/gi,
       " ",
     )
+    .replace(/\s*-\s*(?:live|zuzenean|remaster(?:ed)?|radio\s*edit|acoustic|akustikoa|bertsioa|version|slowed|super\s*slowed|ultra\s*slowed).*$/gi, " ")
     .replace(/[^a-z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Extracts the core title without parenthetical or hyphenated suffixes.
+ * E.g. "Bihotzian (feat. Denso)" -> "bihotzian"
+ *      "ZURE BEGIAK (Zuzenean)" -> "zure begiak"
+ */
+export function extractCoreTitle(s: string): string {
+  const base = s.split(/[\(\[\-]/)[0];
+  return cleanTitle(base);
 }
 
 export function normTitle(s: string): string {
@@ -557,9 +572,13 @@ export function matchesTitle(targetTitle: string, hitTitle: string): boolean {
   const h = cleanTitle(hitTitle);
   if (!t || !h) return false;
 
-  // Direct substring: hit title contains the target title
+  // Direct substring: hit title contains the target title (or vice versa)
   if (h.includes(t)) return true;
   if (t.length > 6 && h.length >= 6 && (t.includes(h) || h.includes(t))) return true;
+
+  // Check core title (before feat / live / parenthetical qualifiers)
+  const coreT = extractCoreTitle(targetTitle);
+  if (coreT && coreT.length >= 3 && h.includes(coreT)) return true;
 
   // Also check raw normalized strings so parenthesized target titles (like Donostia) match
   const rawT = norm(targetTitle);
@@ -588,8 +607,8 @@ export function matchesTitle(targetTitle: string, hitTitle: string): boolean {
     "ep",
     "single",
   ]);
-  const tWords = t.split(/\s+/).filter((w) => w.length > 1 && !stopWords.has(w));
-  if (tWords.length === 0) {
+  const activeWords = (coreT || t).split(/\s+/).filter((w) => w.length > 1 && !stopWords.has(w));
+  if (activeWords.length === 0) {
     const rawWords = t.split(/\s+/).filter((w) => w.length > 0);
     return rawWords.length > 0 && rawWords.every((w) => h.includes(w) || rawH.includes(w));
   }
@@ -597,17 +616,32 @@ export function matchesTitle(targetTitle: string, hitTitle: string): boolean {
   const hWords = new Set(h.split(/\s+/));
   const rawHWords = new Set(rawH.split(/\s+/));
 
-  // If 1 or 2 words in target title, ALL meaningful words MUST be in the hit!
-  if (tWords.length <= 2) {
-    return tWords.every((w) => hWords.has(w) || h.includes(w) || rawHWords.has(w));
+  // If 1 or 2 words in core title, ALL meaningful words MUST be in the hit!
+  if (activeWords.length <= 2) {
+    return activeWords.every((w) => hWords.has(w) || h.includes(w) || rawHWords.has(w));
   }
 
   // If 3+ words, at least 70% must match
-  const matchedCount = tWords.filter(
+  const matchedCount = activeWords.filter(
     (w) => hWords.has(w) || h.includes(w) || rawHWords.has(w) || rawH.includes(w),
   ).length;
-  return matchedCount / tWords.length >= 0.7;
+  return matchedCount / activeWords.length >= 0.7;
 }
+
+const TRUSTED_BASQUE_LABELS = new Set([
+  "elkar",
+  "baga biga",
+  "oso polita",
+  "mauka",
+  "gor discos",
+  "gor",
+  "panda artist",
+  "gaztea",
+  "eitb",
+  "airaka",
+  "dabadaba",
+  "harrobia",
+]);
 
 /**
  * Score a search hit against the desired track. We heavily reward hits whose
@@ -617,6 +651,7 @@ export function matchesTitle(targetTitle: string, hitTitle: string): boolean {
 function scoreHit(hit: SearchHit, artist: string, title: string): number {
   const a = norm(artist);
   const t = cleanTitle(title);
+  const coreT = extractCoreTitle(title);
   const rawT = norm(title);
   const hTitle = cleanTitle(hit.title);
   const rawHTitle = norm(hit.title);
@@ -639,17 +674,25 @@ function scoreHit(hit: SearchHit, artist: string, title: string): number {
 
   let artistMatch = false;
   if (a) {
+    // Split multi-artists (e.g. "Fane, LA TXAMA, Tatta & Chickjuarez")
+    const subArtists = a.split(/[,&]/).map((x) => x.trim()).filter((x) => x.length > 2);
+    const matchesAnyArtist = subArtists.some((sa) => hAuthor.includes(sa) || sa.includes(hAuthor) || hTitle.includes(sa) || rawHTitle.includes(sa));
+
     if (hAuthor.includes(a) || a.includes(hAuthor)) {
       score += 65;
       artistMatch = true;
-    } else if (hTitle.includes(a) || rawHTitle.includes(a)) {
-      score += 35;
+    } else if (hTitle.includes(a) || rawHTitle.includes(a) || matchesAnyArtist) {
+      score += 45;
+      artistMatch = true;
+    } else if (Array.from(TRUSTED_BASQUE_LABELS).some((lbl) => hAuthor.includes(lbl))) {
+      // Official Basque record label channel upload
+      score += 50;
       artistMatch = true;
     }
   }
 
   // Exact full title match bonus
-  if (t && (hTitle.includes(t) || rawHTitle.includes(rawT))) {
+  if ((t && (hTitle.includes(t) || rawHTitle.includes(rawT))) || (coreT && hTitle.includes(coreT))) {
     score += 40;
   }
 
@@ -694,19 +737,25 @@ export async function resolveVideoIdForTrack(input: {
   if (!rawQuery) return null;
 
   const cleanedTitle = cleanTitle(input.title);
+  const coreTitle = extractCoreTitle(input.title);
   const queries = [rawQuery];
 
   if (cleanedTitle && cleanedTitle !== input.title.toLowerCase().trim()) {
     queries.push(`${input.artist} ${cleanedTitle}`);
   }
+  if (coreTitle && coreTitle !== cleanedTitle && coreTitle !== input.title.toLowerCase().trim()) {
+    queries.push(`${input.artist} ${coreTitle}`);
+  }
 
   // Query permutations for high resolution of niche Basque tracks
   if (input.region === "eu" || /eu|basque/i.test(input.region || "")) {
-    queries.push(`${input.artist} ${input.title} audio`);
-    queries.push(`${input.artist} ${input.title} bideoklipa`);
+    queries.push(`${input.artist} ${coreTitle || input.title} audio`);
+    queries.push(`${input.artist} ${coreTitle || input.title} bideoklipa`);
   } else {
-    queries.push(`${input.artist} ${input.title} official audio`);
+    queries.push(`${input.artist} ${coreTitle || input.title} official audio`);
   }
+
+  let bestHitAcrossQueries: { hit: SearchHit; score: number } | null = null;
 
   for (const q of queries) {
     const hits = await searchAudio(q);
@@ -716,7 +765,7 @@ export async function resolveVideoIdForTrack(input: {
 
       for (const h of hits.slice(0, 10)) {
         const s = scoreHit(h, input.artist, input.title);
-        if (s > bestScore && s >= 60) {
+        if (s > bestScore) {
           best = h;
           bestScore = s;
         }
@@ -727,6 +776,12 @@ export async function resolveVideoIdForTrack(input: {
         VIDEO_ID_CACHE.set(cacheKey, res);
         return res;
       }
+
+      if (best && bestScore >= 45 && /^[\w-]{11}$/.test(best.videoId)) {
+        if (!bestHitAcrossQueries || bestScore > bestHitAcrossQueries.score) {
+          bestHitAcrossQueries = { hit: best, score: bestScore };
+        }
+      }
     }
 
     // Direct Invidious fallback if needed
@@ -736,7 +791,7 @@ export async function resolveVideoIdForTrack(input: {
       let invBestScore = -999;
       for (const h of invHits.slice(0, 8)) {
         const s = scoreHit(h, input.artist, input.title);
-        if (s > invBestScore && s >= 60) {
+        if (s > invBestScore) {
           invBest = h;
           invBestScore = s;
         }
@@ -746,7 +801,23 @@ export async function resolveVideoIdForTrack(input: {
         VIDEO_ID_CACHE.set(cacheKey, res);
         return res;
       }
+      if (invBest && invBestScore >= 45 && /^[\w-]{11}$/.test(invBest.videoId)) {
+        if (!bestHitAcrossQueries || invBestScore > bestHitAcrossQueries.score) {
+          bestHitAcrossQueries = { hit: invBest, score: invBestScore };
+        }
+      }
     }
+  }
+
+  // Fallback to best hit that satisfied title match with score >= 45
+  if (bestHitAcrossQueries && bestHitAcrossQueries.score >= 45) {
+    const res = {
+      videoId: bestHitAcrossQueries.hit.videoId,
+      title: bestHitAcrossQueries.hit.title,
+      author: bestHitAcrossQueries.hit.author,
+    };
+    VIDEO_ID_CACHE.set(cacheKey, res);
+    return res;
   }
 
   return null;

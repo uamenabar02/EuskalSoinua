@@ -51,6 +51,7 @@ export interface Album {
   region: string;
   trackCount: number;
   saved?: boolean;
+  trackIds?: number[];
 }
 
 export interface Playlist {
@@ -60,6 +61,7 @@ export interface Playlist {
   coverSeed: string | null;
   trackCount: number;
   type?: string;
+  trackIds?: number[];
 }
 
 export interface LyricLine {
@@ -87,4 +89,18 @@ export interface Recommendation {
   artist?: Artist | null;
   score: number;
   reason: string;
+}
+
+export interface UserTasteProfile {
+  genres: string[];
+  regions: string[];
+  energy?: "chill" | "balanced" | "high" | "intense";
+  era?: "all" | "modern" | "2010s" | "2000s" | "90s80s";
+  moods?: string[];
+  vocalPreference?: "any" | "vocal" | "instrumental";
+  discoveryBias?: "balanced" | "familiar" | "deep_cuts";
+  favoriteArtists?: string[];
+  excludedGenres?: string[];
+  languagePreferences?: string[];
+  basqueAffinity?: number; // 0 to 100
 }

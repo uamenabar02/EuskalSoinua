@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslation } from "@/lib/i18n";
 import {
   Shield,
   ShieldCheck,
@@ -23,6 +24,13 @@ import {
   Info,
   Lock,
   LogOut,
+  ArrowLeft,
+  Send,
+  Copy,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  Key,
 } from "lucide-react";
 
 interface DeviceRequest {
@@ -53,6 +61,7 @@ interface Stats {
 }
 
 export default function AdminPage() {
+  const { t } = useTranslation();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [adminEmail, setAdminEmail] = useState("uamenabar02@gmail.com");
   const [requests, setRequests] = useState<DeviceRequest[]>([]);
@@ -75,7 +84,7 @@ export default function AdminPage() {
   const [manualStatus, setManualStatus] = useState<"accepted" | "rejected">("accepted");
   const [manualNotes, setManualNotes] = useState("");
 
-  // Change Passcode Form
+  // Change Passcode Form (Settings Tab)
   const [oldPasscode, setOldPasscode] = useState("");
   const [newPasscode, setNewPasscode] = useState("");
   const [passcodeMsg, setPasscodeMsg] = useState("");
@@ -84,7 +93,28 @@ export default function AdminPage() {
   // Admin Login Form
   const [loginPasscode, setLoginPasscode] = useState("");
   const [loginErr, setLoginErr] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
   const [adminInitialized, setAdminInitialized] = useState<boolean>(true);
+
+  // Recovery Mode State (On Login Screen)
+  const [loginViewMode, setLoginViewMode] = useState<"login" | "recovery_otp" | "recovery_master">("login");
+  const [recoveryEmail, setRecoveryEmail] = useState("uamenabar02@gmail.com");
+  const [recoveryOtp, setRecoveryOtp] = useState("");
+  const [recoveryNewPasscode, setRecoveryNewPasscode] = useState("");
+  const [recoveryConfirmPasscode, setRecoveryConfirmPasscode] = useState("");
+  const [recoveryMasterKey, setRecoveryMasterKey] = useState("");
+  const [recoveryStep, setRecoveryStep] = useState<"request" | "verify">("request");
+  const [recoverySuccessMsg, setRecoverySuccessMsg] = useState("");
+  const [recoveryErrorMsg, setRecoveryErrorMsg] = useState("");
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [maskedSentEmail, setMaskedSentEmail] = useState("");
+
+  // Settings Recovery Management
+  const [masterRecoveryKey, setMasterRecoveryKey] = useState("");
+  const [copiedKey, setCopiedKey] = useState(false);
+  const [testEmailStatus, setTestEmailStatus] = useState("");
+  const [testEmailLoading, setTestEmailLoading] = useState(false);
 
   const verifyAndFetchData = useCallback(async () => {
     setLoading(true);
@@ -171,6 +201,7 @@ export default function AdminPage() {
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginErr("");
+    setLoginLoading(true);
     try {
       const deviceId = localStorage.getItem("euskalsoinua-device-id") || "";
       const deviceName = localStorage.getItem("euskalsoinua-device-name") || "Admin Device";
@@ -195,6 +226,184 @@ export default function AdminPage() {
       }
     } catch (e: any) {
       setLoginErr(e.message || "Login failed.");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleRequestRecoveryOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryErrorMsg("");
+    setRecoverySuccessMsg("");
+    setRecoveryLoading(true);
+    try {
+      const res = await fetch("/api/access/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "request_recovery",
+          email: recoveryEmail.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setRecoveryErrorMsg(data.error || "Failed to request recovery code.");
+      } else {
+        setMaskedSentEmail(data.maskedEmail || recoveryEmail);
+        if (data.simulatedOtp) {
+          setRecoveryOtp(data.simulatedOtp);
+          setRecoverySuccessMsg(`Verification code: ${data.simulatedOtp} (auto-filled below). In this environment, email service is offline.`);
+        } else {
+          setRecoverySuccessMsg(data.message || `A 6-digit recovery code has been sent to ${data.maskedEmail}.`);
+        }
+        setRecoveryStep("verify");
+      }
+    } catch (err: any) {
+      setRecoveryErrorMsg(err.message || "Network error requesting recovery code.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleVerifyRecoveryOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryErrorMsg("");
+    setRecoverySuccessMsg("");
+
+    if (recoveryNewPasscode.trim().length < 6) {
+      setRecoveryErrorMsg("New passcode must be at least 6 characters long.");
+      return;
+    }
+
+    if (recoveryNewPasscode !== recoveryConfirmPasscode) {
+      setRecoveryErrorMsg("The entered passcodes do not match.");
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const deviceId = localStorage.getItem("euskalsoinua-device-id") || "";
+      const deviceName = localStorage.getItem("euskalsoinua-device-name") || "Admin Device";
+
+      const res = await fetch("/api/access/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "verify_recovery_otp",
+          email: recoveryEmail.trim(),
+          otp: recoveryOtp.trim(),
+          newPasscode: recoveryNewPasscode.trim(),
+          deviceId,
+          deviceName,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setRecoveryErrorMsg(data.error || "Invalid or expired recovery code.");
+      } else {
+        setRecoverySuccessMsg("Passcode successfully reset! Authenticating...");
+        setTimeout(async () => {
+          await verifyAndFetchData();
+        }, 1000);
+      }
+    } catch (err: any) {
+      setRecoveryErrorMsg(err.message || "Failed to reset passcode.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleVerifyMasterKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryErrorMsg("");
+    setRecoverySuccessMsg("");
+
+    if (!recoveryMasterKey.trim()) {
+      setRecoveryErrorMsg("Please enter your Emergency Master Recovery Key.");
+      return;
+    }
+
+    if (recoveryNewPasscode.trim().length < 6) {
+      setRecoveryErrorMsg("New passcode must be at least 6 characters long.");
+      return;
+    }
+
+    if (recoveryNewPasscode !== recoveryConfirmPasscode) {
+      setRecoveryErrorMsg("The entered passcodes do not match.");
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const deviceId = localStorage.getItem("euskalsoinua-device-id") || "";
+      const deviceName = localStorage.getItem("euskalsoinua-device-name") || "Admin Device";
+
+      const res = await fetch("/api/access/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "verify_master_key",
+          masterKey: recoveryMasterKey.trim(),
+          newPasscode: recoveryNewPasscode.trim(),
+          deviceId,
+          deviceName,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setRecoveryErrorMsg(data.error || "Invalid Emergency Master Recovery Key.");
+      } else {
+        setRecoverySuccessMsg("Passcode successfully reset via Master Key! Authenticating...");
+        setTimeout(async () => {
+          await verifyAndFetchData();
+        }, 1000);
+      }
+    } catch (err: any) {
+      setRecoveryErrorMsg(err.message || "Failed to reset passcode.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleGenerateMasterKey = async () => {
+    try {
+      const res = await fetch("/api/access/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate_master_key" }),
+      });
+      const data = await res.json();
+      if (res.ok && data.masterKey) {
+        setMasterRecoveryKey(data.masterKey);
+        setCopiedKey(false);
+      }
+    } catch (e) {
+      console.error("Failed to generate master key:", e);
+    }
+  };
+
+  const handleTestRecoveryEmail = async () => {
+    setTestEmailLoading(true);
+    setTestEmailStatus("");
+    try {
+      const res = await fetch("/api/access/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "test_recovery_email" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTestEmailStatus(`Verification code (${data.otp}) generated and sent to ${adminEmail}!`);
+      } else {
+        setTestEmailStatus(data.error || "Failed sending test code.");
+      }
+    } catch (e: any) {
+      setTestEmailStatus(e.message || "Failed sending test code.");
+    } finally {
+      setTestEmailLoading(false);
     }
   };
 
@@ -388,57 +597,352 @@ export default function AdminPage() {
     return (
       <div className="max-w-md mx-auto my-12 p-6 bg-neutral-900 border border-white/10 rounded-3xl text-center space-y-5 shadow-2xl">
         <div className="mx-auto h-16 w-16 rounded-2xl bg-accent/20 text-accent flex items-center justify-center">
-          <Lock size={32} />
+          {loginViewMode === "login" ? (
+            <Lock size={32} />
+          ) : loginViewMode === "recovery_otp" ? (
+            <Mail size={32} />
+          ) : (
+            <Key size={32} />
+          )}
         </div>
+
         <div>
-          <h1 className="text-2xl font-black text-white">Admin Authentication Required</h1>
+          <h1 className="text-2xl font-black text-white">
+            {loginViewMode === "login"
+              ? t("admin.loginTitle")
+              : loginViewMode === "recovery_otp"
+              ? t("admin.recoveryModeTitle")
+              : t("admin.recoveryModeTitle")}
+          </h1>
           <p className="text-xs text-textdim mt-1.5 leading-relaxed">
-            Only devices synced to the administrator account (<span className="text-white font-medium">{adminEmail}</span>) can view and edit accepted/rejected devices.
+            {loginViewMode === "login" ? (
+              t("admin.loginSubtitle")
+            ) : loginViewMode === "recovery_otp" ? (
+              t("admin.recoveryModeDesc")
+            ) : (
+              t("admin.recoveryModeDesc")
+            )}
           </p>
         </div>
 
-        <form onSubmit={handleAdminLogin} className="space-y-4 text-left pt-2">
-          {loginErr && (
-            <div className="bg-red-950/60 border border-red-500/50 rounded-xl p-3 text-xs text-red-300">
-              {loginErr}
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-semibold text-textdim mb-1">Admin Email</label>
-            <input
-              type="email"
-              disabled
-              value={adminEmail}
-              className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-neutral-400 cursor-not-allowed"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-textdim mb-1">Admin Passcode</label>
-            <input
-              type="password"
-              required
-              placeholder="Enter passcode..."
-              value={loginPasscode}
-              onChange={(e) => setLoginPasscode(e.target.value)}
-              className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
-            />
-            {!adminInitialized && (
-              <p className="text-[11px] text-textdim mt-1.5">
-                First-time setup: Check your server logs for the generated 12-character passcode.
-              </p>
+        {/* MODE 1: STANDARD ADMIN LOGIN */}
+        {loginViewMode === "login" && (
+          <form onSubmit={handleAdminLogin} className="space-y-4 text-left pt-2">
+            {loginErr && (
+              <div className="bg-red-950/60 border border-red-500/50 rounded-xl p-3 text-xs text-red-300">
+                {loginErr}
+              </div>
             )}
-          </div>
 
-          <button
-            type="submit"
-            className="w-full bg-accent hover:bg-accent/90 text-black font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-accent/20 text-sm flex items-center justify-center gap-2"
-          >
-            <KeyRound size={18} />
-            Authenticate Admin Device
-          </button>
-        </form>
+            <div>
+              <label className="block text-xs font-semibold text-textdim mb-1">{t("common.email")}</label>
+              <input
+                type="email"
+                disabled
+                value={adminEmail}
+                className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-neutral-400 cursor-not-allowed"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-xs font-semibold text-textdim">{t("admin.oldPasscode")}</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginViewMode("recovery_otp");
+                    setRecoveryStep("request");
+                    setRecoveryErrorMsg("");
+                    setRecoverySuccessMsg("");
+                  }}
+                  className="text-[11px] font-semibold text-accent hover:underline focus:outline-none cursor-pointer"
+                >
+                  {t("admin.recoveryModeTitle")}
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showNewPassword ? "text" : "password"}
+                  required
+                  placeholder={t("admin.passcodePlaceholder")}
+                  value={loginPasscode}
+                  onChange={(e) => setLoginPasscode(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 pl-3.5 pr-10 text-sm text-white focus:outline-none focus:border-accent"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-textdim hover:text-white cursor-pointer"
+                >
+                  {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              {!adminInitialized && (
+                <p className="text-[11px] text-textdim mt-1.5">
+                  {t("admin.passcodePlaceholder")}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={loginLoading}
+              className="w-full bg-accent hover:bg-accent/90 disabled:opacity-50 text-black font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-accent/20 text-sm flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <KeyRound size={18} />
+              {loginLoading ? t("admin.loggingIn") : t("admin.loginBtn")}
+            </button>
+
+            <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs text-textdim">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginViewMode("recovery_otp");
+                  setRecoveryStep("request");
+                  setRecoveryErrorMsg("");
+                  setRecoverySuccessMsg("");
+                }}
+                className="hover:text-white flex items-center gap-1 transition-colors"
+              >
+                <Mail size={13} className="text-accent" /> Recover via Email OTP
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginViewMode("recovery_master");
+                  setRecoveryErrorMsg("");
+                  setRecoverySuccessMsg("");
+                }}
+                className="hover:text-white flex items-center gap-1 transition-colors"
+              >
+                <Key size={13} className="text-amber-400" /> Emergency Master Key
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* MODE 2: EMAIL OTP RECOVERY */}
+        {loginViewMode === "recovery_otp" && (
+          <div className="text-left space-y-4 pt-1">
+            {recoverySuccessMsg && (
+              <div className="bg-emerald-950/60 border border-emerald-500/50 rounded-xl p-3 text-xs text-emerald-300">
+                {recoverySuccessMsg}
+              </div>
+            )}
+            {recoveryErrorMsg && (
+              <div className="bg-red-950/60 border border-red-500/50 rounded-xl p-3 text-xs text-red-300">
+                {recoveryErrorMsg}
+              </div>
+            )}
+
+            {recoveryStep === "request" ? (
+              <form onSubmit={handleRequestRecoveryOtp} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-textdim mb-1">Admin Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={recoveryEmail}
+                    onChange={(e) => setRecoveryEmail(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
+                  />
+                  <p className="text-[11px] text-textdim mt-1.5">
+                    We will send a 6-digit one-time code valid for 15 minutes to this registered email.
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={recoveryLoading}
+                  className="w-full bg-accent hover:bg-accent/90 disabled:opacity-50 text-black font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-accent/20 text-sm flex items-center justify-center gap-2"
+                >
+                  <Send size={16} />
+                  {recoveryLoading ? "Dispatching Code..." : "Send 6-Digit Recovery Code"}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyRecoveryOtp} className="space-y-4">
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-3 text-xs text-textdim flex items-center justify-between">
+                  <span>Code sent to: <strong className="text-white">{maskedSentEmail || recoveryEmail}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => setRecoveryStep("request")}
+                    className="text-accent hover:underline text-[11px] font-semibold"
+                  >
+                    Change
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-textdim mb-1">6-Digit Verification Code</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    placeholder="123456"
+                    value={recoveryOtp}
+                    onChange={(e) => setRecoveryOtp(e.target.value.replace(/\D/g, ""))}
+                    className="w-full bg-black/50 border border-accent/40 rounded-xl py-2.5 px-3.5 text-center font-mono text-xl tracking-[0.4em] text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-textdim mb-1">New Admin Passcode</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="At least 6 characters..."
+                    value={recoveryNewPasscode}
+                    onChange={(e) => setRecoveryNewPasscode(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-textdim mb-1">Confirm New Passcode</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Re-enter new passcode..."
+                    value={recoveryConfirmPasscode}
+                    onChange={(e) => setRecoveryConfirmPasscode(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={recoveryLoading}
+                  className="w-full bg-accent hover:bg-accent/90 disabled:opacity-50 text-black font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-accent/20 text-sm flex items-center justify-center gap-2"
+                >
+                  <KeyRound size={18} />
+                  {recoveryLoading ? "Resetting Passcode..." : "Reset Passcode & Log In"}
+                </button>
+
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={handleRequestRecoveryOtp}
+                    className="text-xs text-textdim hover:text-accent transition-colors"
+                  >
+                    Didn&apos;t receive code? Resend
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs text-textdim">
+              <button
+                type="button"
+                onClick={() => setLoginViewMode("login")}
+                className="hover:text-white flex items-center gap-1 transition-colors"
+              >
+                <ArrowLeft size={13} /> Back to Login
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginViewMode("recovery_master");
+                  setRecoveryErrorMsg("");
+                  setRecoverySuccessMsg("");
+                }}
+                className="hover:text-white flex items-center gap-1 transition-colors"
+              >
+                <Key size={13} className="text-amber-400" /> Use Master Key
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* MODE 3: EMERGENCY MASTER RECOVERY KEY */}
+        {loginViewMode === "recovery_master" && (
+          <form onSubmit={handleVerifyMasterKey} className="text-left space-y-4 pt-1">
+            {recoverySuccessMsg && (
+              <div className="bg-emerald-950/60 border border-emerald-500/50 rounded-xl p-3 text-xs text-emerald-300">
+                {recoverySuccessMsg}
+              </div>
+            )}
+            {recoveryErrorMsg && (
+              <div className="bg-red-950/60 border border-red-500/50 rounded-xl p-3 text-xs text-red-300">
+                {recoveryErrorMsg}
+              </div>
+            )}
+
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3 text-xs text-amber-300">
+              <p className="font-semibold flex items-center gap-1 mb-1">
+                <AlertTriangle size={14} /> Offline Emergency Recovery
+              </p>
+              Enter the emergency key printed to your server terminal on initial boot or exported from Admin Settings.
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-textdim mb-1">Emergency Master Key</label>
+              <input
+                type="text"
+                required
+                placeholder="ESK-XXXX-XXXX-XXXX-XXXX"
+                value={recoveryMasterKey}
+                onChange={(e) => setRecoveryMasterKey(e.target.value.toUpperCase())}
+                className="w-full bg-black/50 border border-amber-500/40 rounded-xl py-2.5 px-3.5 text-center font-mono text-sm tracking-wider text-amber-300 focus:outline-none focus:border-amber-400"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-textdim mb-1">New Admin Passcode</label>
+              <input
+                type="password"
+                required
+                placeholder="At least 6 characters..."
+                value={recoveryNewPasscode}
+                onChange={(e) => setRecoveryNewPasscode(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-textdim mb-1">Confirm New Passcode</label>
+              <input
+                type="password"
+                required
+                placeholder="Re-enter new passcode..."
+                value={recoveryConfirmPasscode}
+                onChange={(e) => setRecoveryConfirmPasscode(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3.5 text-sm text-white focus:outline-none focus:border-accent"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={recoveryLoading}
+              className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-black font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-amber-400/20 text-sm flex items-center justify-center gap-2"
+            >
+              <Key size={18} />
+              {recoveryLoading ? "Resetting Passcode..." : "Reset Passcode with Master Key"}
+            </button>
+
+            <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs text-textdim">
+              <button
+                type="button"
+                onClick={() => setLoginViewMode("login")}
+                className="hover:text-white flex items-center gap-1 transition-colors"
+              >
+                <ArrowLeft size={13} /> Back to Login
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginViewMode("recovery_otp");
+                  setRecoveryStep("request");
+                  setRecoveryErrorMsg("");
+                  setRecoverySuccessMsg("");
+                }}
+                className="hover:text-white flex items-center gap-1 transition-colors"
+              >
+                <Mail size={13} className="text-accent" /> Recover via Email OTP
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     );
   }
@@ -451,30 +955,30 @@ export default function AdminPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-bold uppercase tracking-widest bg-accent/20 text-accent border border-accent/30 px-2.5 py-0.5 rounded-full">
-              App Developer Access
+              {t("admin.title")}
             </span>
           </div>
           <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-2">
             <Shield className="text-accent" size={28} />
-            Device Access Control Center
+            {t("admin.title")}
           </h1>
           <p className="text-xs text-textdim mt-1">
-            Authorized Administrator: <span className="text-white font-medium">{adminEmail}</span>
+            {t("admin.subtitle")}
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <button
             onClick={verifyAndFetchData}
-            className="bg-white/5 hover:bg-white/10 text-white font-semibold py-2 px-3.5 rounded-xl border border-white/10 text-xs flex items-center gap-2 transition-all"
+            className="bg-white/5 hover:bg-white/10 text-white font-semibold py-2 px-3.5 rounded-xl border border-white/10 text-xs flex items-center gap-2 transition-all cursor-pointer"
           >
-            <RefreshCw size={14} /> Refresh Data
+            <RefreshCw size={14} /> {t("common.refresh")}
           </button>
           <button
             onClick={handleLogout}
-            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-semibold py-2 px-3.5 rounded-xl text-xs flex items-center gap-2 transition-all"
+            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-semibold py-2 px-3.5 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer"
           >
-            <LogOut size={14} /> Logout Admin
+            <LogOut size={14} /> {t("admin.logoutBtn")}
           </button>
         </div>
       </div>
@@ -496,7 +1000,7 @@ export default function AdminPage() {
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-neutral-900 border border-white/10 rounded-2xl p-4 flex flex-col justify-between">
-          <span className="text-xs text-textdim font-semibold uppercase tracking-wider">Total Devices</span>
+          <span className="text-xs text-textdim font-semibold uppercase tracking-wider">{t("admin.statsTotal")}</span>
           <div className="flex items-baseline justify-between mt-2">
             <span className="text-3xl font-black text-white">{stats.total}</span>
             <Laptop size={20} className="text-textdim" />
@@ -504,7 +1008,7 @@ export default function AdminPage() {
         </div>
 
         <div className="bg-neutral-900 border border-amber-500/30 rounded-2xl p-4 flex flex-col justify-between">
-          <span className="text-xs text-amber-400 font-semibold uppercase tracking-wider">Pending Requests</span>
+          <span className="text-xs text-amber-400 font-semibold uppercase tracking-wider">{t("admin.statsPending")}</span>
           <div className="flex items-baseline justify-between mt-2">
             <span className="text-3xl font-black text-amber-400">{stats.pending}</span>
             <Clock size={20} className="text-amber-400" />
@@ -512,7 +1016,7 @@ export default function AdminPage() {
         </div>
 
         <div className="bg-neutral-900 border border-emerald-500/30 rounded-2xl p-4 flex flex-col justify-between">
-          <span className="text-xs text-emerald-400 font-semibold uppercase tracking-wider">Accepted Devices</span>
+          <span className="text-xs text-emerald-400 font-semibold uppercase tracking-wider">{t("admin.statsAccepted")}</span>
           <div className="flex items-baseline justify-between mt-2">
             <span className="text-3xl font-black text-emerald-400">{stats.accepted}</span>
             <ShieldCheck size={20} className="text-emerald-400" />
@@ -520,7 +1024,7 @@ export default function AdminPage() {
         </div>
 
         <div className="bg-neutral-900 border border-red-500/30 rounded-2xl p-4 flex flex-col justify-between">
-          <span className="text-xs text-red-400 font-semibold uppercase tracking-wider">Rejected Devices</span>
+          <span className="text-xs text-red-400 font-semibold uppercase tracking-wider">{t("admin.statsRejected")}</span>
           <div className="flex items-baseline justify-between mt-2">
             <span className="text-3xl font-black text-red-400">{stats.rejected}</span>
             <ShieldAlert size={20} className="text-red-400" />
@@ -533,58 +1037,58 @@ export default function AdminPage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => setActiveTab("all")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               activeTab === "all" ? "bg-accent text-black shadow-lg shadow-accent/20" : "bg-white/5 text-textdim hover:text-white"
             }`}
           >
-            All Devices ({stats.total})
+            {t("admin.tabsAll")} ({stats.total})
           </button>
           <button
             onClick={() => setActiveTab("pending")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
               activeTab === "pending"
                 ? "bg-amber-500 text-black shadow-lg shadow-amber-500/20"
                 : "bg-white/5 text-textdim hover:text-white"
             }`}
           >
-            Pending ({stats.pending})
+            {t("admin.tabsPending")} ({stats.pending})
             {stats.pending > 0 && <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />}
           </button>
           <button
             onClick={() => setActiveTab("accepted")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               activeTab === "accepted"
                 ? "bg-emerald-500 text-black shadow-lg shadow-emerald-500/20"
                 : "bg-white/5 text-textdim hover:text-white"
             }`}
           >
-            Accepted ({stats.accepted})
+            {t("admin.tabsAccepted")} ({stats.accepted})
           </button>
           <button
             onClick={() => setActiveTab("rejected")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               activeTab === "rejected"
                 ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
                 : "bg-white/5 text-textdim hover:text-white"
             }`}
           >
-            Rejected ({stats.rejected})
+            {t("admin.tabsRejected")} ({stats.rejected})
           </button>
           <button
             onClick={() => setActiveTab("add")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
               activeTab === "add" ? "bg-white text-black" : "bg-white/5 text-textdim hover:text-white"
             }`}
           >
-            <Plus size={14} /> Manual IP Add
+            <Plus size={14} /> {t("admin.tabsAdd")}
           </button>
           <button
             onClick={() => setActiveTab("settings")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
               activeTab === "settings" ? "bg-white text-black" : "bg-white/5 text-textdim hover:text-white"
             }`}
           >
-            <KeyRound size={14} /> Passcode Settings
+            <KeyRound size={14} /> {t("admin.tabsSettings")}
           </button>
         </div>
 
@@ -593,7 +1097,7 @@ export default function AdminPage() {
             <Search size={16} className="absolute left-3 top-2.5 text-textdim" />
             <input
               type="text"
-              placeholder="Search IP, User, Location..."
+              placeholder={t("admin.searchPlaceholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-black/40 border border-white/10 rounded-xl py-2 pl-9 pr-3 text-xs text-white placeholder-textdim focus:outline-none focus:border-accent"
@@ -606,15 +1110,15 @@ export default function AdminPage() {
       {activeTab === "add" && (
         <div className="bg-neutral-900 border border-white/10 rounded-3xl p-6 max-w-xl mx-auto space-y-4">
           <h2 className="text-xl font-black text-white flex items-center gap-2">
-            <Plus className="text-accent" size={20} /> Manually Add Device or IP Rule
+            <Plus className="text-accent" size={20} /> {t("admin.manualAddTitle")}
           </h2>
           <p className="text-xs text-textdim">
-            Directly whitelist or blacklist an IP address or device without waiting for a request.
+            {t("admin.manualAddDesc")}
           </p>
 
           <form onSubmit={handleAddManualDevice} className="space-y-4 pt-2">
             <div>
-              <label className="block text-xs font-semibold text-textdim mb-1">Public IP Address *</label>
+              <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.ipAddressLabel")} *</label>
               <input
                 type="text"
                 required
@@ -627,7 +1131,7 @@ export default function AdminPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-textdim mb-1">User Name / Alias</label>
+                <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.userNameLabel")}</label>
                 <input
                   type="text"
                   placeholder="e.g. Office Router"
@@ -637,7 +1141,7 @@ export default function AdminPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-textdim mb-1">Device Name / Tag</label>
+                <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.deviceNameLabel")}</label>
                 <input
                   type="text"
                   placeholder="e.g. Laptop IP"
@@ -649,22 +1153,22 @@ export default function AdminPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-textdim mb-1">Permission Action</label>
+              <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.initialStatusLabel")}</label>
               <select
                 value={manualStatus}
                 onChange={(e) => setManualStatus(e.target.value as any)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-accent"
+                className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-accent cursor-pointer"
               >
-                <option value="accepted">Whitelist (Grant Access)</option>
-                <option value="rejected">Blacklist (Permanently Block Access)</option>
+                <option value="accepted">{t("admin.statusAccepted")}</option>
+                <option value="rejected">{t("admin.statusRejected")}</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-textdim mb-1">Admin Notes</label>
+              <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.notes")}</label>
               <input
                 type="text"
-                placeholder="Optional notes..."
+                placeholder={t("admin.notes")}
                 value={manualNotes}
                 onChange={(e) => setManualNotes(e.target.value)}
                 className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-accent"
@@ -673,67 +1177,70 @@ export default function AdminPage() {
 
             <button
               type="submit"
-              className="w-full bg-accent hover:bg-accent/90 text-black font-bold py-3 rounded-xl text-sm transition-all shadow-lg shadow-accent/20"
+              className="w-full bg-accent hover:bg-accent/90 text-black font-bold py-3 rounded-xl text-sm transition-all shadow-lg shadow-accent/20 cursor-pointer"
             >
-              Add Rule to Access Database
+              {t("admin.addDeviceBtn")}
             </button>
           </form>
         </div>
       )}
 
-      {/* TAB 2: PASSCODE SETTINGS */}
+      {/* TAB 2: PASSCODE & SECURITY SETTINGS */}
       {activeTab === "settings" && (
-        <div className="bg-neutral-900 border border-white/10 rounded-3xl p-6 max-w-xl mx-auto space-y-4">
-          <h2 className="text-xl font-black text-white flex items-center gap-2">
-            <KeyRound className="text-accent" size={20} /> Update Admin Passcode
-          </h2>
-          <p className="text-xs text-textdim">
-            Change the master passcode used to authenticate administrator access for <span className="text-white">{adminEmail}</span>.
-          </p>
+        <div className="max-w-3xl mx-auto space-y-6">
+          {/* Section 1: Update Passcode */}
+          <div className="bg-neutral-900 border border-white/10 rounded-3xl p-6 space-y-4">
+            <h2 className="text-xl font-black text-white flex items-center gap-2">
+              <KeyRound className="text-accent" size={20} /> {t("admin.changePasscodeTitle")}
+            </h2>
+            <p className="text-xs text-textdim">
+              {t("admin.subtitle")}
+            </p>
 
-          <form onSubmit={handleChangePasscode} className="space-y-4 pt-2">
-            {passcodeMsg && (
-              <div className="bg-emerald-950/60 border border-emerald-500/50 rounded-xl p-3 text-xs text-emerald-300">
-                {passcodeMsg}
+            <form onSubmit={handleChangePasscode} className="space-y-4 pt-2">
+              {passcodeMsg && (
+                <div className="bg-emerald-950/60 border border-emerald-500/50 rounded-xl p-3 text-xs text-emerald-300">
+                  {passcodeMsg}
+                </div>
+              )}
+              {passcodeErr && (
+                <div className="bg-red-950/60 border border-red-500/50 rounded-xl p-3 text-xs text-red-300">
+                  {passcodeErr}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.oldPasscode")}</label>
+                <input
+                  type="password"
+                  required
+                  placeholder={t("admin.oldPasscode")}
+                  value={oldPasscode}
+                  onChange={(e) => setOldPasscode(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-accent"
+                />
               </div>
-            )}
-            {passcodeErr && (
-              <div className="bg-red-950/60 border border-red-500/50 rounded-xl p-3 text-xs text-red-300">
-                {passcodeErr}
+
+              <div>
+                <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.newPasscode")}</label>
+                <input
+                  type="password"
+                  required
+                  placeholder={t("admin.newPasscode")}
+                  value={newPasscode}
+                  onChange={(e) => setNewPasscode(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-accent"
+                />
               </div>
-            )}
 
-            <div>
-              <label className="block text-xs font-semibold text-textdim mb-1">Current Passcode</label>
-              <input
-                type="password"
-                required
-                placeholder="Enter current passcode (Default: EuskalAdmin2026)"
-                value={oldPasscode}
-                onChange={(e) => setOldPasscode(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-accent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-textdim mb-1">New Passcode</label>
-              <input
-                type="password"
-                required
-                placeholder="At least 6 characters..."
-                value={newPasscode}
-                onChange={(e) => setNewPasscode(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-none focus:border-accent"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full bg-accent hover:bg-accent/90 text-black font-bold py-3 rounded-xl text-sm transition-all shadow-lg shadow-accent/20"
-            >
-              Save New Admin Passcode
-            </button>
-          </form>
+              <button
+                type="submit"
+                className="w-full bg-accent hover:bg-accent/90 text-black font-bold py-3 rounded-xl text-sm transition-all shadow-lg shadow-accent/20 cursor-pointer"
+              >
+                {t("admin.savePasscodeBtn")}
+              </button>
+            </form>
+          </div>
         </div>
       )}
 
@@ -743,10 +1250,7 @@ export default function AdminPage() {
           {filteredRequests.length === 0 ? (
             <div className="bg-neutral-900 border border-white/10 rounded-3xl p-12 text-center text-textdim space-y-2">
               <Laptop size={40} className="mx-auto text-neutral-600 mb-2" />
-              <p className="text-base font-bold text-white">No devices found</p>
-              <p className="text-xs">
-                {searchQuery ? `No records matching "${searchQuery}"` : `No ${activeTab} device records found.`}
-              </p>
+              <p className="text-base font-bold text-white">{t("admin.noRequestsFound")}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -775,7 +1279,11 @@ export default function AdminPage() {
                       {req.status === "pending" && <Clock size={12} />}
                       {req.status === "accepted" && <ShieldCheck size={12} />}
                       {req.status === "rejected" && <ShieldAlert size={12} />}
-                      {req.status}
+                      {req.status === "pending"
+                        ? t("admin.statusPending")
+                        : req.status === "accepted"
+                        ? t("admin.statusAccepted")
+                        : t("admin.statusRejected")}
                     </span>
 
                     <span className="text-[10px] text-textdim font-mono">
@@ -788,7 +1296,7 @@ export default function AdminPage() {
                     <div className="flex items-start justify-between">
                       <div>
                         <h3 className="font-bold text-white text-base leading-snug">
-                          {req.userName || "Anonymous User"}
+                          {req.userName || "User"}
                         </h3>
                         <p className="text-xs text-accent font-medium flex items-center gap-1">
                           <Laptop size={13} /> {req.deviceName}
@@ -805,32 +1313,20 @@ export default function AdminPage() {
                     {/* Localization & Connection details */}
                     <div className="bg-black/40 rounded-2xl p-3 border border-white/5 space-y-1.5 text-xs text-textdim">
                       <div className="flex justify-between items-center">
-                        <span className="flex items-center gap-1"><Globe size={12} /> Public IP:</span>
+                        <span className="flex items-center gap-1"><Globe size={12} /> {t("admin.ipAddressLabel")}:</span>
                         <span className="font-mono text-white">{req.ipAddress}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="flex items-center gap-1"><MapPin size={12} /> Location:</span>
+                        <span className="flex items-center gap-1"><MapPin size={12} /> {t("common.location")}:</span>
                         <span className="text-white font-medium truncate max-w-[150px]">
                           {req.city ? `${req.city}, ${req.country}` : req.country || "Detected"}
                         </span>
                       </div>
-                      {req.locationCoords && (
-                        <div className="flex justify-between items-center text-[10px]">
-                          <span>Coords:</span>
-                          <span className="font-mono text-neutral-300">{req.locationCoords}</span>
-                        </div>
-                      )}
                     </div>
-
-                    {req.requestNote && (
-                      <p className="text-xs text-neutral-300 italic bg-white/5 p-2 rounded-xl">
-                        &quot;{req.requestNote}&quot;
-                      </p>
-                    )}
 
                     {req.adminNotes && (
                       <p className="text-[11px] text-accent font-medium bg-accent/10 p-2 rounded-xl border border-accent/20">
-                        Admin Note: {req.adminNotes}
+                        {t("admin.notes")}: {req.adminNotes}
                       </p>
                     )}
                   </div>
@@ -841,15 +1337,15 @@ export default function AdminPage() {
                       <>
                         <button
                           onClick={() => handleUpdateStatus(req.deviceId, "accepted")}
-                          className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all"
+                          className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                         >
-                          <Check size={14} /> Accept
+                          <Check size={14} /> {t("admin.accept")}
                         </button>
                         <button
                           onClick={() => handleUpdateStatus(req.deviceId, "rejected")}
-                          className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all"
+                          className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                         >
-                          <X size={14} /> Reject
+                          <X size={14} /> {t("admin.reject")}
                         </button>
                       </>
                     ) : (
@@ -857,16 +1353,16 @@ export default function AdminPage() {
                         {req.status === "accepted" ? (
                           <button
                             onClick={() => handleUpdateStatus(req.deviceId, "rejected")}
-                            className="bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 font-semibold py-1.5 px-3 rounded-xl text-xs flex items-center gap-1"
+                            className="bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 font-semibold py-1.5 px-3 rounded-xl text-xs flex items-center gap-1 cursor-pointer"
                           >
-                            <X size={13} /> Revoke Access
+                            <X size={13} /> {t("admin.reject")}
                           </button>
                         ) : (
                           <button
                             onClick={() => handleUpdateStatus(req.deviceId, "accepted")}
-                            className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-semibold py-1.5 px-3 rounded-xl text-xs flex items-center gap-1"
+                            className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-semibold py-1.5 px-3 rounded-xl text-xs flex items-center gap-1 cursor-pointer"
                           >
-                            <Check size={13} /> Grant Access
+                            <Check size={13} /> {t("admin.accept")}
                           </button>
                         )}
                       </>
@@ -875,15 +1371,15 @@ export default function AdminPage() {
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => setEditingDevice(req)}
-                        className="p-2 text-textdim hover:text-white rounded-xl bg-white/5 hover:bg-white/10"
-                        title="Edit Device Record"
+                        className="p-2 text-textdim hover:text-white rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer"
+                        title={t("admin.edit")}
                       >
                         <Edit2 size={14} />
                       </button>
                       <button
                         onClick={() => handleDeleteDevice(req.deviceId)}
-                        className="p-2 text-textdim hover:text-red-400 rounded-xl bg-white/5 hover:bg-white/10"
-                        title="Delete Record"
+                        className="p-2 text-textdim hover:text-red-400 rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer"
+                        title={t("admin.delete")}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -901,10 +1397,10 @@ export default function AdminPage() {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="bg-neutral-900 border border-white/10 rounded-3xl max-w-lg w-full p-6 text-left shadow-2xl space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="font-bold text-lg text-white">Edit Device Details</h3>
+              <h3 className="font-bold text-lg text-white">{t("admin.deviceDetails")}</h3>
               <button
                 onClick={() => setEditingDevice(null)}
-                className="text-textdim hover:text-white p-1"
+                className="text-textdim hover:text-white p-1 cursor-pointer"
               >
                 ✕
               </button>
@@ -912,7 +1408,7 @@ export default function AdminPage() {
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-textdim mb-1">User Name</label>
+                <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.userNameLabel")}</label>
                 <input
                   type="text"
                   value={editingDevice.userName || ""}
@@ -922,7 +1418,7 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-textdim mb-1">User Email</label>
+                <label className="block text-xs font-semibold text-textdim mb-1">{t("common.email")}</label>
                 <input
                   type="email"
                   value={editingDevice.userEmail || ""}
@@ -932,7 +1428,7 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-textdim mb-1">Device Name</label>
+                <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.deviceNameLabel")}</label>
                 <input
                   type="text"
                   value={editingDevice.deviceName || ""}
@@ -942,20 +1438,20 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-textdim mb-1">Access Status</label>
+                <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.initialStatusLabel")}</label>
                 <select
                   value={editingDevice.status}
                   onChange={(e) => setEditingDevice({ ...editingDevice, status: e.target.value as any })}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-accent"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-accent cursor-pointer"
                 >
-                  <option value="pending">Pending</option>
-                  <option value="accepted">Accepted</option>
-                  <option value="rejected">Rejected</option>
+                  <option value="pending">{t("admin.statusPending")}</option>
+                  <option value="accepted">{t("admin.statusAccepted")}</option>
+                  <option value="rejected">{t("admin.statusRejected")}</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-textdim mb-1">Admin Notes</label>
+                <label className="block text-xs font-semibold text-textdim mb-1">{t("admin.notes")}</label>
                 <input
                   type="text"
                   value={editingDevice.adminNotes || ""}
@@ -968,15 +1464,15 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => setEditingDevice(null)}
-                  className="w-1/2 bg-white/5 hover:bg-white/10 text-white font-semibold py-2.5 rounded-xl text-xs"
+                  className="w-1/2 bg-white/5 hover:bg-white/10 text-white font-semibold py-2.5 rounded-xl text-xs cursor-pointer"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 bg-accent hover:bg-accent/90 text-black font-bold py-2.5 rounded-xl text-xs"
+                  className="w-1/2 bg-accent hover:bg-accent/90 text-black font-bold py-2.5 rounded-xl text-xs cursor-pointer"
                 >
-                  Save Changes
+                  {t("common.save")}
                 </button>
               </div>
             </form>

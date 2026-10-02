@@ -27,6 +27,8 @@ import {
 import { mapTrack, mapArtist, mapAlbum } from "@/lib/mappers";
 import type { Track, Artist, Album } from "@/lib/types";
 import { isValidMatchForArtist } from "@/lib/sources/online";
+import { resolveBasqueQuery, GROUND_TRUTH_ARTISTS } from "@/lib/search-intelligence";
+import { getExpandedUserTasteProfile, formatTastePromptForAI, type UserTasteProfile } from "@/lib/taste-profile";
 
 export async function isLiked(trackId: number, syncKey: string = "default"): Promise<boolean> {
   const r = await db
@@ -97,7 +99,7 @@ const HOME_CACHE_TTL_MS = 6 * 60 * 1000; // 6 minutes
 async function curateWithGemini<T extends { id: number }>(
   items: T[],
   sectionName: string,
-  userTaste: { genres: string[]; artists: string[]; likedCount: number },
+  userTaste: UserTasteProfile,
   userInteractedSet: Set<number>,
   seed?: string
 ): Promise<T[]> {
@@ -123,10 +125,7 @@ async function curateWithGemini<T extends { id: number }>(
       const prompt = `You are an AI Music Curation Agent for EuskalSoinua.
 Your mission is to curate and select EXACTLY 10 items from the CANDIDATE POOL for the section "${sectionName}".
 
-USER TASTE PROFILE:
-- Preferred Genres: ${JSON.stringify(userTaste.genres)}
-- Favorite Artists: ${JSON.stringify(userTaste.artists)}
-- Total Liked Items: ${userTaste.likedCount}
+${formatTastePromptForAI(userTaste)}
 
 CRITICAL VARIETY & DISCOVERY RULES:
 1. FRESH VARIETY: You MUST choose a DIFFERENT set and ordering of 10 items every time (Seed Nonce: ${randomSeed}). Do NOT repeat the exact same top items as previous runs.
@@ -138,7 +137,7 @@ CANDIDATE POOL:
 ${JSON.stringify(poolSummary, null, 2)}`;
 
       const geminiCall = ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           temperature: 1.0,
@@ -218,7 +217,7 @@ export async function getHomeSections(syncKey: string = "default", requestedSect
   ]);
 
   // Extract taste signals
-  const [userLikedTracks, userFollowedArtists, userSavedAlbums] = await Promise.all([
+  const [userLikedTracks, userFollowedArtists, userSavedAlbums, userTasteData] = await Promise.all([
     db
       .select({ genre: tracks.genre, artistName: tracks.artistName })
       .from(likedTracks)
@@ -234,28 +233,31 @@ export async function getHomeSections(syncKey: string = "default", requestedSect
       .from(savedAlbums)
       .innerJoin(albums, eq(savedAlbums.albumId, albums.id))
       .where(eq(savedAlbums.syncKey, syncKey)),
+    getExpandedUserTasteProfile(syncKey),
   ]);
 
-  const preferredGenres = new Set<string>();
-  const preferredArtists = new Set<string>();
+  const expandedTaste = userTasteData;
+  const preferredGenres = new Set<string>(expandedTaste.preferredGenres);
+  const preferredArtists = new Set<string>(expandedTaste.favoriteArtists);
 
   userLikedTracks.forEach((t: any) => {
-    if (t.genre) preferredGenres.add(t.genre.toLowerCase());
-    if (t.artistName) preferredArtists.add(t.artistName.toLowerCase());
+    if (t.genre) preferredGenres.add(t.genre);
+    if (t.artistName) preferredArtists.add(t.artistName);
   });
   userFollowedArtists.forEach((a: any) => {
-    if (a.genre) preferredGenres.add(a.genre.toLowerCase());
-    if (a.name) preferredArtists.add(a.name.toLowerCase());
+    if (a.genre) preferredGenres.add(a.genre);
+    if (a.name) preferredArtists.add(a.name);
   });
   userSavedAlbums.forEach((alb: any) => {
-    if (alb.genre) preferredGenres.add(alb.genre.toLowerCase());
-    if (alb.artistName) preferredArtists.add(alb.artistName.toLowerCase());
+    if (alb.genre) preferredGenres.add(alb.genre);
+    if (alb.artistName) preferredArtists.add(alb.artistName);
   });
 
-  const tasteProfile = {
-    genres: Array.from(preferredGenres),
-    artists: Array.from(preferredArtists),
-    likedCount: userLikedTracks.length,
+  const tasteProfile: UserTasteProfile = {
+    ...expandedTaste,
+    preferredGenres: Array.from(preferredGenres),
+    favoriteArtists: Array.from(preferredArtists),
+    likedTracksCount: Math.max(expandedTaste.likedTracksCount, userLikedTracks.length),
   };
 
   const getTrending = async () => {
@@ -372,6 +374,10 @@ export async function searchCatalog(q: string) {
     savedAlbumIds(),
   ]);
 
+  const basqueRes = resolveBasqueQuery(rawQ);
+  const matchedArtist = basqueRes.matchedArtist;
+  const trilingualIntent = basqueRes.trilingualIntent;
+
   const tokens = rawQ.split(/\s+/).filter(Boolean);
   const cleanQ = rawQ.replace(/['"_\-.]/g, "");
   const lastToken = tokens[tokens.length - 1] || rawQ;
@@ -387,21 +393,63 @@ export async function searchCatalog(q: string) {
     );
   });
 
+  const extraTrackConditions = [];
+  if (matchedArtist) {
+    extraTrackConditions.push(ilike(tracks.artistName, `%${matchedArtist.artist}%`));
+    for (const kt of matchedArtist.key_tracks) {
+      extraTrackConditions.push(ilike(tracks.title, `%${kt}%`));
+    }
+  }
+  if (trilingualIntent) {
+    for (const art of trilingualIntent.matchedArtists) {
+      extraTrackConditions.push(ilike(tracks.artistName, `%${art}%`));
+    }
+    for (const tr of trilingualIntent.matchedTracks) {
+      extraTrackConditions.push(ilike(tracks.title, `%${tr}%`));
+    }
+  }
+
   const trackWhere = or(
     ilike(tracks.title, `%${rawQ}%`),
     ilike(tracks.artistName, `%${rawQ}%`),
     and(...trackTokenConditions),
-    sql`LOWER(REPLACE(REPLACE(${tracks.title}, '''', ''), '-', ' ')) LIKE ${'%' + cleanQ + '%'}`
+    sql`LOWER(REPLACE(REPLACE(${tracks.title}, '''', ''), '-', ' ')) LIKE ${'%' + cleanQ + '%'}`,
+    ...(extraTrackConditions.length > 0 ? extraTrackConditions : [])
   );
 
-  // Relevance ranking: exact artist -> exact title -> artist startsWith -> title startsWith -> title contains last word -> rest
+  // Relevance ranking:
+  // 0: exact ground truth matched artist / key track
+  // 1: trilingual intent matched artist / key track
+  // 2: exact artist match
+  // 3: exact title match
+  // 4: artist startsWith
+  // 5: title startsWith
+  // 6: title contains last word
+  // 7: rest
+  let targetArtistSql = matchedArtist ? matchedArtist.artist.toLowerCase() : "";
+  let targetTracksSql = matchedArtist ? matchedArtist.key_tracks.map((t) => t.toLowerCase()) : [];
+  let intentArtistsSql = trilingualIntent ? trilingualIntent.matchedArtists.map((a) => a.toLowerCase()) : [];
+  let intentTracksSql = trilingualIntent ? trilingualIntent.matchedTracks.map((t) => t.toLowerCase()) : [];
+
   const trackRank = sql`CASE 
-    WHEN LOWER(${tracks.artistName}) = ${rawQ} THEN 1
-    WHEN LOWER(${tracks.title}) = ${rawQ} THEN 2
-    WHEN LOWER(${tracks.artistName}) LIKE ${rawQ + '%'} THEN 3
-    WHEN LOWER(${tracks.title}) LIKE ${rawQ + '%'} THEN 4
-    WHEN LOWER(${tracks.title}) LIKE ${'%' + lastToken + '%'} THEN 5
-    ELSE 6
+    ${
+      targetArtistSql
+        ? sql`WHEN LOWER(${tracks.artistName}) = ${targetArtistSql} THEN 0
+              WHEN LOWER(${tracks.title}) IN (${sql.join(targetTracksSql.map((t) => sql`${t}`), sql`, `)}) THEN 0`
+        : sql``
+    }
+    ${
+      intentArtistsSql.length > 0
+        ? sql`WHEN LOWER(${tracks.artistName}) IN (${sql.join(intentArtistsSql.map((a) => sql`${a}`), sql`, `)}) THEN 1
+              WHEN LOWER(${tracks.title}) IN (${sql.join(intentTracksSql.map((t) => sql`${t}`), sql`, `)}) THEN 1`
+        : sql``
+    }
+    WHEN LOWER(${tracks.artistName}) = ${rawQ} THEN 2
+    WHEN LOWER(${tracks.title}) = ${rawQ} THEN 3
+    WHEN LOWER(${tracks.artistName}) LIKE ${rawQ + '%'} THEN 4
+    WHEN LOWER(${tracks.title}) LIKE ${rawQ + '%'} THEN 5
+    WHEN LOWER(${tracks.title}) LIKE ${'%' + lastToken + '%'} THEN 6
+    ELSE 7
   END`;
 
   const trackRows = await db
@@ -412,6 +460,16 @@ export async function searchCatalog(q: string) {
     .limit(30);
 
   // Artist search: tokenized and ranked
+  const extraArtistConditions = [];
+  if (matchedArtist) {
+    extraArtistConditions.push(ilike(artists.name, `%${matchedArtist.artist}%`));
+  }
+  if (trilingualIntent) {
+    for (const art of trilingualIntent.matchedArtists) {
+      extraArtistConditions.push(ilike(artists.name, `%${art}%`));
+    }
+  }
+
   const artistTokenConditions = tokens.map((tok) => {
     const cleanTok = tok.replace(/['"_\-.]/g, "");
     return or(
@@ -424,13 +482,20 @@ export async function searchCatalog(q: string) {
   const artistWhere = or(
     ilike(artists.name, `%${rawQ}%`),
     ilike(artists.genre, `%${rawQ}%`),
-    and(...artistTokenConditions)
+    and(...artistTokenConditions),
+    ...(extraArtistConditions.length > 0 ? extraArtistConditions : [])
   );
 
   const artistRank = sql`CASE
-    WHEN LOWER(${artists.name}) = ${rawQ} THEN 1
-    WHEN LOWER(${artists.name}) LIKE ${rawQ + '%'} THEN 2
-    ELSE 3
+    ${targetArtistSql ? sql`WHEN LOWER(${artists.name}) = ${targetArtistSql} THEN 0` : sql``}
+    ${
+      intentArtistsSql.length > 0
+        ? sql`WHEN LOWER(${artists.name}) IN (${sql.join(intentArtistsSql.map((a) => sql`${a}`), sql`, `)}) THEN 1`
+        : sql``
+    }
+    WHEN LOWER(${artists.name}) = ${rawQ} THEN 2
+    WHEN LOWER(${artists.name}) LIKE ${rawQ + '%'} THEN 3
+    ELSE 4
   END`;
 
   const artistRows = await db
@@ -673,7 +738,7 @@ export async function getLikedTracks(syncKey: string = "default") {
 }
 
 export async function getPlaylists(syncKey: string = "default") {
-  return db
+  const rows = await db
     .select()
     .from(playlists)
     .where(
@@ -687,10 +752,29 @@ export async function getPlaylists(syncKey: string = "default") {
       )
     )
     .orderBy(desc(playlists.createdAt));
+
+  if (rows.length === 0) return [];
+  const plIds = (rows as any[]).map((r: any) => r.id);
+  const pts = await db
+    .select({ playlistId: playlistTracks.playlistId, trackId: playlistTracks.trackId })
+    .from(playlistTracks)
+    .where(inArray(playlistTracks.playlistId, plIds));
+
+  const tMap = new Map<number, number[]>();
+  for (const pt of (pts as any[])) {
+    if (!tMap.has(pt.playlistId)) tMap.set(pt.playlistId, []);
+    tMap.get(pt.playlistId)!.push(pt.trackId);
+  }
+
+  return (rows as any[]).map((r: any) => ({
+    ...r,
+    trackIds: tMap.get(r.id) || [],
+    trackCount: (tMap.get(r.id) || []).length || r.trackCount,
+  }));
 }
 
 export async function getAiCuratedPlaylists(syncKey: string = "default") {
-  return db
+  const rows = await db
     .select()
     .from(playlists)
     .where(
@@ -704,6 +788,25 @@ export async function getAiCuratedPlaylists(syncKey: string = "default") {
       )
     )
     .orderBy(desc(playlists.createdAt));
+
+  if (rows.length === 0) return [];
+  const plIds = (rows as any[]).map((r: any) => r.id);
+  const pts = await db
+    .select({ playlistId: playlistTracks.playlistId, trackId: playlistTracks.trackId })
+    .from(playlistTracks)
+    .where(inArray(playlistTracks.playlistId, plIds));
+
+  const tMap = new Map<number, number[]>();
+  for (const pt of (pts as any[])) {
+    if (!tMap.has(pt.playlistId)) tMap.set(pt.playlistId, []);
+    tMap.get(pt.playlistId)!.push(pt.trackId);
+  }
+
+  return (rows as any[]).map((r: any) => ({
+    ...r,
+    trackIds: tMap.get(r.id) || [],
+    trackCount: (tMap.get(r.id) || []).length || r.trackCount,
+  }));
 }
 
 export async function getRadioPlaylists(syncKey: string = "default") {
@@ -758,7 +861,27 @@ export async function getSavedAlbums(syncKey: string = "default") {
     .from(albums)
     .where(inArray(albums.id, [...savedSet]))
     .orderBy(desc(albums.year));
-  return rows.map((a: any) => ({ ...mapAlbum(a), saved: true }));
+
+  const albumIds = (rows as any[]).map((r: any) => r.id);
+  const aTracks = await db
+    .select({ albumId: tracks.albumId, trackId: tracks.id })
+    .from(tracks)
+    .where(inArray(tracks.albumId, albumIds));
+
+  const tMap = new Map<number, number[]>();
+  for (const at of (aTracks as any[])) {
+    if (at.albumId) {
+      if (!tMap.has(at.albumId)) tMap.set(at.albumId, []);
+      tMap.get(at.albumId)!.push(at.trackId);
+    }
+  }
+
+  return (rows as any[]).map((a: any) => ({
+    ...mapAlbum(a),
+    saved: true,
+    trackIds: tMap.get(a.id) || [],
+    trackCount: (tMap.get(a.id) || []).length || a.trackCount,
+  }));
 }
 
 // ---- mutations ----

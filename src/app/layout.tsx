@@ -5,6 +5,7 @@ import { PlayerProvider } from "@/lib/player-context";
 import { ThemeProvider } from "@/lib/theme-context";
 import { ToastProvider } from "@/lib/toast";
 import { ViewModeProvider } from "@/lib/view-mode-context";
+import { I18nProvider } from "@/lib/i18n/i18n-context";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { NavDiagnostic } from "@/components/nav-diagnostic";
@@ -41,19 +42,38 @@ const navLog = `console.log('%c[EuskalSoinua] Page load','color:#1ed760;font-wei
 
 // No-flash boot script: runs in <head> BEFORE React/paint. Does:
 //   1. Applies saved theme.
-//   2. Applies saved view mode (smartphone / desktop / auto).
-//   3. Destroys stale service workers & caches.
-//   4. Sets device sync cookies.
+//   2. Applies saved locale.
+//   3. Applies saved view mode (smartphone / desktop / auto).
+//   4. Destroys stale service workers & caches.
+//   5. Sets device sync cookies.
 const bootScript = `(function(){
   try{
     var t=localStorage.getItem('euskalsoinua-theme');var m={midnight:'#0a0a0f',aurora:'#0a0e1f',basque:'#140a08',forest:'#07120c',oled:'#000000',light:'#f4f4f7'};if(!t)t='midnight';document.documentElement.setAttribute('data-theme',t);var c=document.querySelector('meta[name="theme-color"]');if(c)c.setAttribute('content',m[t]||'#0a0a0f');
   }catch(e){}
   try{
+    var l=localStorage.getItem('euskalsoinua-locale')||'en';
+    document.documentElement.setAttribute('lang',l);
+  }catch(e){}
+  try{
     var vm=localStorage.getItem('euskalsoinua-view-mode');
+    var isPhone = vm === 'smartphone' || (!vm || vm === 'auto' ? window.innerWidth < 768 : false);
     if(vm==='smartphone'||vm==='desktop'){
       document.documentElement.setAttribute('data-view-mode',vm);
     } else {
-      document.documentElement.setAttribute('data-view-mode',window.innerWidth<768?'smartphone':'desktop');
+      document.documentElement.setAttribute('data-view-mode',isPhone?'smartphone':'desktop');
+    }
+
+    // Counteract Chrome Android "Request Desktop Site" mode by setting viewport width to physical screen width
+    var screenDim = typeof window.screen !== 'undefined' ? window.screen : null;
+    var isLandscape = window.innerWidth > window.innerHeight && screenDim && screenDim.width > screenDim.height;
+    var pWidth = screenDim ? (isLandscape ? Math.max(screenDim.width, screenDim.height) : Math.min(screenDim.width, screenDim.height)) : 390;
+    if (!pWidth || pWidth <= 0) pWidth = screenDim ? screenDim.width : 390;
+
+    if (vm === 'smartphone' || (isPhone && screenDim && screenDim.width < 768 && window.innerWidth >= 768)) {
+      var mv = document.querySelector('meta[name="viewport"]');
+      if (mv) {
+        mv.setAttribute('content', 'width=' + pWidth + ', initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover');
+      }
     }
   }catch(e){}
   try{
@@ -124,21 +144,23 @@ const bootScript = `(function(){
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="eu" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: navLog }} />
         <script dangerouslySetInnerHTML={{ __html: bootScript }} />
       </head>
       <body className="bg-bg text-ink antialiased min-h-dvh">
-        <ViewModeProvider>
-          <ThemeProvider>
-            <ToastProvider>
-              <PlayerProvider>
-                <LayoutWrapper>{children}</LayoutWrapper>
-              </PlayerProvider>
-            </ToastProvider>
-          </ThemeProvider>
-        </ViewModeProvider>
+        <I18nProvider>
+          <ViewModeProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <PlayerProvider>
+                  <LayoutWrapper>{children}</LayoutWrapper>
+                </PlayerProvider>
+              </ToastProvider>
+            </ThemeProvider>
+          </ViewModeProvider>
+        </I18nProvider>
         <ServiceWorkerRegister />
         <NavDiagnostic />
         {/* Capacitor native bridge (only active inside the Android app shell) */}

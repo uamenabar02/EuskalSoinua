@@ -18,6 +18,7 @@ export function AiTrackInsightModal({ track, isOpen, onClose }: AiTrackInsightMo
     culturalContext: string;
     thematicMeaning: string;
     recommendedListening: string;
+    tasteAffinity?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -107,6 +108,15 @@ export function AiTrackInsightModal({ track, isOpen, onClose }: AiTrackInsightMo
               </span>
               <p>{insight.recommendedListening}</p>
             </div>
+
+            {insight.tasteAffinity && (
+              <div className="p-3 bg-accent/10 rounded-xl border border-accent/25">
+                <span className="block font-extrabold text-accent mb-1 flex items-center gap-1">
+                  <Sparkles size={13} /> Why This Fits Your Taste Profile
+                </span>
+                <p className="text-white/90">{insight.tasteAffinity}</p>
+              </div>
+            )}
           </div>
         ) : (
           <p className="text-xs text-red-400 py-6 text-center">Unable to load AI insight for this track.</p>

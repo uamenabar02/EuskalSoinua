@@ -271,8 +271,9 @@ a {
    =========================================================================== */
 
 html[data-view-mode="smartphone"] {
-  /* Fluid base font scaling for high readability across phone screen densities */
-  font-size: clamp(15px, 1.1vw + 11px, 18px);
+  /* Dynamic meta viewport now sizes the layout directly to physical screen width.
+     Base font size defaults cleanly to standard 16px with optimal legibility. */
+  font-size: 16px;
 }
 
 /* Horizontal scroller cards in smartphone mode */

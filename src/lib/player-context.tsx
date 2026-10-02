@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Track, SponsorSegment, LyricLine } from "@/lib/types";
-import { getDownloadedUrl, getDownloadedUrlSync } from "@/lib/downloads";
+import { getDownloadedUrl, getDownloadedUrlSync, isDownloadedSync, preloadDownloadedUrls } from "@/lib/downloads";
 import { useToast } from "@/lib/toast";
 
 // 5-band equalizer centre frequencies (Hz).
@@ -100,7 +100,9 @@ interface PlayerActions {
   toggleBooster: () => void;
   toggleFullTrack: () => void;
   setFullTrackMode: (val: boolean) => void;
-  playRadio: (trackId: number) => Promise<number | null>;
+  playRadio: (
+    target: number | { trackId?: number; artistId?: number; artistName?: string; albumId?: number },
+  ) => Promise<number | null>;
   playLiveRadio: (station: { id: string; name: string; streamUrl: string; category: string }) => void;
   cycleRepeat: () => void;
   setEqBand: (i: number, v: number) => void;
@@ -140,7 +142,7 @@ const EMPTY_STATE: PlayerState = {
   provider: "demo",
   streamingConfigured: false,
   basqueBooster: false,
-  fullTrackMode: false,
+  fullTrackMode: true,
   engine: "audio",
   isLiveRadio: false,
   radioStation: null,
@@ -283,9 +285,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Stable mutable container for latest callback versions, bypassing React 19 render-phase ref restrictions
   const dispatchRef = useRef({
     goNext: (auto?: boolean) => {},
+    goNextDownloadedOrNext: () => {},
     previous: () => {},
     flushListen: (completed: boolean, skipped: boolean) => {},
-    loadTrackViaAudio: (track: Track, startTime?: number) => {},
+    loadTrackViaAudio: (track: Track, startTime?: number, directOfflineUrl?: string) => {},
     handleFullTrackError: (track: Track, reason?: string) => {},
     triggerCrossfade: (t: number, duration: number) => {},
     cancelCrossfade: () => {},
@@ -309,6 +312,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const isTransitioningTrackRef = useRef(false);
   // Track sponsor segments already skipped for the current song to avoid repeated seeking
   const skippedSegmentsRef = useRef<Set<string>>(new Set());
+  // Watchdog timer to detect YouTube playback start failures, geo-blocks, or timeouts in Full Track Mode
+  const ytWatchdogRef = useRef<NodeJS.Timeout | null>(null);
 
   // Keep an active silent audio loop running on audioRef to anchor the Android Chrome
   // MediaSession notification and prevent the OS from killing background audio playback.
@@ -388,8 +393,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // load persisted prefs
+  // load persisted prefs and pre-warm offline blob URLs
   useEffect(() => {
+    preloadDownloadedUrls().catch(() => {});
     fetch("/api/settings")
       .then((r) => r.json())
       .then((s) => {
@@ -402,7 +408,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           basqueBooster: s.basque_booster,
           sponsorblockEnabled: s.sponsorblock,
           shuffle: s.shuffle,
-          fullTrackMode: s.full_track === true,
+          fullTrackMode: s.full_track !== undefined ? s.full_track === true : true,
           crossfadeSeconds: s.crossfade ?? 0,
           playerHidden: localHidden,
         }));
@@ -502,6 +508,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           const st = e.data;
           // 0 ENDED, 1 PLAYING, 2 PAUSED, 3 BUFFERING, 5 CUED
           if (st === 1) {
+            if (ytWatchdogRef.current) {
+              clearTimeout(ytWatchdogRef.current);
+              ytWatchdogRef.current = null;
+            }
             isTransitioningTrackRef.current = false;
             // Only reset the background transition lock when the tab is in foreground
             if (typeof document !== "undefined" && !document.hidden) {
@@ -571,6 +581,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           }
         },
         onError: (e: { data: number }) => {
+          if (ytWatchdogRef.current) {
+            clearTimeout(ytWatchdogRef.current);
+            ytWatchdogRef.current = null;
+          }
           // 101/150 = embedding disabled for THIS video -> record it
           const errCode = e?.data;
           const vid = ytVideoIdRef.current;
@@ -705,6 +719,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
       setState((p) => ({ ...p, buffering: false }));
 
+      const isNetworkDead =
+        (typeof navigator !== "undefined" && !navigator.onLine) ||
+        (typeof window !== "undefined" && localStorage.getItem("euskalsoinua-offline-only") === "true") ||
+        stateRef.current.provider === "offline";
+
+      if (isNetworkDead) {
+        setTimeout(() => {
+          dispatchRef.current.goNextDownloadedOrNext();
+        }, 800);
+        return;
+      }
+
       // If playback/loading failed, recover automatically so background playback never crashes
       const cur = stateRef.current.current;
       if (cur && !el.src.includes("fallback=1")) {
@@ -801,18 +827,54 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Compulsory handler for Full Track Mode errors:
   // Showcases loading error and automatically attempts to load the next song in the queue.
   const handleFullTrackError = useCallback(
-    (failedTrack: Track, reason?: string) => {
+    async (failedTrack: Track, reason?: string) => {
       console.warn(`[Player] Full track failed for "${failedTrack.title}":`, reason);
       isTransitioningTrackRef.current = false;
-      toast(`Could not load "${failedTrack.title}" via YouTube. Skipping to next song in queue…`, "⚠️");
+
+      // 1. Resilient offline rescue: Check if this track is actually stored offline in IndexedDB!
+      const offlineBlobUrl = await getDownloadedUrl(failedTrack.id, failedTrack.title, failedTrack.artistName).catch(() => null);
+      if (offlineBlobUrl) {
+        toast(`Playing "${failedTrack.title}" from offline storage`, "💾");
+        setState((p) => ({
+          ...p,
+          engine: "audio",
+          provider: "offline",
+          streamingConfigured: true,
+          buffering: false,
+          isPlaying: true,
+        }));
+        dispatchRef.current.loadTrackViaAudio(failedTrack, 0, offlineBlobUrl);
+        return;
+      }
+
+      const isNetworkDead =
+        (typeof navigator !== "undefined" && !navigator.onLine) ||
+        (typeof window !== "undefined" && localStorage.getItem("euskalsoinua-offline-only") === "true") ||
+        failedTrack.source === "local" ||
+        stateRef.current.provider === "offline" ||
+        reason?.includes("Network error") ||
+        reason?.includes("Failed to fetch") ||
+        reason?.includes("failed to initialize");
+
+      if (failedTrack.source === "local" || stateRef.current.provider === "offline") {
+        toast(`Could not play "${failedTrack.title}" offline. Audio file is unavailable.`, "⚠️");
+      } else if (isNetworkDead) {
+        toast(`No internet connection. "${failedTrack.title}" is not downloaded for offline play.`, "✈️");
+      } else {
+        toast(`Could not load "${failedTrack.title}" via YouTube. Skipping to next song in queue…`, "⚠️");
+      }
       setState((p) => ({
         ...p,
         buffering: false,
         isPlaying: false,
       }));
-      // Advance to next song in the queue after a brief moment
+      // Advance to next song in the queue after a brief moment (prioritizing downloaded tracks when offline)
       setTimeout(() => {
-        dispatchRef.current.goNext(false);
+        if (isNetworkDead) {
+          dispatchRef.current.goNextDownloadedOrNext();
+        } else {
+          dispatchRef.current.goNext(false);
+        }
       }, 700);
     },
     [toast],
@@ -821,9 +883,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Play a track through the persistent HTML5 <audio> element (full stream or preview).
   // This engine survives screen locking and backgrounding on Android Chrome and iOS.
   const loadTrackViaAudio = useCallback(
-    (track: Track, startTime = 0) => {
+    (track: Track, startTime = 0, explicitOfflineUrl?: string) => {
+      const offlineUrl =
+        explicitOfflineUrl ||
+        getDownloadedUrlSync(track.id, track.title, track.artistName);
       // In FULL TRACK MODE, we strictly do NOT allow falling back to royalty-free audio!
-      if (stateRef.current.fullTrackMode) {
+      // However, if the track is saved offline in IndexedDB, it IS the authentic full track recording.
+      if (stateRef.current.fullTrackMode && !offlineUrl) {
         dispatchRef.current.handleFullTrackError(track, "Audio fallback blocked in Full Track Mode");
         return;
       }
@@ -864,7 +930,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // Crucial for iOS/Android background audio: we must call .play() synchronously.
       // Therefore we DO NOT await IndexedDB here if we are online. We play the network stream instantly.
       const mode = stateRef.current.fullTrackMode ? "full" : "preview";
-      const offlineUrl = getDownloadedUrlSync(track.id);
       if (offlineUrl) {
         playWithSrc(offlineUrl);
       } else {
@@ -897,6 +962,39 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
+      if (ytWatchdogRef.current) {
+        clearTimeout(ytWatchdogRef.current);
+        ytWatchdogRef.current = null;
+      }
+
+      // Arm watchdog timer to catch unstarted/blocked/timed-out YouTube playback
+      if (stateRef.current.fullTrackMode) {
+        const curTrack = stateRef.current.current;
+        ytWatchdogRef.current = setTimeout(() => {
+          if (
+            stateRef.current.fullTrackMode &&
+            stateRef.current.current?.id === curTrack?.id &&
+            !userPausedRef.current &&
+            stateRef.current.isPlaying
+          ) {
+            try {
+              const currentYtState = ytRef.current?.getPlayerState();
+              if (currentYtState !== 1) {
+                failedEmbedVideoIds.add(videoId);
+                if (curTrack) {
+                  dispatchRef.current.handleFullTrackError(curTrack, "YouTube video playback timed out or was blocked");
+                }
+              }
+            } catch {
+              failedEmbedVideoIds.add(videoId);
+              if (curTrack) {
+                dispatchRef.current.handleFullTrackError(curTrack, "YouTube video playback failed to start");
+              }
+            }
+          }
+        }, 7500);
+      }
+
       if (existed) {
         if (ytReadyRef.current) {
           try {
@@ -956,6 +1054,50 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         window.dispatchEvent(new CustomEvent("track-played", { detail: track }));
       } catch (e) {}
 
+      // 1. OFFLINE MODE ROUTING (Strictly when offline or in offline-only simulation mode):
+      const isDeviceOffline =
+        (typeof navigator !== "undefined" && !navigator.onLine) ||
+        (typeof window !== "undefined" && localStorage.getItem("euskalsoinua-offline-only") === "true");
+
+      if (isDeviceOffline) {
+        // Check synchronous cache or IndexedDB for downloaded audio blob URL:
+        let offlineBlobUrl = getDownloadedUrlSync(track.id, track.title, track.artistName);
+        if (!offlineBlobUrl) {
+          ensureSilentAnchor();
+          offlineBlobUrl = await getDownloadedUrl(track.id, track.title, track.artistName).catch(() => null);
+        }
+
+        if (offlineBlobUrl) {
+          userPausedRef.current = false;
+          ensureAudioGraph();
+          setState((p) => ({
+            ...p,
+            current: track,
+            currentTime: 0,
+            duration: track.duration,
+            segments: [],
+            activeSegment: null,
+            lyrics: [],
+            engine: "audio",
+            provider: "offline",
+            streamingConfigured: true,
+            buffering: false,
+            isPlaying: true,
+            isLiveRadio: false,
+            radioStation: null,
+          }));
+          loadTrackViaAudio(track, 0, offlineBlobUrl);
+          return;
+        }
+
+        toast(`"${track.title}" is not available offline. Please download it first or reconnect.`, "✈️");
+        setTimeout(() => {
+          dispatchRef.current.goNextDownloadedOrNext();
+        }, 1000);
+        return;
+      }
+
+      // 2. ONLINE TRACK STREAMING (YouTube or Demo):
       // Log initial listen event immediately to server
       fetch("/api/play", {
         method: "POST",
@@ -1047,9 +1189,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         // Keep silent anchor playing so the document has active audio privileges
         ensureSilentAnchor();
         setState((p) => ({ ...p, buffering: true, engine: "youtube", provider: "youtube", isPlaying: true }));
-        fetch(`/api/stream-info?trackId=${track.id}&mode=full`)
+        const streamInfoController = new AbortController();
+        const streamInfoTimer = setTimeout(() => streamInfoController.abort(), 6500);
+        fetch(`/api/stream-info?trackId=${track.id}&mode=full`, { signal: streamInfoController.signal })
           .then((r) => r.json())
           .then((info: { provider?: string; videoId?: string | null }) => {
+            clearTimeout(streamInfoTimer);
             if (stateRef.current.current?.id !== track.id) return;
             const resolvedVideoId = info?.videoId;
             if (resolvedVideoId && /^[\w-]{11}$/.test(resolvedVideoId) && !failedEmbedVideoIds.has(resolvedVideoId)) {
@@ -1064,7 +1209,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           })
           .catch(() => {
             if (stateRef.current.current?.id === track.id) {
-              dispatchRef.current.handleFullTrackError(track, "Network error resolving YouTube stream");
+              const offlineNow =
+                (typeof navigator !== "undefined" && !navigator.onLine) ||
+                (typeof window !== "undefined" && localStorage.getItem("euskalsoinua-offline-only") === "true");
+              if (offlineNow) {
+                toast(`No internet connection to stream "${track.title}".`, "✈️");
+                setTimeout(() => {
+                  dispatchRef.current.goNext(false);
+                }, 1000);
+              } else {
+                dispatchRef.current.handleFullTrackError(track, "Network error resolving YouTube stream");
+              }
             }
           });
         return;
@@ -1110,7 +1265,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         loadTrackViaAudio(track);
       }
     },
-    [ensureAudioGraph, ensureSilentAnchor, flushListen, getShadowEl, loadTrackMeta, loadTrackViaAudio, loadTrackViaYouTube],
+    [ensureAudioGraph, ensureSilentAnchor, flushListen, getShadowEl, loadTrackMeta, loadTrackViaAudio, loadTrackViaYouTube, toast],
   );
 
   const preWarmAudio = useCallback(() => {
@@ -1154,40 +1309,64 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         }
       });
 
+      ensureSilentAnchor();
       setState((p) => ({ ...p, queue: tracks, index: i }));
       loadTrack(tracks[i]);
 
-      // 2. Identify any upcoming tracks that still lack metadata, and fetch in one deferred batch
-      const upcoming = tracks.slice(i + 1, i + 35);
-      const unseeded = upcoming.filter((t) => !streamInfoCacheRef.current.has(t.id));
-      if (unseeded.length > 0) {
-        // Defer background fetch by 400ms so the active track's stream request has initial priority
-        setTimeout(() => {
-          const idsToBatch = unseeded.slice(0, 30).map((t) => t.id).join(",");
-          fetch(`/api/stream-info?trackIds=${idsToBatch}`)
-            .then((r) => r.json())
-            .then((data) => {
-              if (data?.items) {
-                for (const [idStr, info] of Object.entries(data.items as Record<string, any>)) {
-                  if (info?.videoId || !stateRef.current.fullTrackMode) {
-                    streamInfoCacheRef.current.set(Number(idStr), info);
+      const isOfflineQueue =
+        (typeof navigator !== "undefined" && !navigator.onLine) ||
+        (typeof window !== "undefined" && localStorage.getItem("euskalsoinua-offline-only") === "true") ||
+        tracks[i]?.source === "local";
+
+      // 2. Identify any upcoming tracks that still lack metadata, and fetch in one deferred batch (online only)
+      if (!isOfflineQueue) {
+        const upcoming = tracks.slice(i + 1, i + 35);
+        const unseeded = upcoming.filter((t) => !streamInfoCacheRef.current.has(t.id));
+        if (unseeded.length > 0) {
+          // Defer background fetch by 400ms so the active track's stream request has initial priority
+          setTimeout(() => {
+            const idsToBatch = unseeded.slice(0, 30).map((t) => t.id).join(",");
+            fetch(`/api/stream-info?trackIds=${idsToBatch}`)
+              .then((r) => r.json())
+              .then((data) => {
+                if (data?.items) {
+                  for (const [idStr, info] of Object.entries(data.items as Record<string, any>)) {
+                    if (info?.videoId || !stateRef.current.fullTrackMode) {
+                      streamInfoCacheRef.current.set(Number(idStr), info);
+                    }
                   }
                 }
-              }
-            })
-            .catch(() => {});
-        }, 400);
+              })
+              .catch(() => {});
+          }, 400);
+        }
       }
     },
-    [loadTrack, preWarmAudio],
+    [ensureSilentAnchor, loadTrack, preWarmAudio],
   );
 
-  // Song radio: build a Spotify-style radio playlist (saved to DB), play it,
-  // and return the playlist id so the caller can navigate to its page.
+  // Radio: build a Spotify-style radio playlist (saved to DB for Songs, Artists, or Albums),
+  // play it, and return the playlist id so the caller can navigate to its page.
   const playRadio = useCallback(
-    async (trackId: number): Promise<number | null> => {
+    async (
+      target: number | { trackId?: number; artistId?: number; artistName?: string; albumId?: number },
+    ): Promise<number | null> => {
       try {
-        const res = await fetch(`/api/radio?trackId=${trackId}`);
+        let query = "";
+        if (typeof target === "number") {
+          query = `trackId=${target}`;
+        } else if (target.trackId) {
+          query = `trackId=${target.trackId}`;
+        } else if (target.artistId) {
+          query = `artistId=${target.artistId}`;
+        } else if (target.artistName) {
+          query = `artist=${encodeURIComponent(target.artistName)}`;
+        } else if (target.albumId) {
+          query = `albumId=${target.albumId}`;
+        }
+        if (!query) return null;
+
+        const res = await fetch(`/api/radio?${query}`);
         const data = (await res.json()) as {
           tracks: Track[];
           playlistId: number;
@@ -1361,6 +1540,34 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           nextIndex = -1;
         }
       }
+
+      // If device is offline, skip un-downloaded tracks in queue
+      const isDeviceOffline =
+        (typeof navigator !== "undefined" && !navigator.onLine) ||
+        (typeof window !== "undefined" && localStorage.getItem("euskalsoinua-offline-only") === "true") ||
+        stateRef.current.provider === "offline";
+
+      if (isDeviceOffline && queue.length > 0 && nextIndex >= 0) {
+        let candidate = nextIndex;
+        let checkedCount = 0;
+        while (
+          checkedCount < queue.length &&
+          !isDownloadedSync(queue[candidate].id, queue[candidate].title, queue[candidate].artistName)
+        ) {
+          candidate = (candidate + 1) % queue.length;
+          checkedCount++;
+        }
+        if (
+          checkedCount < queue.length &&
+          isDownloadedSync(queue[candidate].id, queue[candidate].title, queue[candidate].artistName)
+        ) {
+          nextIndex = candidate;
+        } else {
+          setState((prev) => ({ ...prev, index: -1, isPlaying: false, buffering: false }));
+          return;
+        }
+      }
+
       if (nextIndex >= 0 && queue[nextIndex]) {
         loadTrack(queue[nextIndex]);
         setState((prev) => ({ ...prev, index: nextIndex }));
@@ -1370,6 +1577,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     },
     [loadTrack],
   );
+
+  const goNextDownloadedOrNext = useCallback(() => {
+    isTransitioningTrackRef.current = true;
+    userPausedRef.current = false;
+    bgResumeLockRef.current = false;
+    const p = stateRef.current;
+    const { queue, index } = p;
+    if (queue.length === 0) return;
+
+    for (let offset = 1; offset < queue.length; offset++) {
+      const checkIdx = (index + offset) % queue.length;
+      const candidate = queue[checkIdx];
+      if (isDownloadedSync(candidate.id, candidate.title, candidate.artistName)) {
+        setState((prev) => ({ ...prev, index: checkIdx }));
+        loadTrack(candidate);
+        return;
+      }
+    }
+    setState((prev) => ({ ...prev, isPlaying: false, buffering: false }));
+  }, [loadTrack]);
 
   const next = useCallback(() => {
     isTransitioningTrackRef.current = true;
@@ -1913,6 +2140,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     stateRef.current = state;
     dispatchRef.current.goNext = goNext;
+    dispatchRef.current.goNextDownloadedOrNext = goNextDownloadedOrNext;
     dispatchRef.current.previous = previous;
     dispatchRef.current.flushListen = flushListen;
     dispatchRef.current.loadTrackViaAudio = loadTrackViaAudio;

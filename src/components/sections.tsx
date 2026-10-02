@@ -3,6 +3,7 @@
 import { useRef, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, RotateCw, Loader2 } from "lucide-react";
 import { clsx } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 export function Section({
   title,
@@ -19,6 +20,7 @@ export function Section({
   onReload?: () => void;
   reloading?: boolean;
 }) {
+  const { t } = useTranslation();
   const scroller = useRef<HTMLDivElement>(null);
   const scroll = (dir: number) => {
     scroller.current?.scrollBy({ left: dir * 600, behavior: "smooth" });
@@ -42,7 +44,7 @@ export function Section({
               className="flex items-center gap-1.5 text-xs font-semibold text-accent bg-accent/10 hover:bg-accent/20 px-3 py-1.5 rounded-full transition disabled:opacity-50 cursor-pointer shrink-0"
             >
               <RotateCw size={14} className={reloading ? "animate-spin-slow" : ""} />
-              <span className="hidden sm:inline">Reload</span>
+              <span className="hidden sm:inline">{t("common.reload")}</span>
             </button>
           ) : null}
           <div className="hidden md:flex gap-1">
@@ -67,7 +69,7 @@ export function Section({
         <div className="py-12 grid place-items-center text-textdim rounded-xl bg-white/[0.02]">
           <div className="flex items-center gap-2 text-xs text-accent">
             <Loader2 size={16} className="animate-spin" />
-            <span>AI Agent is tailoring {title.toLowerCase()} to your taste…</span>
+            <span>{t("home.reloading")}</span>
           </div>
         </div>
       ) : (

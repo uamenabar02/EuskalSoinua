@@ -1,14 +1,13 @@
 /**
- * EuskalSoinua Service Worker (v7 — Dynamic Offline Cache-First/Network-First)
+ * EuskalSoinua Service Worker (v8 — Dynamic Offline Cache-First/Network-First)
  * ----------------------------------------------------------------------------
  * Tailored for Next.js 15 App Router:
  * - STATIC ASSETS (_next/static, css, js, fonts, icons): Cached with Cache-First.
- * - DOCUMENTS (navigate) & RSC payloads: Cached with Network-First, with offline fallback.
- *   If completely offline, any navigate request falls back to "/" or "/library/downloaded".
+ * - DOCUMENTS (navigate) & RSC payloads: Cached with Network-First, with resilient offline fallback.
  * - MEDIA STREAMS: Never intercepted or cached here (handled via client-side IDB blob URLs).
  */
 
-const CACHE_VERSION = "v7";
+const CACHE_VERSION = "v8";
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `dynamic-${CACHE_VERSION}`;
 
@@ -116,18 +115,29 @@ self.addEventListener("fetch", (event) => {
           return networkResponse;
         })
         .catch(async () => {
-          // Completely offline
+          // Completely offline - try exact match first
           const cachedResponse = await caches.match(event.request);
           if (cachedResponse) {
             return cachedResponse;
           }
 
-          // If it's a page navigation request, return the cached root "/" HTML shell
+          // If navigation to /library/downloaded or /library, serve downloaded shell
           if (isNavigate) {
+            if (url.pathname.includes("/library")) {
+              const dlShell = await caches.match("/library/downloaded");
+              if (dlShell) return dlShell;
+            }
             const rootShell = await caches.match("/");
             if (rootShell) return rootShell;
-            const downloadedShell = await caches.match("/library/downloaded");
-            if (downloadedShell) return downloadedShell;
+          }
+
+          // If RSC request when offline and not in cache, return an empty 200 component response
+          // to prevent Next.js client router from forcibly hard-reloading to the root page
+          if (isRsc) {
+            return new Response("", {
+              status: 200,
+              headers: { "Content-Type": "text/x-component" },
+            });
           }
 
           return new Response("Offline", { status: 503, statusText: "Offline" });
@@ -158,10 +168,13 @@ self.addEventListener("fetch", (event) => {
           if (cachedResponse) {
             return cachedResponse;
           }
-          return new Response(JSON.stringify({ error: "Offline" }), {
-            status: 503,
-            headers: { "Content-Type": "application/json" },
-          });
+          if (isApi) {
+            return new Response(JSON.stringify({ offline: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return new Response("Offline", { status: 503, statusText: "Offline" });
         });
       })
   );

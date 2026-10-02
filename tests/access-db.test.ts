@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import bcrypt from "bcryptjs";
-import { verifyAdminPasscode, updateAdminPasscode, getAdminConfig } from "@/lib/access-db";
+import {
+  verifyAdminPasscode,
+  updateAdminPasscode,
+  getAdminConfig,
+  signDeviceId,
+  verifySignedDeviceId,
+} from "@/lib/access-db";
 
 describe("Access Database & Security Hashing", () => {
   it("should securely hash and verify passcode with bcrypt", () => {
@@ -27,5 +33,23 @@ describe("Access Database & Security Hashing", () => {
   it("should reject passcodes shorter than 6 characters", async () => {
     const result = await updateAdminPasscode("123");
     expect(result).toBe(false);
+  });
+
+  it("should cryptographically sign and verify device IDs", () => {
+    const devId = "dev_iphone_15_pro_max";
+    const signedToken = signDeviceId(devId);
+    expect(signedToken).toContain(`${devId}.`);
+
+    const verification = verifySignedDeviceId(signedToken);
+    expect(verification.valid).toBe(true);
+    expect(verification.deviceId).toBe(devId);
+
+    // Tampered token should fail
+    const tampered = `${signedToken}bad`;
+    expect(verifySignedDeviceId(tampered).valid).toBe(false);
+
+    // Forged device ID with same signature should fail
+    const forged = `dev_attacker.${signedToken.split(".")[1]}`;
+    expect(verifySignedDeviceId(forged).valid).toBe(false);
   });
 });

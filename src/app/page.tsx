@@ -19,26 +19,28 @@ import {
 } from "@/components/track-row";
 import { DetailToggle } from "@/components/detail-toggle";
 import { usePlayer } from "@/lib/player-context";
+import { useTranslation } from "@/lib/i18n";
 import type { Track, Artist, Album, Playlist, Recommendation } from "@/lib/types";
 import {
   Sparkles,
   Loader2,
   TrendingUp,
-  Radio as RadioIcon,
   RotateCw,
-  ThumbsUp,
-  ThumbsDown,
   Clock,
   Flame,
-  Disc3,
   Play,
-  X,
   Music,
   Layers,
   History,
+  MoreHorizontal,
+  ListPlus,
+  ListMusic,
+  Download,
 } from "lucide-react";
 import { clsx } from "@/lib/utils";
 import { useToast } from "@/lib/toast";
+import { downloadTrack } from "@/lib/downloads";
+import { DropdownPortal } from "@/components/dropdown-portal";
 
 interface Catalog {
   trending: (Track & { liked?: boolean })[];
@@ -69,6 +71,7 @@ export interface DailyMix {
 export default function HomePage() {
   const router = useRouter();
   const p = usePlayer();
+  const { t, locale } = useTranslation();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [catalogError, setCatalogError] = useState(false);
   const [reloadingSection, setReloadingSection] = useState<Record<string, boolean>>({});
@@ -190,13 +193,12 @@ export default function HomePage() {
       })
       .then(setCatalog)
       .catch(() => setCatalogError(true));
-    // load song radios for the home sections
+    
     fetch("/api/library")
       .then((r) => r.json())
       .then((d) => setRadios(d.radios ?? []))
       .catch(() => {});
     
-    // Discover Now cache check: only load from API if no cached discovery tracks exist
     let cachedDiscover: any = null;
     if (typeof window !== "undefined") {
       try {
@@ -214,7 +216,6 @@ export default function HomePage() {
     loadRecs();
   }, [loadDiscover, loadRecs]);
 
-  // Load history ("Go back to your music")
   const loadHistory = useCallback(() => {
     fetch("/api/user/history")
       .then((r) => r.json())
@@ -232,9 +233,12 @@ export default function HomePage() {
       .catch(() => {});
   }, []);
 
-  const loadDailyMixes = useCallback((showLoading = false) => {
+  const loadDailyMixes = useCallback((showLoading = false, explicitSeed?: string) => {
     if (showLoading) setLoadingDailyMixes(true);
-    fetch("/api/user/daily-mixes")
+    const url = explicitSeed
+      ? `/api/user/daily-mixes?seed=${encodeURIComponent(explicitSeed)}`
+      : "/api/user/daily-mixes";
+    fetch(url, { cache: explicitSeed ? "no-store" : "default" })
       .then((r) => r.json())
       .then((d) => {
         if (d.mixes) setDailyMixes(d.mixes);
@@ -271,7 +275,6 @@ export default function HomePage() {
     return () => window.removeEventListener("track-played", onTrackPlayed);
   }, [loadHistory, loadDailyMixes]);
 
-  // Load recommendations specifically when basqueBooster changes value
   const lastBoosterRef = useRef(p.basqueBooster);
   useEffect(() => {
     if (p.basqueBooster !== lastBoosterRef.current) {
@@ -288,17 +291,22 @@ export default function HomePage() {
     return () => window.removeEventListener("playlists-changed", handleChanged);
   }, [loadRecs]);
 
-  // Computed in an effect (not during render) to avoid a server/client time
-  // hydration mismatch that can destabilize the session.
   const [greeting, setGreeting] = useState("Kaixo");
   useEffect(() => {
     const hour = new Date().getHours();
-    const g = hour < 6 ? "Good night" : hour < 12 ? "Egun on" : hour < 19 ? "Arratsalde on" : "Gabon";
-    const t = setTimeout(() => {
+    const g =
+      hour < 6
+        ? t("home.greetingNight")
+        : hour < 12
+        ? t("home.greetingMorning")
+        : hour < 19
+        ? t("home.greetingAfternoon")
+        : t("home.greetingEvening");
+    const timer = setTimeout(() => {
       setGreeting(g);
     }, 0);
-    return () => clearTimeout(t);
-  }, []);
+    return () => clearTimeout(timer);
+  }, [t, locale]);
 
   return (
     <div className="w-full px-2 sm:px-6 pt-4 sm:pt-6 max-w-[1600px] mx-auto">
@@ -307,10 +315,10 @@ export default function HomePage() {
         <div>
           <p className="text-textdim text-xs sm:text-sm">{greeting}</p>
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight mt-0.5">
-            Zer entzun <span className="text-accent">gaur?</span>
+            {t("home.zerEntzunGaur")} <span className="text-accent">{t("home.today")}</span>
           </h1>
           <p className="text-textdim text-xs sm:text-sm mt-1 max-w-lg non-critical-detail">
-            Ad-free streaming powered by open-source audio extraction. Your taste stays on this device.
+            {t("home.subheadline")}
           </p>
         </div>
         <div className="shrink-0 self-start sm:self-auto">
@@ -320,10 +328,9 @@ export default function HomePage() {
 
       {catalogError ? (
         <div className="grid place-items-center py-32 text-center text-textdim px-6">
-          <p className="font-semibold text-ink mb-1">Couldn’t reach the music catalog</p>
+          <p className="font-semibold text-ink mb-1">{t("home.cannotReachCatalog")}</p>
           <p className="text-sm max-w-sm">
-            The database may still be starting up. Refresh in a moment — if it
-            persists, the seed catalog couldn’t load.
+            {t("home.catalogErrorHelp")}
           </p>
         </div>
       ) : !catalog ? (
@@ -333,14 +340,14 @@ export default function HomePage() {
       ) : (
         <>
           <Section
-            title="Trending now"
-            subtitle="AI-tailored popular tracks based on your taste"
-            onReload={() => reloadCatalogSection("trending", "Trending now")}
+            title={t("home.trendingNow")}
+            subtitle={t("home.trendingSubtitle")}
+            onReload={() => reloadCatalogSection("trending", t("home.trendingNow"))}
             reloading={reloadingSection["trending"]}
           >
-            {catalog.trending.map((t) => (
-              <SectionCard key={t.id}>
-                <TrackCard track={t} />
+            {catalog.trending.map((tr) => (
+              <SectionCard key={tr.id}>
+                <TrackCard track={tr} />
               </SectionCard>
             ))}
           </Section>
@@ -348,16 +355,20 @@ export default function HomePage() {
           {/* Daily Mixes (Spotify-style) */}
           {dailyMixes.length > 0 && (
             <Section
-              title="Daily Mix"
-              subtitle="Personalized mixes based on your recent plays, taste profile & liked songs"
+              title={t("home.dailyMix")}
+              subtitle={t("home.dailyMixSubtitle")}
               action={
                 <button
-                  onClick={() => loadDailyMixes(true)}
-                  title="Refresh Daily Mixes"
+                  onClick={() => {
+                    const freshSeed = `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+                    toast(t("home.tailoringDailyMixes"), "🔀");
+                    loadDailyMixes(true, freshSeed);
+                  }}
+                  title="Refresh Daily Mixes with fresh track variety"
                   className="text-xs text-textdim hover:text-white flex items-center gap-1.5 transition px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer"
                 >
                   <RotateCw size={12} className={clsx(loadingDailyMixes && "animate-spin")} />
-                  <span>Update mixes</span>
+                  <span>{t("home.updateMixes")}</span>
                 </button>
               }
             >
@@ -375,8 +386,8 @@ export default function HomePage() {
 
           {/* Go back to your music (Songs, Playlists & Albums) */}
           <Section
-            title="Go back to your music"
-            subtitle="Jump back into your recent tracks, albums & playlists"
+            title={t("home.goBackToMusic")}
+            subtitle={t("home.goBackSubtitle")}
             action={
               <div className="flex items-center gap-2 flex-wrap">
                 {/* Category selector */}
@@ -391,7 +402,7 @@ export default function HomePage() {
                     )}
                   >
                     <Music size={12} />
-                    <span>Songs</span>
+                    <span>{t("home.songsTab")}</span>
                   </button>
                   <button
                     onClick={() => setHistoryCategory("playlists_albums")}
@@ -403,11 +414,11 @@ export default function HomePage() {
                     )}
                   >
                     <Layers size={12} />
-                    <span>Playlists & Albums</span>
+                    <span>{t("home.playlistsAndAlbumsTab")}</span>
                   </button>
                 </div>
 
-                {/* Sub-tab: Last heard vs Most heard (Available for BOTH Songs and Playlists & Albums!) */}
+                {/* Sub-tab: Last heard vs Most heard */}
                 <div className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10">
                   <button
                     onClick={() => setHistoryTab("recent")}
@@ -419,7 +430,7 @@ export default function HomePage() {
                     )}
                   >
                     <Clock size={11} />
-                    <span>Last heard</span>
+                    <span>{t("home.lastHeard")}</span>
                   </button>
                   <button
                     onClick={() => setHistoryTab("mostHeard")}
@@ -431,7 +442,7 @@ export default function HomePage() {
                     )}
                   >
                     <Flame size={11} />
-                    <span>Most heard</span>
+                    <span>{t("home.mostHeard")}</span>
                   </button>
                 </div>
 
@@ -440,7 +451,7 @@ export default function HomePage() {
                   className="text-xs text-accent hover:underline flex items-center gap-1 px-2.5 py-1 rounded-full bg-accent/10 hover:bg-accent/20 border border-accent/20 font-semibold transition"
                 >
                   <History size={12} />
-                  <span>Full History</span>
+                  <span>{t("home.fullHistory")}</span>
                 </Link>
               </div>
             }
@@ -448,9 +459,9 @@ export default function HomePage() {
             {historyCategory === "tracks" ? (
               (historyTab === "recent" ? history.recent : history.mostHeard).length > 0 ? (
                 <>
-                  {(historyTab === "recent" ? history.recent : history.mostHeard).slice(0, 10).map((t) => (
-                    <SectionCard key={`goback-${historyTab}-${t.id}`}>
-                      <TrackCard track={t} />
+                  {(historyTab === "recent" ? history.recent : history.mostHeard).slice(0, 10).map((tr) => (
+                    <SectionCard key={`goback-${historyTab}-${tr.id}`}>
+                      <TrackCard track={tr} />
                     </SectionCard>
                   ))}
                   <SectionCard key="goback-view-all-tracks">
@@ -462,10 +473,10 @@ export default function HomePage() {
                         <History size={18} />
                       </div>
                       <span className="text-xs font-bold text-white group-hover:text-accent transition">
-                        View Entire History
+                        {t("home.viewEntireHistory")}
                       </span>
                       <span className="text-[10px] text-textdim mt-1">
-                        Up to 100 tracks &rarr;
+                        {t("home.upTo100Tracks")}
                       </span>
                     </Link>
                   </SectionCard>
@@ -474,12 +485,12 @@ export default function HomePage() {
                 <div className="w-full py-8 text-center text-xs text-textdim rounded-xl bg-white/[0.02] border border-white/5 flex flex-col items-center justify-center gap-1.5">
                   <Clock size={22} className="text-textfaint mb-1" />
                   <p className="font-semibold text-textdim">
-                    {historyTab === "recent" ? "No recently played tracks yet" : "No play history recorded yet"}
+                    {historyTab === "recent" ? t("home.noRecentTracks") : t("home.noPlayHistory")}
                   </p>
                   <p className="text-[11px] text-textfaint max-w-sm">
                     {historyTab === "recent"
-                      ? "Play any song across the catalog to build your personal recent listening history."
-                      : "Your most-played tracks and heavy rotation will appear here as you listen to music."}
+                      ? t("home.noRecentTracksDesc")
+                      : t("home.noPlayHistoryDesc")}
                   </p>
                 </div>
               )
@@ -542,10 +553,10 @@ export default function HomePage() {
                         <History size={18} />
                       </div>
                       <span className="text-xs font-bold text-white group-hover:text-accent transition">
-                        View Entire History
+                        {t("home.viewEntireHistory")}
                       </span>
                       <span className="text-[10px] text-textdim mt-1">
-                        Up to 100 items &rarr;
+                        {t("home.upTo100Items")}
                       </span>
                     </Link>
                   </SectionCard>
@@ -555,11 +566,11 @@ export default function HomePage() {
                   <Layers size={22} className="text-textfaint mb-1" />
                   <p className="font-semibold text-textdim">
                     {historyTab === "recent"
-                      ? "No playlists or albums heard recently"
-                      : "No most-heard playlists or albums yet"}
+                      ? t("home.noRecentPlaylists")
+                      : t("home.noMostHeardPlaylists")}
                   </p>
                   <p className="text-[11px] text-textfaint max-w-sm">
-                    Listen to your favorite albums or curated playlists to jump right back into them here.
+                    {t("home.noPlaylistsDesc")}
                   </p>
                 </div>
               )
@@ -567,15 +578,15 @@ export default function HomePage() {
           </Section>
 
           <Section
-            title="Basque highlights"
-            subtitle="AI-tailored Euskal musika — rock, folk, trikitia"
+            title={t("home.basqueHighlights")}
+            subtitle={t("home.basqueHighlightsSubtitle")}
             action={<BasqueBadge />}
-            onReload={() => reloadCatalogSection("basqueHighlights", "Basque highlights")}
+            onReload={() => reloadCatalogSection("basqueHighlights", t("home.basqueHighlights"))}
             reloading={reloadingSection["basqueHighlights"]}
           >
-            {catalog.basqueHighlights.map((t) => (
-              <SectionCard key={t.id}>
-                <TrackCard track={t} />
+            {catalog.basqueHighlights.map((tr) => (
+              <SectionCard key={tr.id}>
+                <TrackCard track={tr} />
               </SectionCard>
             ))}
           </Section>
@@ -585,13 +596,13 @@ export default function HomePage() {
             <div className="flex items-end justify-between mb-3 px-1">
               <div>
                 <h2 className="text-lg sm:text-2xl font-bold tracking-tight flex items-center gap-2">
-                  <Sparkles size={20} className="text-accent" /> For You
+                  <Sparkles size={20} className="text-accent" /> {t("home.forYouTitle")}
                 </h2>
                 <p className="text-textdim text-xs sm:text-sm mt-0.5 non-critical-detail">
-                  On-device recommendations •{" "}
+                  {t("home.forYouSubtitle")} •{" "}
                   {taste.totalEvents > 0
-                    ? `${taste.totalEvents} listening signals`
-                    : "play more to tune the engine"}
+                    ? t("home.listeningSignals", { count: taste.totalEvents })
+                    : t("home.playMoreToTune")}
                 </p>
               </div>
               <button
@@ -604,7 +615,7 @@ export default function HomePage() {
                 className="flex items-center gap-1.5 text-xs font-semibold text-accent bg-accent/10 hover:bg-accent/20 px-3 py-1.5 rounded-full transition disabled:opacity-50 cursor-pointer"
               >
                 <RotateCw size={14} className={loadingRecs ? "animate-spin-slow" : ""} />
-                <span className="hidden sm:inline">Reload</span>
+                <span className="hidden sm:inline">{t("common.reload")}</span>
               </button>
             </div>
 
@@ -665,10 +676,10 @@ export default function HomePage() {
             <div className="flex items-end justify-between mb-3 px-1">
               <div>
                 <h2 className="text-lg sm:text-2xl font-bold tracking-tight flex items-center gap-2">
-                  🤖 Discover Now <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-accent/20 text-accent">AI Agent</span>
+                  🤖 {t("home.discoverTitle")} <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-accent/20 text-accent">{t("home.discoverNowBadge")}</span>
                 </h2>
                 <p className="text-textdim text-xs sm:text-sm mt-0.5 non-critical-detail">
-                  10 fresh recommendations (published &lt; 5 years) curated by Gemini AI based on your Swipes, Liked Songs, Albums, Synced Playlists &amp; Artists
+                  {t("home.discoverNowSubtitle")}
                 </p>
               </div>
               <button
@@ -681,22 +692,22 @@ export default function HomePage() {
                 className="flex items-center gap-1.5 text-xs font-semibold text-accent bg-accent/10 hover:bg-accent/20 px-3 py-1.5 rounded-full transition disabled:opacity-50 cursor-pointer shrink-0"
               >
                 <RotateCw size={14} className={loadingDiscover ? "animate-spin-slow" : ""} />
-                <span className="hidden sm:inline">Reload</span>
+                <span className="hidden sm:inline">{t("common.reload")}</span>
               </button>
             </div>
             {loadingDiscover && discover.length === 0 ? (
               <div className="py-12 grid place-items-center text-textdim rounded-xl bg-white/[0.02]">
                 <div className="flex items-center gap-2 text-xs text-accent">
                   <Loader2 size={16} className="animate-spin" />
-                  <span>Gemini AI Agent is analyzing your taste signals…</span>
+                  <span>{t("home.discoverAnalyzing")}</span>
                 </div>
               </div>
             ) : discover.length > 0 ? (
               <div className="rounded-xl bg-white/[0.02] p-1 sm:p-3 w-full">
-                {discover.slice(0, 10).map((t, i) => (
+                {discover.slice(0, 10).map((tr, i) => (
                   <TrackRow
-                    key={`${t.id}-disc-${i}`}
-                    track={{ ...t, liked: false }}
+                    key={`${tr.id}-disc-${i}`}
+                    track={{ ...tr, liked: false }}
                     index={i}
                     queue={discover.slice(0, 10)}
                     showAlbum
@@ -705,15 +716,15 @@ export default function HomePage() {
               </div>
             ) : (
               <div className="py-8 text-center text-xs text-textdim rounded-xl bg-white/[0.02]">
-                No discovery recommendations found at the moment. Click Reload to generate new recommendations.
+                {t("home.noDiscoverFound")}
               </div>
             )}
           </section>
 
           {radios.length > 0 ? (
             <Section
-              title="Song Radios"
-              subtitle="Auto-generated from songs you've played"
+              title={t("home.songRadios")}
+              subtitle={t("home.songRadiosSubtitle")}
             >
               {radios.map((pl) => (
                 <SectionCard key={pl.id}>
@@ -724,9 +735,9 @@ export default function HomePage() {
           ) : null}
 
           <Section
-            title="Top artists"
-            subtitle="AI-tailored favorite & recommended artists"
-            onReload={() => reloadCatalogSection("topArtists", "Top artists")}
+            title={t("home.topArtists")}
+            subtitle={t("home.topArtistsSubtitle")}
+            onReload={() => reloadCatalogSection("topArtists", t("home.topArtists"))}
             reloading={reloadingSection["topArtists"]}
           >
             {catalog.topArtists.map((a) => (
@@ -737,9 +748,9 @@ export default function HomePage() {
           </Section>
 
           <Section
-            title="Basque artists"
-            subtitle="AI-tailored Euskal Herria regional talent"
-            onReload={() => reloadCatalogSection("basqueArtists", "Basque artists")}
+            title={t("home.basqueArtists")}
+            subtitle={t("home.basqueArtistsSubtitle")}
+            onReload={() => reloadCatalogSection("basqueArtists", t("home.basqueArtists"))}
             reloading={reloadingSection["basqueArtists"]}
           >
             {catalog.basqueArtists.map((a) => (
@@ -750,9 +761,9 @@ export default function HomePage() {
           </Section>
 
           <Section
-            title="New & notable albums"
-            subtitle="AI-tailored recent album releases"
-            onReload={() => reloadCatalogSection("newReleases", "New & notable albums")}
+            title={t("home.newReleases")}
+            subtitle={t("home.newReleasesSubtitle")}
+            onReload={() => reloadCatalogSection("newReleases", t("home.newReleases"))}
             reloading={reloadingSection["newReleases"]}
           >
             {catalog.newReleases.map((a) => (
@@ -764,9 +775,9 @@ export default function HomePage() {
 
           <footer className="py-10 text-center text-textfaint text-xs">
             <TrendingUp size={14} className="inline mr-1" />
-            EuskalSoinua • Open-source media client • No ads, no tracking.
+            {t("home.footerText")}
             <div className="mt-1">
-              Audio resolved via Piped / Invidious • Non-music segments skipped via SponsorBlock
+              {t("home.footerSubtext")}
             </div>
           </footer>
         </>
@@ -784,6 +795,33 @@ function DailyMixCard({
   onPlay: () => void;
   onOpen: () => void;
 }) {
+  const { playNext, addToQueue } = usePlayer();
+  const { toast } = useToast();
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpen(false);
+    toast(t("home.downloadingMix", { title: mix.title, count: mix.tracks.length }), "⬇️");
+    for (const tr of mix.tracks) {
+      try {
+        await downloadTrack(tr);
+      } catch {}
+    }
+    toast(t("home.downloadedMix", { title: mix.title }), "✅");
+  };
+
   return (
     <div
       onClick={onOpen}
@@ -798,9 +836,63 @@ function DailyMixCard({
       >
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded-md bg-black/40 backdrop-blur-md text-white/90 border border-white/10">
-            Daily Mix
+            {t("home.dailyMix")}
           </span>
-          <Disc3 size={22} className="text-white/40 group-hover:rotate-45 transition-transform duration-700" />
+
+          {/* Triple dot menu for Daily Mix */}
+          <div className="relative z-20" ref={ref} onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen((o) => !o);
+              }}
+              className="h-8 w-8 rounded-full bg-black/40 hover:bg-black/70 text-white/90 hover:text-white backdrop-blur-md shadow-md border border-white/15 grid place-items-center transition active:scale-95 cursor-pointer"
+              aria-label="mix options"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            <DropdownPortal isOpen={open} onClose={() => setOpen(false)} anchorRef={ref} width={240}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                  onPlay();
+                }}
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 font-medium cursor-pointer"
+              >
+                <Play size={14} className="text-accent" /> {t("home.playMix")}
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                  playNext(mix.tracks);
+                  toast(`Added ${mix.tracks.length} songs to Up Next`, "🎵");
+                }}
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+              >
+                <ListPlus size={14} className="text-accent" /> {t("home.playNext")}
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                  addToQueue(mix.tracks);
+                  toast(`Added ${mix.tracks.length} songs to Queue`, "➕");
+                }}
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+              >
+                <ListMusic size={14} /> {t("home.addToQueue")}
+              </button>
+              <div className="h-px bg-white/10 my-1" />
+              <button
+                onClick={handleDownload}
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+              >
+                <Download size={14} /> {t("home.downloadOffline")}
+              </button>
+            </DropdownPortal>
+          </div>
         </div>
 
         <div>
@@ -818,7 +910,7 @@ function DailyMixCard({
             e.stopPropagation();
             onPlay();
           }}
-          title={`Play ${mix.title}`}
+          title={`${t("common.play")} ${mix.title}`}
           className="absolute right-3 bottom-3 h-11 w-11 rounded-full bg-accent text-black flex items-center justify-center shadow-xl opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 hover:scale-105 cursor-pointer z-10"
         >
           <Play size={18} fill="currentColor" className="ml-0.5" />
@@ -834,9 +926,9 @@ function DailyMixCard({
           {mix.subtitle}
         </p>
         <div className="mt-3 flex items-center justify-between text-[11px] text-textfaint">
-          <span>{mix.tracks.length} tracks</span>
+          <span>{mix.tracks.length} {t("common.tracks")}</span>
           <span className="text-accent font-semibold flex items-center gap-1 group-hover:underline">
-            View mix
+            {t("home.viewMix")}
           </span>
         </div>
       </div>

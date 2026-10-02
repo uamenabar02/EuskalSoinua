@@ -6,6 +6,7 @@ import { TrackList } from "@/components/track-row";
 import { ArtistCard, AlbumCard } from "@/components/cards";
 import { Section, SectionCard } from "@/components/sections";
 import type { Track, Artist, Album } from "@/lib/types";
+import { useTranslation } from "@/lib/i18n";
 
 interface Results {
   tracks: (Track & { liked?: boolean })[];
@@ -26,6 +27,7 @@ const SUGGESTIONS = [
 ];
 
 export default function SearchPage() {
+  const { t } = useTranslation();
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Results | null>(null);
   const [loading, setLoading] = useState(false);
@@ -165,7 +167,7 @@ export default function SearchPage() {
               addToHistory(q.trim());
             }
           }}
-          placeholder="Songs, artists, albums…"
+          placeholder={t("search.placeholder")}
           className="w-full bg-white/10 focus:bg-white/15 rounded-full pl-12 pr-12 py-3.5 text-base outline-none placeholder:text-textdim transition"
         />
         <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -189,7 +191,7 @@ export default function SearchPage() {
         <div className="space-y-8 animate-fade-up">
           <div>
             <h3 className="text-textdim text-xs font-bold mb-3 uppercase tracking-wider">
-              Try searching for
+              {t("search.trySearchingFor")}
             </h3>
             <div className="flex flex-wrap gap-2">
               {SUGGESTIONS.map((s) => (
@@ -213,13 +215,13 @@ export default function SearchPage() {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-textdim text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
                   <History size={14} className="text-accent" />
-                  Recent searches
+                  {t("search.recentSearches")}
                 </h3>
                 <button
                   onClick={clearHistory}
                   className="text-xs text-textdim hover:text-white transition cursor-pointer"
                 >
-                  Clear all
+                  {t("search.clearSearches")}
                 </button>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -247,36 +249,36 @@ export default function SearchPage() {
       ) : loading && !results ? (
         <div className="py-20 grid place-items-center text-textdim">
           <Loader2 className="animate-spin-slow" size={28} />
-          <p className="mt-3 text-sm text-textdim">Searching catalog & web...</p>
+          <p className="mt-3 text-sm text-textdim">{t("search.searchingCatalogWeb")}</p>
         </div>
       ) : error ? (
         <div className="py-20 text-center text-textdim text-sm">
-          Search failed — the catalog may be warming up. Try again shortly.
+          {t("search.searchFailed")}
         </div>
       ) : results ? (
         <div className="animate-fade-up">
           {results.online ? (
             <div className="flex items-center gap-2 mb-4 text-xs text-sky-300/80">
               <Globe size={13} />
-              Searched your library + the web (iTunes & Deezer)
+              {t("search.searchedWeb")}
             </div>
           ) : null}
           {results.tracks.length === 0 &&
           results.artists.length === 0 &&
           results.albums.length === 0 ? (
             <div className="py-20 text-center text-textdim">
-              No results for “{q}”.
+              {t("search.noResults", { query: q })}
             </div>
           ) : (
             <>
               {results.tracks.length ? (
                 <div className="mb-8">
-                  <h2 className="text-lg font-bold mb-3">Songs</h2>
+                  <h2 className="text-lg font-bold mb-3">{t("search.songs")}</h2>
                   <TrackList tracks={results.tracks.slice(0, 15)} />
                 </div>
               ) : null}
               {results.artists.length ? (
-                <Section title="Artists">
+                <Section title={t("search.artists")}>
                   {results.artists.map((a) => (
                     <SectionCard key={a.id}>
                       <ArtistCard artist={a} />
@@ -285,7 +287,7 @@ export default function SearchPage() {
                 </Section>
               ) : null}
               {results.albums.length ? (
-                <Section title="Albums">
+                <Section title={t("search.albums")}>
                   {results.albums.map((a) => (
                     <SectionCard key={a.id}>
                       <AlbumCard album={a} />

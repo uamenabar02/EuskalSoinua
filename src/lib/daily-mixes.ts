@@ -62,6 +62,12 @@ const BASQUE_ARTISTS = [
   "Doctor Deseo",
   "Itoiz",
   "Shinova",
+  "Idoia",
+  "Eñaut Elorrieta",
+  "Olatz Salvador",
+  "Brigade Loco",
+  "Rotten XIII",
+  "Lukiek",
 ];
 
 export const DAILY_MIX_DEFINITIONS = [
@@ -92,8 +98,13 @@ export const DAILY_MIX_DEFINITIONS = [
       "Su Ta Gar",
       "Esne Beltza",
       "Vendetta",
+      "Skakeitan",
+      "Olaia Inziarte",
+      "La Txama",
+      "Glaukoma",
     ],
-    targetKeywords: ["euskal", "basque", "trikitia", "euskara", "folk", "rock"],
+    targetKeywords: ["euskal", "basque", "trikitia", "euskara", "euskal rock", "euskal pop", "euskal folk"],
+    excludedArtists: [],
   },
   {
     id: "daily-mix-2",
@@ -108,46 +119,56 @@ export const DAILY_MIX_DEFINITIONS = [
       "Shinova",
       "Zea Mays",
       "Su Ta Gar",
-      "Tame Impala",
-      "Fleetwood Mac",
+      "Belako",
+      "Lukiek",
+      "Doctor Deseo",
+      "Hertzainak",
+      "Kortatu",
+      "Streetwise",
+      "Bizardunak",
       "Arctic Monkeys",
-      "Nirvana",
-      "Queen",
-      "Red Hot Chili Peppers",
       "The Strokes",
+      "Tame Impala",
       "Muse",
       "Foo Fighters",
       "Radiohead",
-      "Belako",
-      "Doctor Deseo",
+      "Nirvana",
+      "Queen",
+      "Red Hot Chili Peppers",
     ],
-    targetKeywords: ["rock", "punk", "alternative", "hard rock", "metal", "grunge", "indie rock"],
+    targetKeywords: ["rock", "punk", "alternative", "hard rock", "metal", "grunge", "indie rock", "post-punk"],
+    excludedArtists: ["Benito Lertxundi", "Mikel Laboa", "Dua Lipa", "Olivia Rodrigo"],
   },
   {
     id: "daily-mix-3",
     title: "Daily Mix 3",
-    genreLabel: "Top Hits & Pop Vibes",
+    genreLabel: "Top Hits & Synth Pop",
     accentColor: "from-violet-600/50 via-purple-900/40 to-black/90",
     pillColor: "text-violet-400 bg-violet-500/10 border-violet-500/20",
-    description: "Modern chart-toppers, dance pop, and energetic electronic grooves.",
+    description: "Modern chart-toppers, vibrant synth pop, dance, and energetic electronic grooves.",
     strictBasqueOnly: false,
     targetArtists: [
+      "ZETAK",
+      "Bengo",
+      "Bulego",
+      "Merina Gris",
+      "Tatta",
+      "Dupla",
       "Dua Lipa",
       "Rosalía",
-      "Olivia Rodrigo",
-      "Fred again..",
-      "Daft Punk",
       "The Weeknd",
+      "Daft Punk",
+      "Fred again..",
+      "Olivia Rodrigo",
       "Harry Styles",
       "Aitana",
-      "Coldplay",
-      "Bulego",
-      "ZETAK",
-      "Billie Eilish",
       "C. Tangana",
+      "Billie Eilish",
       "Taylor Swift",
+      "Coldplay",
     ],
-    targetKeywords: ["pop", "dance", "electronic", "synth", "house", "chart", "hits"],
+    targetKeywords: ["pop", "dance", "synth pop", "electronic", "synth", "house", "chart", "hits", "urban"],
+    excludedArtists: ["Benito Lertxundi", "Su Ta Gar", "Berri Txarrak", "Mikel Laboa", "Oskorri"],
   },
   {
     id: "daily-mix-4",
@@ -158,28 +179,45 @@ export const DAILY_MIX_DEFINITIONS = [
     description: "Warm acoustic strings, intimate vocals, and soothing indie songwriting.",
     strictBasqueOnly: false,
     targetArtists: [
-      "Bon Iver",
-      "Khruangbin",
       "Izaro",
-      "Boygenius",
-      "Oreka TX",
-      "Kepa Junkera",
-      "Mikel Laboa",
-      "Anari",
-      "Ben Howard",
-      "Ed Sheeran",
-      "Passenger",
       "Olaia Inziarte",
-      "Benito Lertxundi",
-      "Ruper Ordorika",
+      "Idoia",
+      "Anari",
+      "Eñaut Elorrieta",
+      "Olatz Salvador",
+      "Bon Iver",
+      "Ben Howard",
+      "Passenger",
+      "Boygenius",
+      "Khruangbin",
+      "Phoebe Bridgers",
+      "Sufjan Stevens",
+      "Fleet Foxes",
+      "Vance Joy",
     ],
-    targetKeywords: ["folk", "acoustic", "indie", "chill", "mellow", "singer-songwriter", "trikitia"],
+    targetKeywords: ["indie folk", "acoustic", "singer-songwriter", "indie acoustic", "mellow", "chamber folk"],
+    // Exclude traditional/world folk ensembles or classic rock/heavy folk to avoid theme dilution
+    excludedArtists: ["Folk & Rackare", "Benito Lertxundi", "Su Ta Gar", "Kortatu", "Nirvana", "Dua Lipa"],
   },
 ];
 
-export async function generateDailyMixes(syncKey: string = "default"): Promise<DailyMix[]> {
+function stringSeedHash(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+export async function generateDailyMixes(
+  syncKey: string = "default",
+  seedValue?: string
+): Promise<DailyMix[]> {
+  const seedNum = seedValue ? stringSeedHash(seedValue) : Math.floor(Date.now() / (1000 * 60 * 60 * 12)); // Changes at least twice a day or on manual refresh
+
   // 1. Gather all local catalog tracks
-  const allDbTracks = await db.select().from(tracks).limit(800);
+  const allDbTracks = await db.select().from(tracks).limit(1000);
   const mappedCatalog: Track[] = allDbTracks.map(mapTrack);
 
   // 2. Gather user personal signals
@@ -189,7 +227,7 @@ export async function generateDailyMixes(syncKey: string = "default"): Promise<D
     .where(eq(listenEvents.syncKey, syncKey))
     .groupBy(listenEvents.trackId)
     .orderBy(desc(sql`COUNT(${listenEvents.id})`))
-    .limit(80);
+    .limit(100);
   const listenedTrackIds = new Set((listenedRows as { trackId: number }[]).map((r) => r.trackId));
 
   const likedRows = await db
@@ -209,21 +247,33 @@ export async function generateDailyMixes(syncKey: string = "default"): Promise<D
     .from(playlistTracks)
     .innerJoin(playlists, eq(playlistTracks.playlistId, playlists.id))
     .where(eq(playlists.syncKey, syncKey))
-    .limit(100);
+    .limit(150);
   const playlistTrackIds = new Set((userPlaylistTrackRows as { trackId: number }[]).map((r) => r.trackId));
 
   // Build each daily mix
-  const mixes: DailyMix[] = DAILY_MIX_DEFINITIONS.map((def) => {
+  const mixes: DailyMix[] = DAILY_MIX_DEFINITIONS.map((def, mixIndex) => {
     // Determine candidate pool
     let candidatePool = mappedCatalog;
+
     if (def.strictBasqueOnly) {
       // Mix 1: ONLY Basque artists and Basque language songs!
       candidatePool = mappedCatalog.filter((t) => {
         const artist = t.artistName.toLowerCase();
         const isBasqueArtist = BASQUE_ARTISTS.some((ba) => artist.includes(ba.toLowerCase()));
         const isBasqueLang = (t as any).language === "eu" || (t as any).region === "eu";
-        const isBasqueGenre = (t.genre || "").toLowerCase().includes("euskal") || (t.genre || "").toLowerCase().includes("basque");
+        const isBasqueGenre =
+          (t.genre || "").toLowerCase().includes("euskal") ||
+          (t.genre || "").toLowerCase().includes("basque") ||
+          (t.genre || "").toLowerCase().includes("trikitia");
         return isBasqueArtist || isBasqueLang || isBasqueGenre;
+      });
+    }
+
+    // Exclude forbidden artists from this theme
+    if (def.excludedArtists && def.excludedArtists.length > 0) {
+      candidatePool = candidatePool.filter((t) => {
+        const aLow = t.artistName.toLowerCase();
+        return !def.excludedArtists.some((ex) => aLow.includes(ex.toLowerCase()));
       });
     }
 
@@ -234,56 +284,69 @@ export async function generateDailyMixes(syncKey: string = "default"): Promise<D
       const normTitle = t.title.toLowerCase();
       const normGenre = (t.genre || "").toLowerCase();
 
-      // Target artist match (+50)
-      if (def.targetArtists.some((a) => normArtist.includes(a.toLowerCase()))) {
-        score += 50;
+      // Direct target artist match (+60)
+      const targetArtistHit = def.targetArtists.some((a) => normArtist.includes(a.toLowerCase()));
+      if (targetArtistHit) {
+        score += 60;
       }
 
-      // Target keyword match (+25)
-      if (def.targetKeywords.some((k) => normGenre.includes(k) || normTitle.includes(k) || normArtist.includes(k))) {
-        score += 25;
+      // Target keyword match (+30)
+      if (def.targetKeywords.some((k) => normGenre.includes(k) || normTitle.includes(k))) {
+        score += 30;
       }
 
       // User affinity signals
       if (likedTrackIds.has(t.id)) score += 35;
       if (listenedTrackIds.has(t.id)) score += 30;
       if (playlistTrackIds.has(t.id)) score += 20;
-      if (t.artistId && followedArtistIds.has(t.artistId)) score += 15;
+      if (t.artistId && followedArtistIds.has(t.artistId)) score += 25;
 
-      // Small deterministic pseudo-random seed to keep tracks refreshed
-      const seed = (t.id * 19 + def.id.charCodeAt(def.id.length - 1)) % 10;
-      score += seed;
+      // Seed-based dynamic pseudo-random offset for variety on refresh/update
+      // Uses the passed seedNum + track id + mix index
+      const dynamicRandom = ((t.id * 37 + seedNum * 13 + mixIndex * 101) % 43);
+      score += dynamicRandom;
 
-      return { track: t, score };
+      return { track: t, score, isTarget: targetArtistHit };
     });
 
     // Sort descending by score
-    let selected = scored
-      .filter((s) => s.score > 20)
-      .sort((a, b) => b.score - a.score)
-      .map((s) => s.track);
+    const sortedCandidates = scored
+      .filter((s) => s.score > 25 || s.isTarget)
+      .sort((a, b) => b.score - a.score);
 
-    // If still short, pull from candidate pool matching the cluster's artists/keywords
-    if (selected.length < 12) {
-      const remainingCandidates = candidatePool.filter((t) => !selected.some((s) => s.id === t.id));
-      const backupFiltered = remainingCandidates.filter((t) => {
-        const artist = t.artistName.toLowerCase();
-        const genre = (t.genre || "").toLowerCase();
-        return (
-          def.targetArtists.some((a) => artist.includes(a.toLowerCase())) ||
-          def.targetKeywords.some((k) => genre.includes(k))
-        );
-      });
-      selected = [...selected, ...backupFiltered.slice(0, 15 - selected.length)];
+    // ARTIST VARIETY CAP: Maximum 2 tracks per artist per Daily Mix!
+    const MAX_TRACKS_PER_ARTIST = 2;
+    const artistCountMap = new Map<string, number>();
+    const selectedTracks: Track[] = [];
+
+    for (const { track } of sortedCandidates) {
+      const artKey = track.artistName.toLowerCase().trim();
+      const currentCount = artistCountMap.get(artKey) || 0;
+      if (currentCount < MAX_TRACKS_PER_ARTIST) {
+        selectedTracks.push(track);
+        artistCountMap.set(artKey, currentCount + 1);
+      }
+      if (selectedTracks.length >= 18) break;
     }
 
-    // Guarantee at least 10 tracks, max 20
-    const finalTracks = selected.slice(0, 18);
+    // If still under 14 tracks, relax to 3 tracks per artist from target pool
+    if (selectedTracks.length < 14) {
+      for (const { track } of sortedCandidates) {
+        if (selectedTracks.some((s) => s.id === track.id)) continue;
+        const artKey = track.artistName.toLowerCase().trim();
+        const currentCount = artistCountMap.get(artKey) || 0;
+        if (currentCount < 3) {
+          selectedTracks.push(track);
+          artistCountMap.set(artKey, currentCount + 1);
+        }
+        if (selectedTracks.length >= 16) break;
+      }
+    }
 
-    // Dynamic subtitle based on unique artists
-    const uniqueArtists = Array.from(new Set(finalTracks.map((t) => t.artistName)));
-    const top3 = uniqueArtists.slice(0, 3);
-    const subtitle = top3.length > 0 ? `${top3.join(", ")} and more` : def.genreLabel;
+    // Dynamic subtitle based on unique top artists in this mix
+    const uniqueArtists = Array.from(new Set(selectedTracks.map((t) => t.artistName)));
+    const topArtistsList = uniqueArtists.slice(0, 4);
+    const subtitle = topArtistsList.length > 0 ? `${topArtistsList.join(", ")} and more` : def.genreLabel;
 
     return {
       id: def.id,
@@ -292,14 +355,18 @@ export async function generateDailyMixes(syncKey: string = "default"): Promise<D
       description: def.description,
       accentColor: def.accentColor,
       genre: def.genreLabel,
-      tracks: finalTracks,
+      tracks: selectedTracks,
     };
   });
 
   return mixes;
 }
 
-export async function getDailyMixById(mixId: string, syncKey: string = "default"): Promise<DailyMix | null> {
-  const mixes = await generateDailyMixes(syncKey);
+export async function getDailyMixById(
+  mixId: string,
+  syncKey: string = "default",
+  seedValue?: string
+): Promise<DailyMix | null> {
+  const mixes = await generateDailyMixes(syncKey, seedValue);
   return mixes.find((m) => m.id === mixId) || null;
 }

@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { GoogleGenAI, Type } from "@google/genai";
 import { db } from "@/db";
-import { tracks, playlists, playlistTracks } from "@/db/schema";
+import { tracks, playlists, playlistTracks, settings } from "@/db/schema";
 import { mapTrack } from "@/lib/mappers";
 import { searchOnline, ingestOnlineTracks } from "@/lib/sources/online";
-import { desc, ilike, and, or } from "drizzle-orm";
-import type { Track } from "@/lib/types";
+import { desc, ilike, and, or, eq } from "drizzle-orm";
+import type { Track, UserTasteProfile } from "@/lib/types";
 
 // Ground truth curated song mappings for resilient, high-quality Basque fallback
 const GROUND_TRUTH_CATALOG: Record<string, { artist: string; title: string }[]> = {
@@ -79,6 +79,31 @@ export async function POST(req: NextRequest) {
     let requestedGenres: string[] = [];
     let requestedInspirations: string[] = [];
 
+    const cookieStore = await cookies();
+    const syncKey = cookieStore.get("sync_key")?.value || "default";
+
+    // Load user taste preferences from DB
+    const preferenceRows = await db
+      .select()
+      .from(settings)
+      .where(and(eq(settings.key, "music_preferences"), eq(settings.syncKey, syncKey)));
+
+    let userTaste: UserTasteProfile = {
+      genres: [],
+      regions: ["eu", "global"],
+      energy: "balanced",
+      era: "all",
+      moods: [],
+      favoriteArtists: [],
+      excludedGenres: [],
+      basqueAffinity: 60,
+    };
+    if (preferenceRows.length > 0) {
+      try {
+        userTaste = { ...userTaste, ...JSON.parse(preferenceRows[0].value) };
+      } catch (e) {}
+    }
+
     if (mode === "form") {
       customTitle = (body.name || "").trim();
       const mood = (body.mood || "Any vibe (No preference)").trim();
@@ -92,8 +117,11 @@ export async function POST(req: NextRequest) {
       requestedBasqueInfluence = (body.basqueInfluence || "Any / Flexible").trim();
       targetCount = typeof body.trackCount === "number" && body.trackCount >= 1 && body.trackCount <= 50 ? body.trackCount : 12;
 
-      const genresText = requestedGenres.length > 0 ? requestedGenres.join(", ") : "All genres / Mix of everything (No genre restriction)";
-      const isFlexibleInfluence = requestedBasqueInfluence.toLowerCase().includes("flexible") || requestedBasqueInfluence.toLowerCase().includes("any") || requestedBasqueInfluence.toLowerCase().includes("none");
+      const genresText = requestedGenres.length > 0
+        ? requestedGenres.join(", ")
+        : (userTaste.genres.length > 0 ? userTaste.genres.join(", ") : "All genres / Mix of everything (No genre restriction)");
+      
+      const effectiveInspirations = inspirations || (userTaste.favoriteArtists && userTaste.favoriteArtists.length > 0 ? userTaste.favoriteArtists.join(", ") : "None specified");
 
       cleanPrompt = `Create a curated playlist with the following specifications:
 - Title: ${customTitle || "Creative title fitting the vibe"}
@@ -101,9 +129,10 @@ export async function POST(req: NextRequest) {
 - Genres: ${genresText}
 - Tempo: ${tempo}
 - Era / Decade: ${era}
-- Artist Inspirations: ${inspirations || "None specified"}
+- Artist Inspirations: ${effectiveInspirations}
 - Basque Music Influence Level: ${requestedBasqueInfluence}
 - Target Track Count: ${targetCount} songs
+- User Taste Profile: ${JSON.stringify({ favoriteGenres: userTaste.genres, favoriteArtists: userTaste.favoriteArtists, energy: userTaste.energy, moods: userTaste.moods, avoidedGenres: userTaste.excludedGenres })}
 
 CRITICAL INSTRUCTIONS:
 1. BASQUE INFLUENCE:
@@ -113,15 +142,27 @@ CRITICAL INSTRUCTIONS:
    - If "25%", 25% Basque and 75% international.
    - If "0%", DO NOT include Basque music! Include ONLY international/global artists in the requested genres.
    - If "Any / Flexible" or unconstrained, choose freely matching requested genres, artists, and vibe across global, Spanish, Latin, or Basque music without forcing a quota.
-2. ACCURACY:
+2. AVOIDED GENRES:
+   - NEVER include songs matching user's avoided genres: ${(userTaste.excludedGenres || []).join(", ") || "none"}.
+3. ACCURACY:
    - Only return REAL, published songs by real artists with accurate titles and artist names.
    - Return exactly ${targetCount} tracks.`;
     } else {
       if (!body.prompt || typeof body.prompt !== "string" || !body.prompt.trim()) {
         return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
       }
-      cleanPrompt = body.prompt.trim();
+      const rawPrompt = body.prompt.trim();
       targetCount = typeof body.trackCount === "number" && body.trackCount >= 1 && body.trackCount <= 50 ? body.trackCount : 12;
+
+      cleanPrompt = `User Prompt: "${rawPrompt}"
+User Taste Profile Background:
+- Preferred Genres: ${(userTaste.genres || []).join(", ") || "Eclectic / Any"}
+- Pinned Favorite Artists: ${(userTaste.favoriteArtists || []).join(", ") || "None"}
+- Typical Energy Level: ${userTaste.energy || "balanced"}
+- Avoided Genres to Never Include: ${(userTaste.excludedGenres || []).join(", ") || "None"}
+- Target Track Count: ${targetCount} songs
+
+Please satisfy the user prompt while naturally aligning with their taste profile where appropriate (unless prompt explicitly dictates otherwise).`;
     }
 
     const apiKey = process.env.GEMINI_API_KEY;

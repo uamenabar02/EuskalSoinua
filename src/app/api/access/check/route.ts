@@ -6,6 +6,7 @@ import {
   fetchIpGeolocation,
   isAdminInitialized,
   markAdminInitialized,
+  signDeviceId,
 } from "@/lib/access-db";
 
 export const dynamic = "force-dynamic";
@@ -34,13 +35,22 @@ export async function GET(req: NextRequest) {
   const isAdmin = adminToken ? await isValidAdminSessionToken(adminToken) : false;
   if (isAdmin) {
     await markAdminInitialized();
-    return NextResponse.json({
+    const res = NextResponse.json({
       status: "accepted",
       isAdmin: true,
       deviceId,
       ipAddress,
       adminInitialized: true,
     });
+    // Set cryptographically signed device authorization cookie
+    res.cookies.set("device_auth", signDeviceId(deviceId), {
+      path: "/",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 365 * 24 * 60 * 60,
+      sameSite: "lax",
+    });
+    return res;
   }
 
   // Check if IP is globally rejected
@@ -59,7 +69,7 @@ export async function GET(req: NextRequest) {
   // Check device access request record
   const record = await getDeviceAccessRequest(deviceId);
   if (record) {
-    return NextResponse.json({
+    const res = NextResponse.json({
       status: record.status,
       record,
       isAdmin: false,
@@ -67,6 +77,16 @@ export async function GET(req: NextRequest) {
       ipAddress,
       adminInitialized: adminInit,
     });
+    if (record.status === "accepted") {
+      res.cookies.set("device_auth", signDeviceId(deviceId), {
+        path: "/",
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 365 * 24 * 60 * 60,
+        sameSite: "lax",
+      });
+    }
+    return res;
   }
 
   // Attempt IP geolocation pre-fetch for user convenience

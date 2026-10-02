@@ -18,18 +18,23 @@ import {
   ShieldCheck,
   Radio,
   EyeOff,
+  Check,
 } from "lucide-react";
 import { usePlayer } from "@/lib/player-context";
 import { useViewMode } from "@/lib/view-mode-context";
+import { useIsDownloaded } from "@/lib/downloads";
 import { CoverArt } from "@/components/cover";
 import { ToggleButton } from "@/components/like-button";
 import { ArtistLinks } from "@/components/artist-links";
 import { formatTime, clsx } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 export function PlayerBar() {
   const p = usePlayer();
   const { viewMode, isSmartphoneView, isDesktopView } = useViewMode();
+  const { t } = useTranslation();
   const c = p.current;
+  const isDownloaded = useIsDownloaded(c?.id ?? 0) || p.provider === "offline" || c?.source === "local";
   const [menuOpen, setMenuOpen] = useState(false);
   const radio = p.radioStation;
 
@@ -66,7 +71,15 @@ export function PlayerBar() {
             <div className="min-w-0 flex-1 text-left">
               <div className="truncate text-sm font-bold flex items-center gap-1.5">
                 {p.isLiveRadio ? <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" /> : null}
-                {title}
+                <span className="truncate">{title}</span>
+                {isDownloaded && !p.isLiveRadio ? (
+                  <span
+                    className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-accent/20 text-accent shrink-0"
+                    title="Downloaded (offline ready)"
+                  >
+                    <Check size={9} strokeWidth={3.5} />
+                  </span>
+                ) : null}
               </div>
               <ArtistLinks artistName={artist} primaryArtistId={c?.artistId} className="text-xs" />
             </div>
@@ -86,12 +99,12 @@ export function PlayerBar() {
             <span
               onClick={(e) => {
                 e.stopPropagation();
-                if (window.confirm("Hide the music player? You can restore it from settings or the sidebar.")) {
+                if (window.confirm(t("player.hidePlayer") + "?")) {
                   p.togglePlayerHidden();
                 }
               }}
               className="grid place-items-center h-10 w-10 text-textdim hover:text-ink shrink-0 cursor-pointer"
-              title="Hide player"
+              title={t("player.hidePlayer")}
             >
               <EyeOff size={18} />
             </span>
@@ -122,7 +135,15 @@ export function PlayerBar() {
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold flex items-center gap-1.5">
               {p.isLiveRadio ? <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" /> : null}
-              {title}
+              <span className="truncate">{title}</span>
+              {isDownloaded && !p.isLiveRadio ? (
+                <span
+                  className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-accent/20 text-accent shrink-0"
+                  title="Downloaded (offline ready)"
+                >
+                  <Check size={10} strokeWidth={3} />
+                </span>
+              ) : null}
             </div>
             <ArtistLinks artistName={artist} primaryArtistId={c?.artistId} />
           </div>
@@ -195,9 +216,9 @@ export function PlayerBar() {
         <div className="flex items-center justify-end gap-2">
           <button
             onClick={p.toggleFullTrack}
-            title={p.fullTrackMode ? "Full Track mode ON (full songs, may include ads)" : "Full Track mode OFF (ad-free previews)"}
+            title={p.fullTrackMode ? t("player.fullTrackOnNotice") : t("player.fullTrackOffNotice")}
             className={clsx(
-              "grid place-items-center h-8 w-8 rounded-full transition",
+              "grid place-items-center h-8 w-8 rounded-full transition cursor-pointer",
               p.fullTrackMode ? "text-accent bg-accent/10" : "text-textdim hover:text-ink",
             )}
           >
@@ -205,9 +226,9 @@ export function PlayerBar() {
           </button>
           <button
             onClick={p.toggleSponsorblock}
-            title="SponsorBlock auto-skip"
+            title={t("player.sponsorblockActive")}
             className={clsx(
-              "grid place-items-center h-8 w-8 rounded-full transition",
+              "grid place-items-center h-8 w-8 rounded-full transition cursor-pointer",
               p.sponsorblockEnabled ? "text-accent bg-accent/10" : "text-textdim hover:text-ink",
             )}
           >
@@ -215,26 +236,26 @@ export function PlayerBar() {
           </button>
           <button
             onClick={p.openNowPlaying}
-            title="Lyrics"
-            className="grid place-items-center h-8 w-8 rounded-full text-textdim hover:text-ink"
+            title={t("player.lyrics")}
+            className="grid place-items-center h-8 w-8 rounded-full text-textdim hover:text-ink cursor-pointer"
           >
             <Mic2 size={16} />
           </button>
           <button
             onClick={p.openNowPlaying}
-            title="Queue"
-            className="grid place-items-center h-8 w-8 rounded-full text-textdim hover:text-ink"
+            title={t("player.queue")}
+            className="grid place-items-center h-8 w-8 rounded-full text-textdim hover:text-ink cursor-pointer"
           >
             <ListMusic size={16} />
           </button>
           <button
             onClick={p.openNowPlaying}
-            title="Equalizer"
-            className="grid place-items-center h-8 w-8 rounded-full text-textdim hover:text-ink"
+            title={t("player.equalizer")}
+            className="grid place-items-center h-8 w-8 rounded-full text-textdim hover:text-ink cursor-pointer"
           >
             <Sliders size={16} />
           </button>
-          <button onClick={p.openNowPlaying} className="grid place-items-center h-8 w-8 rounded-full text-textdim hover:text-ink" title="Expand View">
+          <button onClick={p.openNowPlaying} className="grid place-items-center h-8 w-8 rounded-full text-textdim hover:text-ink cursor-pointer" title={t("player.nowPlaying")}>
             <ChevronUp size={18} />
           </button>
 
@@ -242,9 +263,9 @@ export function PlayerBar() {
           <div className="relative">
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              title="Player options"
+              title={t("common.options")}
               className={clsx(
-                "grid place-items-center h-8 w-8 rounded-full transition",
+                "grid place-items-center h-8 w-8 rounded-full transition cursor-pointer",
                 menuOpen ? "text-accent bg-accent/10" : "text-textdim hover:text-ink"
               )}
             >
@@ -262,10 +283,10 @@ export function PlayerBar() {
                       setMenuOpen(false);
                       p.togglePlayerHidden();
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-left text-red-400 hover:bg-white/5 rounded-lg transition"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-left text-red-400 hover:bg-white/5 rounded-lg transition cursor-pointer"
                   >
                     <EyeOff size={14} />
-                    <span>Hide Music Player</span>
+                    <span>{t("player.hidePlayer")}</span>
                   </button>
                 </div>
               </>

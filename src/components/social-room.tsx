@@ -36,6 +36,8 @@ export function SocialRoom() {
     return () => clearInterval(interval);
   }, [activeRoom?.code]);
 
+  const currentTrackId = p.current?.id;
+
   // Sync current playing track with room
   useEffect(() => {
     if (activeRoom && p.current) {
@@ -49,7 +51,8 @@ export function SocialRoom() {
         }),
       });
     }
-  }, [p.current?.id, activeRoom?.code]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrackId, activeRoom]);
 
   const createRoom = async () => {
     try {

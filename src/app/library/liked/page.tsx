@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { DetailHeader, PlayAllButton, CenterLoader } from "@/components/detail";
 import { TrackList } from "@/components/track-row";
+import { useTranslation } from "@/lib/i18n";
 import type { Track } from "@/lib/types";
 import { Heart } from "lucide-react";
 
 export default function LikedPage() {
+  const { t } = useTranslation();
   const [liked, setLiked] = useState<(Track & { liked?: boolean })[] | null>(null);
   const [error, setError] = useState(false);
 
@@ -40,7 +42,7 @@ export default function LikedPage() {
   if (error)
     return (
       <div className="grid place-items-center py-32 text-textdim text-sm">
-        Could not load your liked songs. Please try again.
+        {t("home.cannotReachCatalog")}
       </div>
     );
   if (!liked) return <CenterLoader />;
@@ -50,9 +52,13 @@ export default function LikedPage() {
       <DetailHeader
         seed="liked-songs"
         coverLabel="♥"
-        meta={<span className="text-sm font-semibold uppercase tracking-wide text-textdim">Playlist</span>}
-        title="Liked Songs"
-        subtitle={`${liked.length} song${liked.length === 1 ? "" : "s"}`}
+        meta={<span className="text-sm font-semibold uppercase tracking-wide text-textdim">{t("common.playlist")}</span>}
+        title={t("library.likedSongs")}
+        subtitle={
+          liked.length === 1
+            ? t("library.songsCountSingular")
+            : t("library.songsCountPlural", { count: liked.length })
+        }
         actions={<PlayAllButton tracks={liked} />}
       >
         <span
@@ -67,8 +73,7 @@ export default function LikedPage() {
         {liked.length === 0 ? (
           <div className="text-center py-20 text-textdim">
             <Heart size={40} className="mx-auto mb-3 text-textfaint" />
-            Songs you like will appear here.
-            <div className="text-xs mt-1">Tap the heart on any track.</div>
+            {t("library.emptyLibraryDesc")}
           </div>
         ) : (
           <TrackList tracks={liked} />

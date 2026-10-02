@@ -2,17 +2,19 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { Play, Pause, Heart, MoreHorizontal, Plus, Clock, Radio, Loader2, ThumbsUp, ThumbsDown, Sparkles, ListPlus, ListMusic } from "lucide-react";
+import { Play, Pause, Heart, MoreHorizontal, Plus, Clock, Radio, Loader2, ThumbsUp, ThumbsDown, Sparkles, ListPlus, ListMusic, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { usePlayer } from "@/lib/player-context";
 import { useToast } from "@/lib/toast";
 import { DownloadMenuItem } from "@/components/download-button";
+import { useIsDownloaded } from "@/lib/downloads";
 import { AiTrackInsightModal } from "@/components/ai-track-insight-modal";
 import { ToggleButton } from "@/components/like-button";
 import { CoverArt, EqualizerBars } from "@/components/cover";
 import { formatTime, clsx } from "@/lib/utils";
 import type { Track } from "@/lib/types";
 import { ArtistLinks, splitArtistNames } from "@/components/artist-links";
+import { DropdownPortal } from "@/components/dropdown-portal";
 
 export function TrackRow({
   track,
@@ -33,6 +35,7 @@ export function TrackRow({
 }) {
   const { playQueue, togglePlay, current, isPlaying } = usePlayer();
   const isCurrent = current?.id === track.id;
+  const isDownloaded = useIsDownloaded(track.id);
 
   const onActivate = () => {
     if (isCurrent) togglePlay();
@@ -86,13 +89,24 @@ export function TrackRow({
           />
         ) : null}
         <div className="min-w-0 flex-1">
-          <div
-            className={clsx(
-              "truncate text-sm sm:text-base font-semibold leading-tight",
-              isCurrent ? "text-accent" : "text-ink",
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span
+              className={clsx(
+                "truncate text-sm sm:text-base font-semibold leading-tight",
+                isCurrent ? "text-accent" : "text-ink",
+              )}
+            >
+              {track.title}
+            </span>
+            {isDownloaded && (
+              <span
+                className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-accent/20 text-accent shrink-0"
+                title="Downloaded on device (offline ready)"
+                aria-label="Downloaded"
+              >
+                <Check size={11} strokeWidth={3} />
+              </span>
             )}
-          >
-            {track.title}
           </div>
           <ArtistLinks artistName={track.artistName} primaryArtistId={track.artistId} className="text-xs sm:text-sm" />
           {(track as any).reason ? (
@@ -207,7 +221,13 @@ export function TrackList({
   );
 }
 
-function TrackMenu({ track }: { track: Track }) {
+export function TrackMenu({
+  track,
+  buttonClassName,
+}: {
+  track: Track;
+  buttonClassName?: string;
+}) {
   const { playRadio, playNext, addToQueue } = usePlayer();
   const { toast } = useToast();
   const router = useRouter();
@@ -248,125 +268,126 @@ function TrackMenu({ track }: { track: Track }) {
           setOpen((o) => !o);
           loadPlaylists();
         }}
-        className="grid place-items-center h-7 w-7 rounded-full text-textdim hover:text-ink hover:bg-white/10"
+        className={clsx(
+          buttonClassName ||
+            "grid place-items-center h-7 w-7 rounded-full text-textdim hover:text-ink hover:bg-white/10",
+        )}
         aria-label="more"
       >
         <MoreHorizontal size={16} />
       </button>
-      {open ? (
-        <div className="absolute right-0 top-8 z-50 w-56 rounded-xl bg-elevated border border-white/10 shadow-2xl p-1.5 text-sm animate-fade-up">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpen(false);
-              setShowInsight(true);
-            }}
-            className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-accent font-semibold"
-          >
-            <Sparkles size={14} /> AI Track Insight
-          </button>
-          <div className="h-px bg-white/10 my-1" />
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              playNext(track);
-              toast("Added to Up Next", "🎵");
-              setOpen(false);
-            }}
-            className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
-          >
-            <ListPlus size={14} className="text-accent" /> Play Next
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              addToQueue(track);
-              toast("Added to Queue", "➕");
-              setOpen(false);
-            }}
-            className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
-          >
-            <ListMusic size={14} /> Add to Queue
-          </button>
-          <div className="h-px bg-white/10 my-1" />
-          <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-textfaint">
-            Add to playlist
-          </div>
-          {loadingPlaylists ? (
-            <div className="px-3 py-2 text-textdim text-xs flex items-center gap-2">
-              <Loader2 className="animate-spin h-3.5 w-3.5" />
-              <span>Loading playlists…</span>
-            </div>
-          ) : playlists.length === 0 ? (
-            <div className="px-3 py-2 text-textdim text-xs">
-              Create a playlist first in Your Library.
-            </div>
-          ) : (
-            <div className="max-h-36 overflow-y-auto no-scrollbar">
-              {playlists.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await fetch(`/api/playlists/${p.id}/tracks`, {
-                      method: "POST",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ trackId: track.id }),
-                    });
-                    window.dispatchEvent(new Event("playlists-changed"));
-                    setOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 truncate"
-                >
-                  <Plus size={14} /> <span className="truncate">{p.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="h-px bg-white/10 my-1" />
-          <button
-            onClick={async (e) => {
-              e.stopPropagation();
-              setOpen(false);
-              toast("Building your radio…", "📻");
-              setLoadingRadio(true);
-              const playlistId = await playRadio(track.id);
-              setLoadingRadio(false);
-              if (playlistId) {
-                toast("Radio playlist ready!", "✅");
-                router.push(`/playlist/${playlistId}`);
-              }
-            }}
-            disabled={loadingRadio}
-            className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 disabled:opacity-50"
-          >
-            <Radio size={14} /> {loadingRadio ? "Loading radio…" : "Go to song radio"}
-          </button>
-          {splitArtistNames(track.artistName).map((artistPart, idx) => {
-            const href = idx === 0 && track.artistId ? `/artist/${track.artistId}` : `/artist/${encodeURIComponent(artistPart)}`;
-            return (
-              <Link
-                key={`${artistPart}-${idx}`}
-                href={href}
-                onClick={() => setOpen(false)}
-                className="block px-3 py-2 rounded-lg hover:bg-white/10 truncate"
-              >
-                Go to artist: {artistPart}
-              </Link>
-            );
-          })}
-          {track.albumId ? (
-            <Link
-              href={`/album/${track.albumId}`}
-              onClick={() => setOpen(false)}
-              className="block px-3 py-2 rounded-lg hover:bg-white/10"
-            >
-              Go to album
-            </Link>
-          ) : null}
-          <DownloadMenuItem track={track} />
+      <DropdownPortal isOpen={open} onClose={() => setOpen(false)} anchorRef={ref} width={240}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(false);
+            setShowInsight(true);
+          }}
+          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-accent font-semibold"
+        >
+          <Sparkles size={14} /> AI Track Insight
+        </button>
+        <div className="h-px bg-white/10 my-1" />
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            playNext(track);
+            toast("Added to Up Next", "🎵");
+            setOpen(false);
+          }}
+          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+        >
+          <ListPlus size={14} className="text-accent" /> Play Next
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            addToQueue(track);
+            toast("Added to Queue", "➕");
+            setOpen(false);
+          }}
+          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+        >
+          <ListMusic size={14} /> Add to Queue
+        </button>
+        <div className="h-px bg-white/10 my-1" />
+        <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-textfaint">
+          Add to playlist
         </div>
-      ) : null}
+        {loadingPlaylists ? (
+          <div className="px-3 py-2 text-textdim text-xs flex items-center gap-2">
+            <Loader2 className="animate-spin h-3.5 w-3.5" />
+            <span>Loading playlists…</span>
+          </div>
+        ) : playlists.length === 0 ? (
+          <div className="px-3 py-2 text-textdim text-xs">
+            Create a playlist first in Your Library.
+          </div>
+        ) : (
+          <div className="max-h-36 overflow-y-auto no-scrollbar">
+            {playlists.map((p) => (
+              <button
+                key={p.id}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  await fetch(`/api/playlists/${p.id}/tracks`, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ trackId: track.id }),
+                  });
+                  window.dispatchEvent(new Event("playlists-changed"));
+                  setOpen(false);
+                }}
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 truncate"
+              >
+                <Plus size={14} /> <span className="truncate">{p.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="h-px bg-white/10 my-1" />
+        <button
+          onClick={async (e) => {
+            e.stopPropagation();
+            setOpen(false);
+            toast("Building your radio…", "📻");
+            setLoadingRadio(true);
+            const playlistId = await playRadio(track.id);
+            setLoadingRadio(false);
+            if (playlistId) {
+              toast("Radio playlist ready!", "✅");
+              router.push(`/playlist/${playlistId}`);
+            }
+          }}
+          disabled={loadingRadio}
+          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 disabled:opacity-50"
+        >
+          <Radio size={14} /> {loadingRadio ? "Loading radio…" : "Go to song radio"}
+        </button>
+        {splitArtistNames(track.artistName).map((artistPart, idx) => {
+          const href = idx === 0 && track.artistId ? `/artist/${track.artistId}` : `/artist/${encodeURIComponent(artistPart)}`;
+          return (
+            <Link
+              key={`${artistPart}-${idx}`}
+              href={href}
+              onClick={() => setOpen(false)}
+              className="block px-3 py-2 rounded-lg hover:bg-white/10 truncate"
+            >
+              Go to artist: {artistPart}
+            </Link>
+          );
+        })}
+        {track.albumId ? (
+          <Link
+            href={`/album/${track.albumId}`}
+            onClick={() => setOpen(false)}
+            className="block px-3 py-2 rounded-lg hover:bg-white/10"
+          >
+            Go to album
+          </Link>
+        ) : null}
+        <DownloadMenuItem track={track} />
+      </DropdownPortal>
 
       <AiTrackInsightModal track={track} isOpen={showInsight} onClose={() => setShowInsight(false)} />
     </div>

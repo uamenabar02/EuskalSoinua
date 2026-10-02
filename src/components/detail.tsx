@@ -47,6 +47,7 @@ export function DetailHeader({
   meta,
   coverLabel,
   coverShape = "rounded-lg",
+  artwork,
   children,
   actions,
 }: {
@@ -56,6 +57,7 @@ export function DetailHeader({
   meta?: ReactNode;
   coverLabel: string;
   coverShape?: string;
+  artwork?: string | null;
   children?: ReactNode;
   actions?: ReactNode;
 }) {
@@ -70,6 +72,7 @@ export function DetailHeader({
         <CoverArt
           seed={seed}
           label={coverLabel}
+          artwork={artwork}
           rounded={coverShape}
           className="h-40 w-40 sm:h-52 sm:w-52 shadow-2xl shrink-0"
         />

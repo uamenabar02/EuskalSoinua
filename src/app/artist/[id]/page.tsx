@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { DetailHeader, PlayAllButton, CenterLoader } from "@/components/detail";
 import { TrackList } from "@/components/track-row";
 import { ToggleButton } from "@/components/like-button";
@@ -9,6 +10,10 @@ import { AlbumCard, BasqueBadge } from "@/components/cards";
 import { CoverArt } from "@/components/cover";
 import { Section, SectionCard } from "@/components/sections";
 import type { Track, Artist, Album } from "@/lib/types";
+import { Radio, Loader2 } from "lucide-react";
+import { usePlayer } from "@/lib/player-context";
+import { useToast } from "@/lib/toast";
+import { useTranslation } from "@/lib/i18n";
 
 interface Data {
   artist: Artist & { followed?: boolean };
@@ -62,10 +67,15 @@ function groupByAlbum(tracks: (Track & { liked?: boolean })[]): {
 }
 
 export default function ArtistPage({ params }: { params: Promise<{ id: string }> }) {
+  const router = useRouter();
+  const p = usePlayer();
+  const { toast } = useToast();
+  const { t } = useTranslation();
   const [artistParam, setArtistParam] = useState<string | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingRadio, setLoadingRadio] = useState(false);
 
   useEffect(() => {
     params.then((p) => setArtistParam(p.id));
@@ -123,7 +133,7 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
   );
 
   if (error)
-    return <div className="grid place-items-center py-32 text-textdim text-sm">Artist not found.</div>;
+    return <div className="grid place-items-center py-32 text-textdim text-sm">{t("artist.notFound")}</div>;
   if (!data || !artist) return <CenterLoader />;
 
   const isBasque = artist.region === "eu";
@@ -136,14 +146,14 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
         coverShape="rounded-full"
         meta={
           <span className="flex items-center gap-2 justify-center sm:justify-start">
-            <span className="text-sm font-semibold text-textdim">Artist</span>
+            <span className="text-sm font-semibold text-textdim">{t("common.artist")}</span>
             {isBasque ? <BasqueBadge /> : null}
           </span>
         }
         title={artist.name}
         subtitle={
           <span className="flex flex-wrap items-center gap-x-2 justify-center sm:justify-start">
-            <span>{artist.monthlyListeners.toLocaleString()} monthly listeners</span>
+            <span>{t("home.monthlyListeners", { count: artist.monthlyListeners.toLocaleString() })}</span>
             {artist.genre ? (
               <>
                 <span>•</span>
@@ -155,6 +165,28 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
         actions={
           <>
             <PlayAllButton tracks={tracks} />
+            <button
+              onClick={async () => {
+                if (loadingRadio) return;
+                setLoadingRadio(true);
+                toast(`Building ${artist.name} Radio…`, "📻");
+                const playlistId = await p.playRadio({
+                  artistId: artist.id,
+                  artistName: artist.name,
+                });
+                setLoadingRadio(false);
+                if (playlistId) {
+                  toast("Artist Radio playlist ready!", "✅");
+                  router.push(`/playlist/${playlistId}`);
+                }
+              }}
+              disabled={loadingRadio}
+              title={`Start ${artist.name} Radio`}
+              className="flex items-center gap-1.5 h-11 px-4 rounded-full bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition disabled:opacity-50 cursor-pointer"
+            >
+              {loadingRadio ? <Loader2 size={16} className="animate-spin" /> : <Radio size={16} className="text-accent" />}
+              <span>{t("artist.artistRadio")}</span>
+            </button>
             <ToggleButton
               endpoint="follow"
               id={artist.id}
@@ -174,7 +206,7 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
             disabled={loadingMore}
             className="flex items-center gap-1.5 text-xs font-semibold text-accent bg-accent/10 hover:bg-accent/20 px-3 py-1.5 rounded-full transition disabled:opacity-50"
           >
-            {loadingMore ? "Loading all songs…" : "Load full catalog"}
+            {loadingMore ? t("artist.loadingAllSongs") : t("artist.loadFullCatalog")}
           </button>
         </div>
 
@@ -184,13 +216,13 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
 
         {tracks.length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-textdim text-sm mb-3">No tracks cached for this artist yet.</p>
+            <p className="text-textdim text-sm mb-3">{t("artist.noTracksCached")}</p>
             <button
               onClick={loadFullDiscography}
               disabled={loadingMore}
               className="bg-accent text-black font-semibold text-sm px-4 py-2 rounded-full hover:scale-105 transition disabled:opacity-50"
             >
-              {loadingMore ? "Loading…" : "Find their songs online"}
+              {loadingMore ? t("common.loading") : t("artist.findSongsOnline")}
             </button>
           </div>
         ) : (
@@ -198,14 +230,14 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
             {/* Popular */}
             {popular.length ? (
               <section className="mb-10">
-                <h2 className="text-lg sm:text-xl font-bold mb-3">Popular</h2>
+                <h2 className="text-lg sm:text-xl font-bold mb-3">{t("artist.popular")}</h2>
                 <TrackList tracks={popular} showAlbum={false} />
               </section>
             ) : null}
 
             {/* Discography grid */}
             {albums.length ? (
-              <Section title="Albums" subtitle="Tap an album to open it">
+              <Section title={t("search.albums")} subtitle={t("artist.tapAlbumToOpen")}>
                 {albums.map((a) => (
                   <SectionCard key={a.id}>
                     <AlbumCard album={a} />
@@ -216,7 +248,7 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
 
             {/* Songs grouped by album */}
             <section className="mt-4">
-              <h2 className="text-lg sm:text-xl font-bold mb-4">Songs by album</h2>
+              <h2 className="text-lg sm:text-xl font-bold mb-4">{t("artist.songsByAlbum")}</h2>
               {grouped.albums.map((g) => (
                 <div key={g.key} className="mb-8">
                   <Link
@@ -235,7 +267,7 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
                         {g.name}
                       </div>
                       <div className="text-xs text-textdim">
-                        Album · {g.tracks.length} song{g.tracks.length === 1 ? "" : "s"}
+                        {t("common.album")} · {g.tracks.length} {g.tracks.length === 1 ? t("common.songSingular") : t("common.songs")}
                       </div>
                     </div>
                     <PlayAllButton tracks={g.tracks} size="sm" />
@@ -247,7 +279,7 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
               {/* Singles / tracks without an album */}
               {grouped.singles.length ? (
                 <div className="mb-8">
-                  <h3 className="font-bold text-base mb-2">Singles & other releases</h3>
+                  <h3 className="font-bold text-base mb-2">{t("artist.singlesAndOther")}</h3>
                   <TrackList tracks={grouped.singles} showAlbum={false} />
                 </div>
               ) : null}
@@ -257,9 +289,9 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
             <section className="mt-8 rounded-2xl bg-gradient-to-br from-white/[0.06] to-transparent p-4 sm:p-5">
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div>
-                  <h2 className="text-lg font-bold">All songs</h2>
+                  <h2 className="text-lg font-bold">{t("artist.allSongs")}</h2>
                   <p className="text-xs text-textdim">
-                    {tracks.length} track{tracks.length === 1 ? "" : "s"} · play the full catalog
+                    {tracks.length} {tracks.length === 1 ? t("common.songSingular") : t("common.songs")}
                   </p>
                 </div>
                 <PlayAllButton tracks={tracks} />

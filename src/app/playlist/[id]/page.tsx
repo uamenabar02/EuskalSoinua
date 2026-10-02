@@ -8,6 +8,7 @@ import { DownloadAllButton } from "@/components/download-button";
 import { Trash2, RotateCw } from "lucide-react";
 import type { Track, Playlist } from "@/lib/types";
 import { useToast } from "@/lib/toast";
+import { useTranslation } from "@/lib/i18n";
 
 interface Data {
   playlist: Playlist;
@@ -16,6 +17,7 @@ interface Data {
 
 export default function PlaylistPage({ params }: { params: Promise<{ id: string }> }) {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [id, setId] = useState<string | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
@@ -87,7 +89,7 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
   };
 
   if (error)
-    return <div className="grid place-items-center py-32 text-textdim text-sm">Playlist not found.</div>;
+    return <div className="grid place-items-center py-32 text-textdim text-sm">{t("playlist.notFound")}</div>;
   if (!data) return <CenterLoader />;
 
   const { playlist, tracks } = data;
@@ -106,16 +108,16 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
         meta={
           isDailyMix ? (
             <span className="text-xs font-bold uppercase tracking-wider text-accent px-2.5 py-1 rounded-full bg-accent/10 border border-accent/20">
-              Daily Mix
+              {t("home.dailyMix")}
             </span>
           ) : (
-            <span className="text-sm font-semibold text-textdim">Playlist</span>
+            <span className="text-sm font-semibold text-textdim">{t("common.playlist")}</span>
           )
         }
         title={playlist.name}
         subtitle={
           <span className="flex flex-wrap items-center gap-x-2 justify-center sm:justify-start">
-            <span>{tracks.length} song{tracks.length === 1 ? "" : "s"}</span>
+            <span>{tracks.length} {tracks.length === 1 ? t("common.songSingular") : t("common.songs")}</span>
             {playlist.description ? (
               <>
                 <span>•</span>
@@ -136,7 +138,7 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
                 title="Sync playlist with origin platform"
               >
                 <RotateCw size={14} className={syncing ? "animate-spin" : ""} />
-                <span>{syncing ? "Syncing…" : "Sync now"}</span>
+                <span>{syncing ? t("playlist.syncing") : t("playlist.syncNow")}</span>
               </button>
             )}
             {!isDailyMix && (
@@ -157,9 +159,9 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
           <TrackList tracks={tracks} showAlbum />
         ) : (
           <div className="text-center py-20 text-textdim">
-            This playlist is empty.
+            {t("playlist.empty")}
             <div className="text-xs mt-1">
-              Add songs with the “⋯” menu on any track.
+              {t("playlist.emptySub")}
             </div>
           </div>
         )}

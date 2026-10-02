@@ -92,6 +92,87 @@ export function ViewModeProvider({ children }: { children: ReactNode }) {
     }
   }, [isSmartphoneView, showDetails]);
 
+  // =========================================================================
+  // DYNAMIC META VIEWPORT REWRITE (Chrome Android "Desktop Site" Compensation)
+  // -------------------------------------------------------------------------
+  // When users enable "Desktop site" in mobile browsers (e.g. Chrome on Android)
+  // to allow background audio playback without tab suspension, the browser
+  // overrides device-width with a wide virtual viewport (~980px) and zooms out.
+  // When Smartphone View is active, rewriting the meta viewport's width attribute
+  // directly to window.screen.width forces the browser to render the viewport at
+  // the device's real physical width, making fonts, cards, and icons legible.
+  // =========================================================================
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const applyViewportScaling = () => {
+      try {
+        let metaViewport = document.querySelector('meta[name="viewport"]');
+        if (!metaViewport) {
+          metaViewport = document.createElement("meta");
+          metaViewport.setAttribute("name", "viewport");
+          document.head.appendChild(metaViewport);
+        }
+
+        const isOrientationLandscape =
+          typeof window.orientation !== "undefined"
+            ? Math.abs(Number(window.orientation)) === 90
+            : window.innerWidth > window.innerHeight && typeof window.screen !== "undefined" && window.screen.width > window.screen.height;
+
+        // Determine real physical width
+        const screenDim = typeof window.screen !== "undefined" ? window.screen : null;
+        let physicalWidth = 390;
+        if (screenDim) {
+          physicalWidth = isOrientationLandscape
+            ? Math.max(screenDim.width, screenDim.height)
+            : Math.min(screenDim.width, screenDim.height);
+          // If screen dimensions are unavailable or zero, fallback to window.screen.width
+          if (!physicalWidth || physicalWidth <= 0) {
+            physicalWidth = screenDim.width || 390;
+          }
+        }
+
+        // Apply real physical screen width when smartphone view is forced
+        const isForcedMobile =
+          viewMode === "smartphone" ||
+          (isSmartphoneView && screenDim && screenDim.width < 768 && window.innerWidth >= 768);
+
+        if (isForcedMobile) {
+          metaViewport.setAttribute(
+            "content",
+            `width=${physicalWidth}, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover`
+          );
+        } else {
+          // Restore default responsive viewport for desktop / standard auto mode
+          metaViewport.setAttribute(
+            "content",
+            "width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover"
+          );
+        }
+      } catch (err) {
+        console.warn("[ViewMode] Could not adjust meta viewport:", err);
+      }
+    };
+
+    const handleResizeOrOrientation = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(applyViewportScaling, 150);
+    };
+
+    applyViewportScaling();
+
+    window.addEventListener("resize", handleResizeOrOrientation);
+    window.addEventListener("orientationchange", handleResizeOrOrientation);
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener("resize", handleResizeOrOrientation);
+      window.removeEventListener("orientationchange", handleResizeOrOrientation);
+    };
+  }, [isSmartphoneView, viewMode]);
+
   return (
     <ViewModeContext.Provider
       value={{

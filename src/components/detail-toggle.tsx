@@ -3,6 +3,7 @@
 import { useViewMode } from "@/lib/view-mode-context";
 import { Eye, EyeOff } from "lucide-react";
 import { clsx } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 export function DetailToggle({
   className,
@@ -12,13 +13,14 @@ export function DetailToggle({
   variant?: "pill" | "icon" | "minimal";
 }) {
   const { showDetails, toggleDetails } = useViewMode();
+  const { t } = useTranslation();
 
   if (variant === "icon") {
     return (
       <button
         type="button"
         onClick={toggleDetails}
-        title={showDetails ? "Hide extra descriptions" : "Show full descriptions"}
+        title={showDetails ? t("common.hideDetails") : t("common.showDetails")}
         className={clsx(
           "grid place-items-center h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 text-textdim hover:text-white transition cursor-pointer border border-white/10",
           className
@@ -42,12 +44,12 @@ export function DetailToggle({
         {showDetails ? (
           <>
             <EyeOff size={13} />
-            <span>Hide details</span>
+            <span>{t("common.hideDetails")}</span>
           </>
         ) : (
           <>
             <Eye size={13} className="text-accent" />
-            <span className="text-accent font-semibold">Show details</span>
+            <span className="text-accent font-semibold">{t("common.showDetails")}</span>
           </>
         )}
       </button>
@@ -69,12 +71,12 @@ export function DetailToggle({
       {showDetails ? (
         <>
           <EyeOff size={13} />
-          <span>Hide Details</span>
+          <span>{t("common.hideDetails")}</span>
         </>
       ) : (
         <>
           <Eye size={13} />
-          <span>Show Details</span>
+          <span>{t("common.showDetails")}</span>
         </>
       )}
     </button>

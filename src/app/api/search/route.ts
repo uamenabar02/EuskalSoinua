@@ -5,24 +5,35 @@ import { mapArtist } from "@/lib/mappers";
 import { db } from "@/db";
 import { artists } from "@/db/schema";
 import { inArray } from "drizzle-orm";
+import { resolveBasqueQuery } from "@/lib/search-intelligence";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 /**
  * Unified high-performance search:
- * 1. Checks local catalog first with multi-token ranking.
+ * 1. Checks local catalog first with multi-token ranking and Basque Ground Truth resolution.
  * 2. If local results are sparse (< 5 tracks), concurrently queries online sources
  *    (iTunes + Deezer) with a strict timeout and ingests new tracks into the DB.
  * 3. Never blocks user search on full multi-album discography ingestion.
+ * 4. Supplies trilingual and ground truth search intelligence for transparent UI ranking.
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q") ?? "";
   const trimmed = q.trim();
   if (!trimmed) {
-    return NextResponse.json({ tracks: [], artists: [], albums: [], online: false });
+    return NextResponse.json({
+      tracks: [],
+      artists: [],
+      albums: [],
+      online: false,
+      intelligence: null,
+    });
   }
+
+  // Resolve Basque Intelligence & Trilingual Intents
+  const intelligence = resolveBasqueQuery(trimmed);
 
   // 1. Fast local catalog search
   const [local, likedSet] = await Promise.all([
@@ -37,6 +48,15 @@ export async function GET(request: Request) {
       artists: local.artists,
       albums: local.albums,
       online: false,
+      intelligence: {
+        matchedArtist: intelligence.matchedArtist,
+        matchedTrack: intelligence.matchedTrack,
+        trilingualIntent: intelligence.trilingualIntent,
+        category: intelligence.category,
+        categoryLabel: intelligence.categoryLabel,
+        isContemporaryUrban: intelligence.isContemporaryUrban,
+        isClassicRockOrPunk: intelligence.isClassicRockOrPunk,
+      },
     });
   }
 
@@ -105,5 +125,14 @@ export async function GET(request: Request) {
     artists: mergedArtists,
     albums: local.albums,
     online: onlineTracks.length > 0,
+    intelligence: {
+      matchedArtist: intelligence.matchedArtist,
+      matchedTrack: intelligence.matchedTrack,
+      trilingualIntent: intelligence.trilingualIntent,
+      category: intelligence.category,
+      categoryLabel: intelligence.categoryLabel,
+      isContemporaryUrban: intelligence.isContemporaryUrban,
+      isClassicRockOrPunk: intelligence.isClassicRockOrPunk,
+    },
   });
 }
