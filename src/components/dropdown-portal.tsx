@@ -57,17 +57,18 @@ export function DropdownPortal({
       left = 10;
     }
 
-    const spaceBelow = viewportHeight - rect.bottom - 12;
+    const bottomSafety = 96; // clearance for bottom player bar & mobile nav
+    const spaceBelow = viewportHeight - rect.bottom - bottomSafety;
     const spaceAbove = rect.top - 12;
 
     let top: number;
     let maxHeight: number;
 
-    if (spaceBelow >= 260 || spaceBelow >= spaceAbove) {
+    if (spaceBelow >= 220 || spaceBelow >= spaceAbove) {
       top = rect.bottom + 6;
-      maxHeight = Math.min(spaceBelow, 440);
+      maxHeight = Math.min(Math.max(spaceBelow, 180), 440);
     } else {
-      maxHeight = Math.min(spaceAbove, 440);
+      maxHeight = Math.min(Math.max(spaceAbove, 180), 440);
       top = Math.max(10, rect.top - maxHeight - 6);
     }
 
@@ -81,7 +82,11 @@ export function DropdownPortal({
       updatePosition();
     });
 
-    const handleScrollOrResize = () => {
+    const handleScrollOrResize = (e: Event) => {
+      // Do not close or reposition if scrolling inside the menu itself
+      if (menuRef.current && e.target && menuRef.current.contains(e.target as Node)) {
+        return;
+      }
       updatePosition();
     };
 
@@ -134,25 +139,41 @@ export function DropdownPortal({
   if (!isClient || !isOpen || !coords) return null;
 
   return createPortal(
-    <div
-      ref={menuRef}
-      role="menu"
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        position: "fixed",
-        top: `${coords.top}px`,
-        left: `${coords.left}px`,
-        width: `${Math.min(width, window.innerWidth - 20)}px`,
-        maxHeight: `${coords.maxHeight}px`,
-        zIndex: 99999,
-      }}
-      className={clsx(
-        "overflow-y-auto overscroll-contain rounded-xl bg-elevated/95 backdrop-blur-2xl border border-white/10 shadow-2xl p-1.5 text-sm animate-fade-up no-scrollbar",
-        className
-      )}
-    >
-      {children}
-    </div>,
+    <>
+      {/* Invisible/subtle backdrop interceptor for outside touches & clicks */}
+      <div
+        className="fixed inset-0 bg-black/20 sm:bg-transparent"
+        style={{ zIndex: 99998 }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        onTouchStart={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+      />
+      <div
+        ref={menuRef}
+        role="menu"
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        style={{
+          position: "fixed",
+          top: `${coords.top}px`,
+          left: `${coords.left}px`,
+          width: `${Math.min(width, window.innerWidth - 20)}px`,
+          maxHeight: `${coords.maxHeight}px`,
+          zIndex: 99999,
+        }}
+        className={clsx(
+          "overflow-y-auto overscroll-contain rounded-xl bg-elevated/95 backdrop-blur-2xl border border-white/10 shadow-2xl p-1.5 text-sm animate-fade-up no-scrollbar touch-manipulation",
+          className
+        )}
+      >
+        {children}
+      </div>
+    </>,
     document.body
   );
 }

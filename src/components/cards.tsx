@@ -252,15 +252,6 @@ export function AlbumCardMenu({
   const [saved, setSaved] = useState(album.saved ?? false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
   const fetchAlbumTracks = useCallback(async (): Promise<Track[]> => {
     try {
       const res = await fetch(`/api/album/${album.id}`);
@@ -308,10 +299,12 @@ export function AlbumCardMenu({
     e.stopPropagation();
     setOpen(false);
     toast(`Building ${album.title} Radio…`, "📻");
-    const playlistId = await playRadio({ albumId: album.id });
+    const playlistId = await playRadio({ albumId: album.id, artistName: album.artistName || undefined });
     if (playlistId) {
       toast("Album Radio ready!", "✅");
       router.push(`/playlist/${playlistId}`);
+    } else {
+      toast("Could not create radio", "⚠️");
     }
   };
 
@@ -345,13 +338,14 @@ export function AlbumCardMenu({
   return (
     <div className="relative" ref={ref} onClick={(e) => e.stopPropagation()}>
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
         }}
         className={
           buttonClassName ||
-          "h-8 w-8 rounded-full bg-black/70 hover:bg-black/90 text-white/90 hover:text-white backdrop-blur-md shadow-md border border-white/15 grid place-items-center transition active:scale-95 cursor-pointer"
+          "h-8 w-8 rounded-full bg-black/70 hover:bg-black/90 active:bg-black text-white/90 hover:text-white backdrop-blur-md shadow-md border border-white/15 grid place-items-center transition active:scale-95 cursor-pointer touch-manipulation"
         }
         aria-label="album options"
       >
@@ -359,40 +353,46 @@ export function AlbumCardMenu({
       </button>
       <DropdownPortal isOpen={open} onClose={() => setOpen(false)} anchorRef={ref} width={240}>
         <button
+          type="button"
           onClick={handlePlayAlbum}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 font-medium"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 font-medium cursor-pointer touch-manipulation min-h-[40px]"
         >
           {loading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} className="text-accent" />} Play Album
         </button>
         <button
+          type="button"
           onClick={handlePlayNext}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <ListPlus size={14} className="text-accent" /> Play Next
         </button>
         <button
+          type="button"
           onClick={handleAddToQueue}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <ListMusic size={14} /> Add to Queue
         </button>
         <div className="h-px bg-white/10 my-1" />
         <button
+          type="button"
           onClick={handleRadio}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <Radio size={14} className="text-accent" /> Go to album radio
         </button>
         <button
+          type="button"
           onClick={handleToggleSave}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <Heart size={14} className={saved ? "text-accent fill-accent" : ""} />
           {saved ? "Saved in Library" : "Save to Your Library"}
         </button>
         <button
+          type="button"
           onClick={handleDownload}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <Download size={14} /> Download for offline
         </button>
@@ -400,12 +400,13 @@ export function AlbumCardMenu({
           <>
             <div className="h-px bg-white/10 my-1" />
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 setOpen(false);
                 router.push(album.artistId ? `/artist/${album.artistId}` : `/artist/${encodeURIComponent(album.artistName || "")}`);
               }}
-              className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 truncate"
+              className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 truncate cursor-pointer touch-manipulation min-h-[40px]"
             >
               <User size={14} /> <span className="truncate">Go to artist: {album.artistName}</span>
             </button>
@@ -423,7 +424,7 @@ export function ArtistCardMenu({
   artist: Artist;
   buttonClassName?: string;
 }) {
-  const { playQueue, playRadio } = usePlayer();
+  const { playQueue, playNext, addToQueue, playRadio } = usePlayer();
   const { toast } = useToast();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -431,30 +432,46 @@ export function ArtistCardMenu({
   const [followed, setFollowed] = useState(artist.followed ?? false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
+  const fetchArtistTracks = useCallback(async (): Promise<Track[]> => {
+    try {
+      const res = await fetch(`/api/artist/${artist.id}`);
+      const data = await res.json();
+      return data.tracks ?? [];
+    } catch {
+      return [];
+    }
+  }, [artist.id]);
 
   const handlePlayArtist = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setOpen(false);
     setLoading(true);
-    try {
-      const res = await fetch(`/api/artist/${artist.id}`);
-      const data = await res.json();
-      setLoading(false);
-      if (data.tracks && data.tracks.length > 0) {
-        playQueue(data.tracks, 0);
-      } else {
-        toast("No tracks found for artist", "⚠️");
-      }
-    } catch {
-      setLoading(false);
+    const tracks = await fetchArtistTracks();
+    setLoading(false);
+    if (tracks.length > 0) {
+      playQueue(tracks, 0);
+    } else {
+      toast("No tracks found for artist", "⚠️");
+    }
+  };
+
+  const handlePlayNext = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpen(false);
+    const tracks = await fetchArtistTracks();
+    if (tracks.length > 0) {
+      playNext(tracks);
+      toast(`Added ${tracks.length} songs to Up Next`, "🎵");
+    }
+  };
+
+  const handleAddToQueue = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpen(false);
+    const tracks = await fetchArtistTracks();
+    if (tracks.length > 0) {
+      addToQueue(tracks);
+      toast(`Added ${tracks.length} songs to Queue`, "➕");
     }
   };
 
@@ -466,6 +483,8 @@ export function ArtistCardMenu({
     if (playlistId) {
       toast("Artist Radio ready!", "✅");
       router.push(`/playlist/${playlistId}`);
+    } else {
+      toast("Could not create radio", "⚠️");
     }
   };
 
@@ -485,13 +504,14 @@ export function ArtistCardMenu({
   return (
     <div className="relative" ref={ref} onClick={(e) => e.stopPropagation()}>
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
         }}
         className={
           buttonClassName ||
-          "h-8 w-8 rounded-full bg-black/70 hover:bg-black/90 text-white/90 hover:text-white backdrop-blur-md shadow-md border border-white/15 grid place-items-center transition active:scale-95 cursor-pointer"
+          "h-8 w-8 rounded-full bg-black/70 hover:bg-black/90 active:bg-black text-white/90 hover:text-white backdrop-blur-md shadow-md border border-white/15 grid place-items-center transition active:scale-95 cursor-pointer touch-manipulation"
         }
         aria-label="artist options"
       >
@@ -499,32 +519,50 @@ export function ArtistCardMenu({
       </button>
       <DropdownPortal isOpen={open} onClose={() => setOpen(false)} anchorRef={ref} width={240}>
         <button
+          type="button"
           onClick={handlePlayArtist}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 font-medium"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 font-medium cursor-pointer touch-manipulation min-h-[40px]"
         >
           {loading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} className="text-accent" />} Play Top Songs
         </button>
         <button
-          onClick={handleRadio}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          type="button"
+          onClick={handlePlayNext}
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
-          <Radio size={14} className="text-accent" /> Go to artist radio
+          <ListPlus size={14} className="text-accent" /> Play Next
+        </button>
+        <button
+          type="button"
+          onClick={handleAddToQueue}
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
+        >
+          <ListMusic size={14} /> Add to Queue
         </button>
         <div className="h-px bg-white/10 my-1" />
         <button
+          type="button"
+          onClick={handleRadio}
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
+        >
+          <Radio size={14} className="text-accent" /> Go to artist radio
+        </button>
+        <button
+          type="button"
           onClick={handleToggleFollow}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <Heart size={14} className={followed ? "text-accent fill-accent" : ""} />
           {followed ? "Following" : "Follow Artist"}
         </button>
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             setOpen(false);
             router.push(`/artist/${artist.id}`);
           }}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <User size={14} /> View Discography
         </button>
@@ -540,21 +578,12 @@ export function PlaylistCardMenu({
   playlist: Playlist;
   buttonClassName?: string;
 }) {
-  const { playQueue, playNext, addToQueue } = usePlayer();
+  const { playQueue, playNext, addToQueue, playRadio } = usePlayer();
   const { toast } = useToast();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
 
   const fetchPlaylistTracks = useCallback(async (): Promise<Track[]> => {
     try {
@@ -599,6 +628,19 @@ export function PlaylistCardMenu({
     }
   };
 
+  const handleRadio = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpen(false);
+    toast(`Building ${playlist.name} Radio…`, "📻");
+    const playlistId = await playRadio({ playlistId: playlist.id });
+    if (playlistId) {
+      toast("Playlist Radio ready!", "✅");
+      router.push(`/playlist/${playlistId}`);
+    } else {
+      toast("Could not create radio", "⚠️");
+    }
+  };
+
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setOpen(false);
@@ -627,13 +669,14 @@ export function PlaylistCardMenu({
   return (
     <div className="relative" ref={ref} onClick={(e) => e.stopPropagation()}>
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
         }}
         className={
           buttonClassName ||
-          "h-8 w-8 rounded-full bg-black/70 hover:bg-black/90 text-white/90 hover:text-white backdrop-blur-md shadow-md border border-white/15 grid place-items-center transition active:scale-95 cursor-pointer"
+          "h-8 w-8 rounded-full bg-black/70 hover:bg-black/90 active:bg-black text-white/90 hover:text-white backdrop-blur-md shadow-md border border-white/15 grid place-items-center transition active:scale-95 cursor-pointer touch-manipulation"
         }
         aria-label="playlist options"
       >
@@ -641,27 +684,38 @@ export function PlaylistCardMenu({
       </button>
       <DropdownPortal isOpen={open} onClose={() => setOpen(false)} anchorRef={ref} width={240}>
         <button
+          type="button"
           onClick={handlePlayPlaylist}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 font-medium"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 font-medium cursor-pointer touch-manipulation min-h-[40px]"
         >
           {loading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} className="text-accent" />} Play Playlist
         </button>
         <button
+          type="button"
           onClick={handlePlayNext}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <ListPlus size={14} className="text-accent" /> Play Next
         </button>
         <button
+          type="button"
           onClick={handleAddToQueue}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <ListMusic size={14} /> Add to Queue
         </button>
         <div className="h-px bg-white/10 my-1" />
         <button
+          type="button"
+          onClick={handleRadio}
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
+        >
+          <Radio size={14} className="text-accent" /> Go to playlist radio
+        </button>
+        <button
+          type="button"
           onClick={handleDownload}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <Download size={14} /> Download for offline
         </button>
@@ -669,8 +723,9 @@ export function PlaylistCardMenu({
           <>
             <div className="h-px bg-white/10 my-1" />
             <button
+              type="button"
               onClick={handleDelete}
-              className="w-full text-left px-3 py-2 rounded-lg hover:bg-red-500/20 text-red-400 flex items-center gap-2"
+              className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-red-500/20 text-red-400 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
             >
               <Trash2 size={14} /> Delete Playlist
             </button>

@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import { DetailHeader, PlayAllButton, CenterLoader } from "@/components/detail";
 import { TrackList } from "@/components/track-row";
 import { DownloadAllButton } from "@/components/download-button";
-import { Trash2, RotateCw } from "lucide-react";
+import { Trash2, RotateCw, Radio } from "lucide-react";
 import type { Track, Playlist } from "@/lib/types";
 import { useToast } from "@/lib/toast";
 import { useTranslation } from "@/lib/i18n";
+import { usePlayer } from "@/lib/player-context";
 
 interface Data {
   playlist: Playlist;
@@ -18,6 +19,8 @@ interface Data {
 export default function PlaylistPage({ params }: { params: Promise<{ id: string }> }) {
   const { toast } = useToast();
   const { t } = useTranslation();
+  const p = usePlayer();
+  const [loadingRadio, setLoadingRadio] = useState(false);
   const [id, setId] = useState<string | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
@@ -130,11 +133,34 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
           <>
             <PlayAllButton tracks={tracks} />
             <DownloadAllButton tracks={tracks} />
+            <button
+              type="button"
+              onClick={async () => {
+                if (!id) return;
+                toast("Building playlist radio…", "📻");
+                setLoadingRadio(true);
+                const plId = await p.playRadio({ playlistId: id });
+                setLoadingRadio(false);
+                if (plId) {
+                  toast("Playlist Radio ready!", "✅");
+                  router.push(`/playlist/${plId}`);
+                } else {
+                  toast("Could not build radio", "⚠️");
+                }
+              }}
+              disabled={loadingRadio}
+              className="flex items-center gap-2 h-11 px-5 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/30 text-ink font-semibold text-sm transition cursor-pointer touch-manipulation disabled:opacity-50"
+              title="Generate radio based on this playlist"
+            >
+              <Radio size={16} className={loadingRadio ? "animate-pulse text-accent" : ""} />
+              <span>{loadingRadio ? "Loading radio…" : "Playlist Radio"}</span>
+            </button>
             {isSyncedPlaylist && (
               <button
+                type="button"
                 onClick={syncPlaylist}
                 disabled={syncing}
-                className="flex items-center gap-1.5 h-11 px-5 rounded-full bg-accent hover:bg-accent/80 text-black font-extrabold text-xs transition disabled:opacity-50 cursor-pointer"
+                className="flex items-center gap-1.5 h-11 px-5 rounded-full bg-accent hover:bg-accent/80 text-black font-extrabold text-xs transition disabled:opacity-50 cursor-pointer touch-manipulation"
                 title="Sync playlist with origin platform"
               >
                 <RotateCw size={14} className={syncing ? "animate-spin" : ""} />
@@ -143,8 +169,9 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
             )}
             {!isDailyMix && (
               <button
+                type="button"
                 onClick={removePlaylist}
-                className="grid place-items-center h-11 w-11 rounded-full bg-white/10 hover:bg-red-500/20 text-textdim hover:text-red-400 transition cursor-pointer"
+                className="grid place-items-center h-11 w-11 rounded-full bg-white/10 hover:bg-red-500/20 text-textdim hover:text-red-400 transition cursor-pointer touch-manipulation"
                 aria-label="delete playlist"
               >
                 <Trash2 size={18} />

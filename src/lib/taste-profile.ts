@@ -31,7 +31,7 @@ export async function getExpandedUserTasteProfile(syncKey: string = "default"): 
       .from(listenEvents)
       .where(eq(listenEvents.syncKey, syncKey))
       .orderBy(desc(listenEvents.createdAt))
-      .limit(300),
+      .limit(500),
   ]);
 
   let explicitPrefs: UserTastePreferences = {};
@@ -66,19 +66,53 @@ export async function getExpandedUserTasteProfile(syncKey: string = "default"): 
   // Combine explicit preferred genres with genres extracted from liked items
   const preferredGenresSet = new Set<string>(explicitPrefs.genres || []);
 
-  // Compute swipe history counts
+  // Compute swipe history counts and extract recent listening velocity
   let swipeLikesCount = 0;
   let swipeDislikesCount = 0;
   const recentListenedTrackIds = new Set<number>();
+  const recentArtistCountMap = new Map<string, number>();
+  const recentGenreCountMap = new Map<string, number>();
+
+  const eventTrackIds = Array.from(new Set(events.map((e: any) => e.trackId).filter(Boolean))) as number[];
+  let eventTracksMap = new Map<number, { artistName: string | null; genre: string | null }>();
+  if (eventTrackIds.length > 0) {
+    const trackDetails = await db
+      .select({ id: tracks.id, artistName: tracks.artistName, genre: tracks.genre })
+      .from(tracks)
+      .where(inArray(tracks.id, eventTrackIds.slice(0, 300)));
+    trackDetails.forEach((td: any) => eventTracksMap.set(td.id, { artistName: td.artistName, genre: td.genre }));
+  }
 
   events.forEach((ev: any) => {
     if (ev.trackId) recentListenedTrackIds.add(ev.trackId);
-    if (ev.completed || ev.listenSeconds > 0) {
+    const isPositive = ev.completed || ev.listenSeconds > 0;
+    if (isPositive) {
       swipeLikesCount++;
+      // Determine artist and genre
+      const td = eventTracksMap.get(ev.trackId);
+      const artist = td?.artistName || null;
+      const genre = ev.genre || td?.genre || null;
+
+      if (artist) {
+        recentArtistCountMap.set(artist, (recentArtistCountMap.get(artist) || 0) + 1);
+      }
+      if (genre) {
+        recentGenreCountMap.set(genre, (recentGenreCountMap.get(genre) || 0) + 1);
+      }
     } else if (ev.skipped && ev.listenSeconds === 0) {
       swipeDislikesCount++;
     }
   });
+
+  const sortedRecentArtists = Array.from(recentArtistCountMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map((e) => e[0])
+    .slice(0, 10);
+
+  const sortedRecentGenres = Array.from(recentGenreCountMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map((e) => e[0])
+    .slice(0, 8);
 
   return {
     preferences: explicitPrefs,
@@ -98,6 +132,8 @@ export async function getExpandedUserTasteProfile(syncKey: string = "default"): 
     swipeLikesCount,
     swipeDislikesCount,
     recentListenedTrackIds,
+    recentArtists: sortedRecentArtists,
+    recentGenres: sortedRecentGenres,
   };
 }
 
@@ -149,10 +185,22 @@ export function formatTastePromptForAI(taste: UserTasteProfile): string {
   };
   const moodText = taste.moods.map((m) => moodDescriptions[m] || m).join(", ");
 
+  const recentArtistsText =
+    taste.recentArtists && taste.recentArtists.length > 0
+      ? taste.recentArtists.join(", ")
+      : "Exploring new catalog tracks";
+
+  const recentGenresText =
+    taste.recentGenres && taste.recentGenres.length > 0
+      ? taste.recentGenres.join(", ")
+      : "Diverse catalog styles";
+
   return `
 USER COMPREHENSIVE TASTE PROFILE:
 - Preferred Genres: ${taste.preferredGenres.length > 0 ? taste.preferredGenres.join(", ") : "Basque Urban Pop, Euskal Rock, Indie, Electronic, Global Hip-Hop"}
 - Favorite / Followed Artists: ${taste.favoriteArtists.length > 0 ? taste.favoriteArtists.slice(0, 15).join(", ") : "Bengo, ZETAK, Izaro, Belako, Tatta, Berri Txarrak, Daft Punk"}
+- LATELY LISTENED ARTISTS (Last month / 500 plays): ${recentArtistsText}
+- LATELY LISTENED GENRES (Last month / 500 plays): ${recentGenresText}
 - Energy & Tempo Vibe: ${energyLabel}
 - Discovery Appetite: ${discoveryLabel}
 - Cultural & Language Focus: ${languageLabel}

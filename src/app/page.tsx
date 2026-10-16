@@ -801,15 +801,6 @@ function DailyMixCard({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setOpen(false);
@@ -842,52 +833,57 @@ function DailyMixCard({
           {/* Triple dot menu for Daily Mix */}
           <div className="relative z-20" ref={ref} onClick={(e) => e.stopPropagation()}>
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 setOpen((o) => !o);
               }}
-              className="h-8 w-8 rounded-full bg-black/40 hover:bg-black/70 text-white/90 hover:text-white backdrop-blur-md shadow-md border border-white/15 grid place-items-center transition active:scale-95 cursor-pointer"
+              className="h-8 w-8 rounded-full bg-black/40 hover:bg-black/70 active:bg-black/90 text-white/90 hover:text-white backdrop-blur-md shadow-md border border-white/15 grid place-items-center transition active:scale-95 cursor-pointer touch-manipulation"
               aria-label="mix options"
             >
               <MoreHorizontal size={16} />
             </button>
             <DropdownPortal isOpen={open} onClose={() => setOpen(false)} anchorRef={ref} width={240}>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setOpen(false);
                   onPlay();
                 }}
-                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 font-medium cursor-pointer"
+                className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 font-medium cursor-pointer touch-manipulation min-h-[40px]"
               >
                 <Play size={14} className="text-accent" /> {t("home.playMix")}
               </button>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setOpen(false);
                   playNext(mix.tracks);
                   toast(`Added ${mix.tracks.length} songs to Up Next`, "🎵");
                 }}
-                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+                className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
               >
                 <ListPlus size={14} className="text-accent" /> {t("home.playNext")}
               </button>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setOpen(false);
                   addToQueue(mix.tracks);
                   toast(`Added ${mix.tracks.length} songs to Queue`, "➕");
                 }}
-                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+                className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
               >
                 <ListMusic size={14} /> {t("home.addToQueue")}
               </button>
               <div className="h-px bg-white/10 my-1" />
               <button
+                type="button"
                 onClick={handleDownload}
-                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 cursor-pointer"
+                className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
               >
                 <Download size={14} /> {t("home.downloadOffline")}
               </button>

@@ -101,7 +101,7 @@ interface PlayerActions {
   toggleFullTrack: () => void;
   setFullTrackMode: (val: boolean) => void;
   playRadio: (
-    target: number | { trackId?: number; artistId?: number; artistName?: string; albumId?: number },
+    target: number | { trackId?: number; artistId?: number; artistName?: string; albumId?: number; playlistId?: number | string },
   ) => Promise<number | null>;
   playLiveRadio: (station: { id: string; name: string; streamUrl: string; category: string }) => void;
   cycleRepeat: () => void;
@@ -1349,7 +1349,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // play it, and return the playlist id so the caller can navigate to its page.
   const playRadio = useCallback(
     async (
-      target: number | { trackId?: number; artistId?: number; artistName?: string; albumId?: number },
+      target: number | { trackId?: number; artistId?: number; artistName?: string; albumId?: number; playlistId?: number | string },
     ): Promise<number | null> => {
       try {
         let query = "";
@@ -1357,12 +1357,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           query = `trackId=${target}`;
         } else if (target.trackId) {
           query = `trackId=${target.trackId}`;
+          if (target.artistName) query += `&artist=${encodeURIComponent(target.artistName)}`;
         } else if (target.artistId) {
           query = `artistId=${target.artistId}`;
+          if (target.artistName) query += `&artist=${encodeURIComponent(target.artistName)}`;
         } else if (target.artistName) {
           query = `artist=${encodeURIComponent(target.artistName)}`;
         } else if (target.albumId) {
           query = `albumId=${target.albumId}`;
+          if (target.artistName) query += `&artist=${encodeURIComponent(target.artistName)}`;
+        } else if (target.playlistId) {
+          query = `playlistId=${encodeURIComponent(target.playlistId)}`;
         }
         if (!query) return null;
 

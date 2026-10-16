@@ -8,9 +8,10 @@ import {
   playlists,
   playlistTracks,
 } from "@/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, inArray } from "drizzle-orm";
 import { mapTrack } from "@/lib/mappers";
 import type { Track } from "@/lib/types";
+import { getExpandedUserTasteProfile } from "@/lib/taste-profile";
 
 export interface DailyMix {
   id: string;
@@ -22,182 +23,78 @@ export interface DailyMix {
   tracks: Track[];
 }
 
-// Known Basque artists to guarantee strict purity for Mix 1
-const BASQUE_ARTISTS = [
-  "ZETAK",
-  "Bengo",
-  "En Tol Sarmiento",
-  "ETS",
-  "Bulego",
-  "Huntza",
-  "Izaro",
-  "Gatibu",
-  "Chill Mafia",
-  "Dupla",
-  "Merina Gris",
-  "Neomak",
-  "Berri Txarrak",
-  "Zea Mays",
-  "Su Ta Gar",
-  "Esne Beltza",
-  "Vendetta",
-  "Gose",
-  "Hesian",
-  "Kepa Junkera",
-  "Oreka TX",
-  "Kortatu",
-  "Hertzainak",
-  "Negu Gorriak",
-  "Streetwise",
-  "Bizardunak",
-  "Olaia Inziarte",
-  "Tatta",
-  "Belako",
-  "La Txama",
-  "Anari",
-  "Mikel Laboa",
-  "Benito Lertxundi",
-  "Skakeitan",
-  "Glaukoma",
-  "Doctor Deseo",
-  "Itoiz",
-  "Shinova",
-  "Idoia",
-  "Eñaut Elorrieta",
-  "Olatz Salvador",
-  "Brigade Loco",
-  "Rotten XIII",
-  "Lukiek",
+// Color palettes for dynamically assigned mixes
+const MIX_COLORWAYS = [
+  "from-emerald-600/50 via-teal-900/40 to-black/90",
+  "from-violet-600/50 via-purple-900/40 to-black/90",
+  "from-amber-600/50 via-orange-900/40 to-black/90",
+  "from-rose-600/50 via-red-900/40 to-black/90",
+  "from-cyan-600/50 via-blue-900/40 to-black/90",
+  "from-indigo-600/50 via-slate-900/40 to-black/90",
 ];
 
-export const DAILY_MIX_DEFINITIONS = [
+// Ground truth Basque artists for Basque purity matching
+const BASQUE_ARTIST_NAMES = [
+  "ZETAK", "Bengo", "En Tol Sarmiento", "ETS", "Bulego", "Huntza", "Izaro",
+  "Gatibu", "Chill Mafia", "Dupla", "Merina Gris", "Neomak", "Berri Txarrak",
+  "Zea Mays", "Su Ta Gar", "Esne Beltza", "Vendetta", "Gose", "Hesian",
+  "Kepa Junkera", "Oreka TX", "Kortatu", "Hertzainak", "Negu Gorriak",
+  "Streetwise", "Bizardunak", "Olaia Inziarte", "Tatta", "Belako",
+  "La Txama", "Anari", "Mikel Laboa", "Benito Lertxundi", "Skakeitan",
+  "Glaukoma", "Doctor Deseo", "Itoiz", "Shinova", "Idoia", "Eñaut Elorrieta",
+  "Olatz Salvador", "Brigade Loco", "Rotten XIII", "Lukiek", "Süne",
+];
+
+// Broad category definitions to cluster user listening into meaningful themes
+interface ThemeCategoryDef {
+  key: string;
+  defaultLabel: string;
+  keywords: string[];
+  artistHints: string[];
+}
+
+const THEME_CATEGORIES: ThemeCategoryDef[] = [
   {
-    id: "daily-mix-1",
-    title: "Daily Mix 1",
-    genreLabel: "Euskal Herriko Soinuak",
-    accentColor: "from-emerald-600/50 via-teal-900/40 to-black/90",
-    pillColor: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-    description: "Authentic Basque pop, rock, trikitia & modern urban anthems.",
-    strictBasqueOnly: true,
-    targetArtists: [
-      "ZETAK",
-      "Bengo",
-      "En Tol Sarmiento",
-      "ETS",
-      "Bulego",
-      "Huntza",
-      "Izaro",
-      "Gatibu",
-      "Tatta",
-      "Dupla",
-      "Merina Gris",
-      "Neomak",
-      "Chill Mafia",
-      "Berri Txarrak",
-      "Zea Mays",
-      "Su Ta Gar",
-      "Esne Beltza",
-      "Vendetta",
-      "Skakeitan",
-      "Olaia Inziarte",
-      "La Txama",
-      "Glaukoma",
-    ],
-    targetKeywords: ["euskal", "basque", "trikitia", "euskara", "euskal rock", "euskal pop", "euskal folk"],
-    excludedArtists: [],
+    key: "basque_sounds",
+    defaultLabel: "Euskal Herriko Soinuak",
+    keywords: ["euskal", "basque", "trikitia", "euskara", "euskal rock", "euskal pop", "euskal folk"],
+    artistHints: BASQUE_ARTIST_NAMES,
   },
   {
-    id: "daily-mix-2",
-    title: "Daily Mix 2",
-    genreLabel: "Rock & Alternative",
-    accentColor: "from-amber-600/50 via-orange-900/40 to-black/90",
-    pillColor: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-    description: "Driving guitars, indie rock essentials, and hard-hitting alternative anthems.",
-    strictBasqueOnly: false,
-    targetArtists: [
-      "Berri Txarrak",
-      "Shinova",
-      "Zea Mays",
-      "Su Ta Gar",
-      "Belako",
-      "Lukiek",
-      "Doctor Deseo",
-      "Hertzainak",
-      "Kortatu",
-      "Streetwise",
-      "Bizardunak",
-      "Arctic Monkeys",
-      "The Strokes",
-      "Tame Impala",
-      "Muse",
-      "Foo Fighters",
-      "Radiohead",
-      "Nirvana",
-      "Queen",
-      "Red Hot Chili Peppers",
-    ],
-    targetKeywords: ["rock", "punk", "alternative", "hard rock", "metal", "grunge", "indie rock", "post-punk"],
-    excludedArtists: ["Benito Lertxundi", "Mikel Laboa", "Dua Lipa", "Olivia Rodrigo"],
+    key: "hiphop_urban",
+    defaultLabel: "Hip-Hop & Urban Beats",
+    keywords: ["hip-hop", "rap", "trap", "drill", "urban", "r&b", "hip hop", "boom bap"],
+    artistHints: ["Wiz Khalifa", "Kendrick Lamar", "Drake", "B.o.B", "Travis Scott", "Tyler, The Creator", "Kanye West", "Eminem", "J. Cole", "Post Malone"],
   },
   {
-    id: "daily-mix-3",
-    title: "Daily Mix 3",
-    genreLabel: "Top Hits & Synth Pop",
-    accentColor: "from-violet-600/50 via-purple-900/40 to-black/90",
-    pillColor: "text-violet-400 bg-violet-500/10 border-violet-500/20",
-    description: "Modern chart-toppers, vibrant synth pop, dance, and energetic electronic grooves.",
-    strictBasqueOnly: false,
-    targetArtists: [
-      "ZETAK",
-      "Bengo",
-      "Bulego",
-      "Merina Gris",
-      "Tatta",
-      "Dupla",
-      "Dua Lipa",
-      "Rosalía",
-      "The Weeknd",
-      "Daft Punk",
-      "Fred again..",
-      "Olivia Rodrigo",
-      "Harry Styles",
-      "Aitana",
-      "C. Tangana",
-      "Billie Eilish",
-      "Taylor Swift",
-      "Coldplay",
-    ],
-    targetKeywords: ["pop", "dance", "synth pop", "electronic", "synth", "house", "chart", "hits", "urban"],
-    excludedArtists: ["Benito Lertxundi", "Su Ta Gar", "Berri Txarrak", "Mikel Laboa", "Oskorri"],
+    key: "rock_alternative",
+    defaultLabel: "Rock & Alternative Energy",
+    keywords: ["rock", "punk", "alternative", "hard rock", "metal", "grunge", "indie rock", "post-punk"],
+    artistHints: ["Berri Txarrak", "Shinova", "Zea Mays", "Su Ta Gar", "Belako", "Arctic Monkeys", "The Strokes", "Radiohead", "Foo Fighters", "Nirvana", "Muse", "Queen"],
   },
   {
-    id: "daily-mix-4",
-    title: "Daily Mix 4",
-    genreLabel: "Indie Folk & Acoustic",
-    accentColor: "from-rose-600/50 via-red-900/40 to-black/90",
-    pillColor: "text-rose-400 bg-rose-500/10 border-rose-500/20",
-    description: "Warm acoustic strings, intimate vocals, and soothing indie songwriting.",
-    strictBasqueOnly: false,
-    targetArtists: [
-      "Izaro",
-      "Olaia Inziarte",
-      "Idoia",
-      "Anari",
-      "Eñaut Elorrieta",
-      "Olatz Salvador",
-      "Bon Iver",
-      "Ben Howard",
-      "Passenger",
-      "Boygenius",
-      "Khruangbin",
-      "Phoebe Bridgers",
-      "Sufjan Stevens",
-      "Fleet Foxes",
-      "Vance Joy",
-    ],
-    targetKeywords: ["indie folk", "acoustic", "singer-songwriter", "indie acoustic", "mellow", "chamber folk"],
-    // Exclude traditional/world folk ensembles or classic rock/heavy folk to avoid theme dilution
-    excludedArtists: ["Folk & Rackare", "Benito Lertxundi", "Su Ta Gar", "Kortatu", "Nirvana", "Dua Lipa"],
+    key: "acoustic_folk",
+    defaultLabel: "Acoustic & Singer-Songwriter",
+    keywords: ["acoustic", "folk", "singer-songwriter", "mellow", "chamber folk", "indie folk", "unplugged"],
+    artistHints: ["Benito Lertxundi", "Mikel Laboa", "Izaro", "Olaia Inziarte", "Idoia", "Anari", "Bon Iver", "Ben Howard", "Passenger", "Fleet Foxes", "Sufjan Stevens"],
+  },
+  {
+    key: "synth_electronic",
+    defaultLabel: "Electronic & Synth Grooves",
+    keywords: ["electronic", "synth", "dance", "house", "techno", "synth pop", "synthwave", "electropop", "club", "edm"],
+    artistHints: ["Daft Punk", "Fred again..", "Merina Gris", "ZETAK", "The Weeknd", "Dupla", "Disclosure", "Avicii", "Calvin Harris"],
+  },
+  {
+    key: "latin_flamenco",
+    defaultLabel: "Latin Urban & Fusion Rhythms",
+    keywords: ["latin", "reggaeton", "dembow", "flamenco", "fusion", "latin pop", "urbano", "rumba"],
+    artistHints: ["Rosalía", "C. Tangana", "Quevedo", "Bad Bunny", "Aitana", "Saiko", "Bad Gyal", "Rels B", "La Txama"],
+  },
+  {
+    key: "pop_contemporary",
+    defaultLabel: "Top Chart Pop & Anthems",
+    keywords: ["pop", "dance pop", "contemporary", "chart", "hits", "indie pop"],
+    artistHints: ["Dua Lipa", "Billie Eilish", "Taylor Swift", "Olivia Rodrigo", "Sabrina Carpenter", "Harry Styles", "Bulego", "ETS"],
   },
 ];
 
@@ -210,151 +107,349 @@ function stringSeedHash(str: string): number {
   return Math.abs(hash);
 }
 
+function matchThemeCategory(track: { genre?: string | null; artistName?: string | null }): string | null {
+  const normGenre = (track.genre || "").toLowerCase();
+  const normArtist = (track.artistName || "").toLowerCase();
+
+  // Check Basque first if matched
+  const isBasque = BASQUE_ARTIST_NAMES.some((b) => normArtist.includes(b.toLowerCase())) ||
+    normGenre.includes("euskal") || normGenre.includes("basque") || normGenre.includes("trikitia");
+  if (isBasque) {
+    return "basque_sounds";
+  }
+
+  for (const cat of THEME_CATEGORIES) {
+    if (cat.key === "basque_sounds") continue;
+    const hitArtist = cat.artistHints.some((ah) => normArtist.includes(ah.toLowerCase()));
+    if (hitArtist) return cat.key;
+    const hitKeyword = cat.keywords.some((k) => normGenre.includes(k));
+    if (hitKeyword) return cat.key;
+  }
+
+  return null;
+}
+
+/**
+ * Generates dynamic Daily Mixes adapting directly to what the user
+ * has listened to in the last month / last 500 songs played.
+ */
 export async function generateDailyMixes(
   syncKey: string = "default",
   seedValue?: string
 ): Promise<DailyMix[]> {
-  const seedNum = seedValue ? stringSeedHash(seedValue) : Math.floor(Date.now() / (1000 * 60 * 60 * 12)); // Changes at least twice a day or on manual refresh
+  const seedNum = seedValue ? stringSeedHash(seedValue) : Math.floor(Date.now() / (1000 * 60 * 60 * 6));
 
-  // 1. Gather all local catalog tracks
-  const allDbTracks = await db.select().from(tracks).limit(1000);
+  // 1. Gather Catalog tracks (broad pool up to 1,200 tracks)
+  const allDbTracks = await db
+    .select()
+    .from(tracks)
+    .orderBy(desc(tracks.playCount))
+    .limit(1200);
   const mappedCatalog: Track[] = allDbTracks.map(mapTrack);
 
-  // 2. Gather user personal signals
-  const listenedRows = await db
-    .select({ trackId: listenEvents.trackId, count: sql<number>`COUNT(${listenEvents.id})::int` })
-    .from(listenEvents)
-    .where(eq(listenEvents.syncKey, syncKey))
-    .groupBy(listenEvents.trackId)
-    .orderBy(desc(sql`COUNT(${listenEvents.id})`))
-    .limit(100);
-  const listenedTrackIds = new Set((listenedRows as { trackId: number }[]).map((r) => r.trackId));
+  // 2. Load User's listening events (last 500 events / within last 30 days)
+  const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-  const likedRows = await db
-    .select({ trackId: likedTracks.trackId })
-    .from(likedTracks)
-    .where(eq(likedTracks.syncKey, syncKey));
+  const [recentEvents, likedRows, followedRows, userTaste] = await Promise.all([
+    db
+      .select({
+        trackId: listenEvents.trackId,
+        artistId: listenEvents.artistId,
+        genre: listenEvents.genre,
+        completed: listenEvents.completed,
+        skipped: listenEvents.skipped,
+        listenSeconds: listenEvents.listenSeconds,
+        createdAt: listenEvents.createdAt,
+      })
+      .from(listenEvents)
+      .where(eq(listenEvents.syncKey, syncKey))
+      .orderBy(desc(listenEvents.createdAt))
+      .limit(500),
+    db.select({ trackId: likedTracks.trackId }).from(likedTracks).where(eq(likedTracks.syncKey, syncKey)),
+    db.select({ artistId: followedArtists.artistId }).from(followedArtists).where(eq(followedArtists.syncKey, syncKey)),
+    getExpandedUserTasteProfile(syncKey),
+  ]);
+
   const likedTrackIds = new Set((likedRows as { trackId: number }[]).map((r) => r.trackId));
-
-  const followedRows = await db
-    .select({ artistId: followedArtists.artistId })
-    .from(followedArtists)
-    .where(eq(followedArtists.syncKey, syncKey));
   const followedArtistIds = new Set((followedRows as { artistId: number }[]).map((r) => r.artistId));
 
-  const userPlaylistTrackRows = await db
-    .select({ trackId: playlistTracks.trackId })
-    .from(playlistTracks)
-    .innerJoin(playlists, eq(playlistTracks.playlistId, playlists.id))
-    .where(eq(playlists.syncKey, syncKey))
-    .limit(150);
-  const playlistTrackIds = new Set((userPlaylistTrackRows as { trackId: number }[]).map((r) => r.trackId));
+  // Map track IDs to actual catalog track objects for quick lookup
+  const catalogMap = new Map<number, Track>();
+  mappedCatalog.forEach((t) => catalogMap.set(t.id, t));
 
-  // Build each daily mix
-  const mixes: DailyMix[] = DAILY_MIX_DEFINITIONS.map((def, mixIndex) => {
-    // Determine candidate pool
+  // Filter events: last month or top 500
+  const relevantEvents = (recentEvents as Array<{
+    trackId: number;
+    artistId: number | null;
+    genre: string | null;
+    completed: boolean;
+    skipped: boolean;
+    listenSeconds: number;
+    createdAt: Date;
+  }>).filter((ev) => ev.createdAt >= oneMonthAgo || recentEvents.length <= 100);
+
+  // 3. Cluster user recent listening activity
+  interface ClusterStats {
+    key: string;
+    label: string;
+    playCount: number;
+    completionScore: number;
+    recentTracks: Track[];
+    artistFrequency: Map<string, number>;
+    genreFrequency: Map<string, number>;
+  }
+
+  const clustersMap = new Map<string, ClusterStats>();
+
+  // Initialize all theme categories
+  for (const cat of THEME_CATEGORIES) {
+    clustersMap.set(cat.key, {
+      key: cat.key,
+      label: cat.defaultLabel,
+      playCount: 0,
+      completionScore: 0,
+      recentTracks: [],
+      artistFrequency: new Map<string, number>(),
+      genreFrequency: new Map<string, number>(),
+    });
+  }
+
+  // Populate clusters from actual listened songs
+  for (const ev of relevantEvents) {
+    if (ev.skipped && ev.listenSeconds === 0) continue; // Skip immediate skips
+    const track = catalogMap.get(ev.trackId);
+    if (!track) continue;
+
+    const themeKey = matchThemeCategory(track) || "pop_contemporary";
+    const cluster = clustersMap.get(themeKey);
+    if (!cluster) continue;
+
+    cluster.playCount++;
+    cluster.completionScore += ev.completed ? 3 : ev.listenSeconds > 20 ? 2 : 1;
+
+    // Track recently played tracks in this cluster
+    if (!cluster.recentTracks.some((t) => t.id === track.id)) {
+      cluster.recentTracks.push(track);
+    }
+
+    // Tally artist frequency
+    const art = track.artistName.trim();
+    if (art) {
+      cluster.artistFrequency.set(art, (cluster.artistFrequency.get(art) || 0) + 1);
+    }
+
+    // Tally genre frequency
+    const g = track.genre?.trim();
+    if (g) {
+      cluster.genreFrequency.set(g, (cluster.genreFrequency.get(g) || 0) + 1);
+    }
+  }
+
+  // 4. Rank clusters by user's actual latest engagement
+  const sortedClusters = Array.from(clustersMap.values()).sort((a, b) => {
+    // Primary sort: actual completion score & play count from last month / 500 plays
+    if (b.completionScore !== a.completionScore) {
+      return b.completionScore - a.completionScore;
+    }
+    return b.playCount - a.playCount;
+  });
+
+  // Pick top 4 to 6 themes for the Daily Mixes:
+  // If user has strong engagement in several clusters, prioritize their active clusters!
+  // If a cluster has 0 listens, adjust ranking using User Taste Profile preferred genres and favorite artists.
+  const activeClusters = sortedClusters.filter((c) => c.completionScore > 0);
+  const inactiveClusters = sortedClusters.filter((c) => c.completionScore === 0);
+
+  // Score inactive clusters based on user taste preferences as fallback
+  const preferredGenres = (userTaste.preferredGenres || []).map((g) => g.toLowerCase());
+  const favoriteArtists = (userTaste.favoriteArtists || []).map((a) => a.toLowerCase());
+
+  inactiveClusters.sort((a, b) => {
+    const aDef = THEME_CATEGORIES.find((t) => t.key === a.key);
+    const bDef = THEME_CATEGORIES.find((t) => t.key === b.key);
+
+    let scoreA = 0;
+    let scoreB = 0;
+
+    if (aDef) {
+      if (aDef.keywords.some((k) => preferredGenres.some((pg) => pg.includes(k) || k.includes(pg)))) scoreA += 5;
+      if (aDef.artistHints.some((ah) => favoriteArtists.some((fa) => fa.includes(ah.toLowerCase())))) scoreA += 5;
+    }
+    if (bDef) {
+      if (bDef.keywords.some((k) => preferredGenres.some((pg) => pg.includes(k) || k.includes(pg)))) scoreB += 5;
+      if (bDef.artistHints.some((ah) => favoriteArtists.some((fa) => fa.includes(ah.toLowerCase())))) scoreB += 5;
+    }
+
+    return scoreB - scoreA;
+  });
+
+  // Combine to ensure 4 to 5 rich mixes (user active clusters first, then taste fallbacks)
+  const finalMixThemes = [...activeClusters, ...inactiveClusters].slice(0, 4);
+
+  // 5. Build each Daily Mix with tailored tracks
+  const mixes: DailyMix[] = finalMixThemes.map((cluster, mixIdx) => {
+    const def = THEME_CATEGORIES.find((t) => t.key === cluster.key)!;
+    const mixId = `daily-mix-${mixIdx + 1}`;
+    const mixTitle = `Daily Mix ${mixIdx + 1}`;
+    const accentColor = MIX_COLORWAYS[mixIdx % MIX_COLORWAYS.length];
+
+    // Find top recent anchor artists the user actually listened to in this theme
+    const sortedRecentArtists = Array.from(cluster.artistFrequency.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map((e) => e[0]);
+
+    // Top recent genres
+    const sortedRecentGenres = Array.from(cluster.genreFrequency.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map((e) => e[0]);
+
+    // Determine dynamic theme genre label
+    let dynamicGenreLabel = def.defaultLabel;
+    if (sortedRecentGenres.length > 0) {
+      const topG = sortedRecentGenres[0];
+      if (def.key === "basque_sounds") {
+        dynamicGenreLabel = topG.toLowerCase().includes("fusion")
+          ? "Basque Fusion & Urban"
+          : topG.toLowerCase().includes("rock")
+          ? "Euskal Rock & Punk"
+          : "Euskal Herriko Soinuak";
+      } else if (def.key === "hiphop_urban") {
+        dynamicGenreLabel = topG.toLowerCase().includes("trap") ? "Trap & Drill Waves" : "Hip-Hop & Urban";
+      } else if (def.key === "rock_alternative") {
+        dynamicGenreLabel = topG.toLowerCase().includes("indie") ? "Indie Rock & Alt" : "Rock Essentials";
+      } else if (def.key === "acoustic_folk") {
+        dynamicGenreLabel = "Acoustic & Singer-Songwriter";
+      } else if (def.key === "synth_electronic") {
+        dynamicGenreLabel = "Electronic & Synth Grooves";
+      } else if (def.key === "latin_flamenco") {
+        dynamicGenreLabel = "Latin Vibes & Flamenco Fusion";
+      } else {
+        dynamicGenreLabel = topG;
+      }
+    }
+
+    // Determine candidate pool for this mix
     let candidatePool = mappedCatalog;
-
-    if (def.strictBasqueOnly) {
-      // Mix 1: ONLY Basque artists and Basque language songs!
+    if (def.key === "basque_sounds") {
       candidatePool = mappedCatalog.filter((t) => {
-        const artist = t.artistName.toLowerCase();
-        const isBasqueArtist = BASQUE_ARTISTS.some((ba) => artist.includes(ba.toLowerCase()));
-        const isBasqueLang = (t as any).language === "eu" || (t as any).region === "eu";
-        const isBasqueGenre =
-          (t.genre || "").toLowerCase().includes("euskal") ||
-          (t.genre || "").toLowerCase().includes("basque") ||
-          (t.genre || "").toLowerCase().includes("trikitia");
-        return isBasqueArtist || isBasqueLang || isBasqueGenre;
+        const art = t.artistName.toLowerCase();
+        const gen = (t.genre || "").toLowerCase();
+        const isBasqueArtist = BASQUE_ARTIST_NAMES.some((ba) => art.includes(ba.toLowerCase()));
+        const isBasqueRegion = (t as any).region === "eu" || (t as any).language === "eu";
+        const isBasqueGenre = gen.includes("euskal") || gen.includes("basque") || gen.includes("trikitia");
+        return isBasqueArtist || isBasqueRegion || isBasqueGenre;
+      });
+    } else {
+      // Filter out mismatched regional/heavy genres from other niches
+      candidatePool = mappedCatalog.filter((t) => {
+        const theme = matchThemeCategory(t);
+        // Include if matches this theme or if user listened to this artist in this cluster
+        if (theme === def.key) return true;
+        if (sortedRecentArtists.some((ra) => ra.toLowerCase() === t.artistName.toLowerCase())) return true;
+        return false;
       });
     }
 
-    // Exclude forbidden artists from this theme
-    if (def.excludedArtists && def.excludedArtists.length > 0) {
-      candidatePool = candidatePool.filter((t) => {
-        const aLow = t.artistName.toLowerCase();
-        return !def.excludedArtists.some((ex) => aLow.includes(ex.toLowerCase()));
+    // If candidate pool is too small, pull loosely matching candidates
+    if (candidatePool.length < 25) {
+      candidatePool = mappedCatalog.filter((t) => {
+        const gLow = (t.genre || "").toLowerCase();
+        return def.keywords.some((k) => gLow.includes(k));
       });
     }
 
     // Score tracks in candidate pool
     const scored = candidatePool.map((t) => {
       let score = 0;
-      const normArtist = t.artistName.toLowerCase();
-      const normTitle = t.title.toLowerCase();
+      const normArtist = t.artistName.toLowerCase().trim();
       const normGenre = (t.genre || "").toLowerCase();
 
-      // Direct target artist match (+60)
-      const targetArtistHit = def.targetArtists.some((a) => normArtist.includes(a.toLowerCase()));
-      if (targetArtistHit) {
-        score += 60;
+      // Highest boost: Track was literally listened to by user in last month (+80)
+      const isRecentlyListened = cluster.recentTracks.some((rt) => rt.id === t.id);
+      if (isRecentlyListened) {
+        score += 80;
       }
 
-      // Target keyword match (+30)
-      if (def.targetKeywords.some((k) => normGenre.includes(k) || normTitle.includes(k))) {
+      // High boost: Artist was played by user in this cluster recently (+55)
+      const userPlayedArtistCount = cluster.artistFrequency.get(t.artistName.trim()) || 0;
+      if (userPlayedArtistCount > 0) {
+        score += 55 + Math.min(userPlayedArtistCount * 5, 25);
+      }
+
+      // Keyword / genre match bonus (+30)
+      if (def.keywords.some((k) => normGenre.includes(k))) {
         score += 30;
       }
 
-      // User affinity signals
+      // Hint artist match bonus (+25)
+      if (def.artistHints.some((ah) => normArtist.includes(ah.toLowerCase()))) {
+        score += 25;
+      }
+
+      // User library signals
       if (likedTrackIds.has(t.id)) score += 35;
-      if (listenedTrackIds.has(t.id)) score += 30;
-      if (playlistTrackIds.has(t.id)) score += 20;
       if (t.artistId && followedArtistIds.has(t.artistId)) score += 25;
 
-      // Seed-based dynamic pseudo-random offset for variety on refresh/update
-      // Uses the passed seedNum + track id + mix index
-      const dynamicRandom = ((t.id * 37 + seedNum * 13 + mixIndex * 101) % 43);
-      score += dynamicRandom;
+      // Seed-based dynamic pseudo-random offset for day-to-day fresh variety
+      const dynamicOffset = ((t.id * 31 + seedNum * 17 + mixIdx * 89) % 37);
+      score += dynamicOffset;
 
-      return { track: t, score, isTarget: targetArtistHit };
+      return { track: t, score, isRecentlyListened };
     });
 
     // Sort descending by score
-    const sortedCandidates = scored
-      .filter((s) => s.score > 25 || s.isTarget)
-      .sort((a, b) => b.score - a.score);
+    const sorted = scored.sort((a, b) => b.score - a.score);
 
-    // ARTIST VARIETY CAP: Maximum 2 tracks per artist per Daily Mix!
-    const MAX_TRACKS_PER_ARTIST = 2;
+    // Variety cap: Max 2 tracks per artist per mix (relax to 3 if pool is tight)
+    const MAX_PER_ARTIST = 2;
     const artistCountMap = new Map<string, number>();
     const selectedTracks: Track[] = [];
 
-    for (const { track } of sortedCandidates) {
+    for (const { track } of sorted) {
       const artKey = track.artistName.toLowerCase().trim();
-      const currentCount = artistCountMap.get(artKey) || 0;
-      if (currentCount < MAX_TRACKS_PER_ARTIST) {
+      const count = artistCountMap.get(artKey) || 0;
+      if (count < MAX_PER_ARTIST) {
         selectedTracks.push(track);
-        artistCountMap.set(artKey, currentCount + 1);
+        artistCountMap.set(artKey, count + 1);
       }
-      if (selectedTracks.length >= 18) break;
+      if (selectedTracks.length >= 20) break;
     }
 
-    // If still under 14 tracks, relax to 3 tracks per artist from target pool
-    if (selectedTracks.length < 14) {
-      for (const { track } of sortedCandidates) {
-        if (selectedTracks.some((s) => s.id === track.id)) continue;
+    // If still under 16 tracks, relax to 3 tracks per artist
+    if (selectedTracks.length < 16) {
+      for (const { track } of sorted) {
+        if (selectedTracks.some((st) => st.id === track.id)) continue;
         const artKey = track.artistName.toLowerCase().trim();
-        const currentCount = artistCountMap.get(artKey) || 0;
-        if (currentCount < 3) {
+        const count = artistCountMap.get(artKey) || 0;
+        if (count < 3) {
           selectedTracks.push(track);
-          artistCountMap.set(artKey, currentCount + 1);
+          artistCountMap.set(artKey, count + 1);
         }
-        if (selectedTracks.length >= 16) break;
+        if (selectedTracks.length >= 18) break;
       }
     }
 
-    // Dynamic subtitle based on unique top artists in this mix
+    // Dynamic subtitle: Top 3-4 distinct artists in this mix
     const uniqueArtists = Array.from(new Set(selectedTracks.map((t) => t.artistName)));
     const topArtistsList = uniqueArtists.slice(0, 4);
-    const subtitle = topArtistsList.length > 0 ? `${topArtistsList.join(", ")} and more` : def.genreLabel;
+    const subtitle = topArtistsList.length > 0 ? `${topArtistsList.join(", ")} and more` : dynamicGenreLabel;
+
+    // Dynamic description tailored to user's recent listening
+    let description = "";
+    if (sortedRecentArtists.length > 0) {
+      const leadArtists = sortedRecentArtists.slice(0, 2).join(" & ");
+      description = `Shaped by your recent plays of ${leadArtists}, featuring ${dynamicGenreLabel} essentials and fresh discoveries.`;
+    } else {
+      description = `Curated for your taste in ${dynamicGenreLabel}, featuring ${topArtistsList.slice(0, 2).join(" & ")} and related sounds.`;
+    }
 
     return {
-      id: def.id,
-      title: def.title,
+      id: mixId,
+      title: mixTitle,
       subtitle,
-      description: def.description,
-      accentColor: def.accentColor,
-      genre: def.genreLabel,
+      description,
+      accentColor,
+      genre: dynamicGenreLabel,
       tracks: selectedTracks,
     };
   });

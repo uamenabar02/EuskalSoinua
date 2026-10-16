@@ -238,15 +238,6 @@ export function TrackMenu({
   const ref = useRef<HTMLDivElement>(null);
   const [playlists, setPlaylists] = useState<{ id: number; name: string }[]>([]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
   const loadPlaylists = async () => {
     setLoadingPlaylists(true);
     try {
@@ -263,6 +254,7 @@ export function TrackMenu({
   return (
     <div className="relative" ref={ref}>
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
@@ -270,7 +262,7 @@ export function TrackMenu({
         }}
         className={clsx(
           buttonClassName ||
-            "grid place-items-center h-7 w-7 rounded-full text-textdim hover:text-ink hover:bg-white/10",
+            "grid place-items-center h-8 w-8 rounded-full text-textdim hover:text-ink hover:bg-white/10 active:bg-white/20 cursor-pointer touch-manipulation",
         )}
         aria-label="more"
       >
@@ -278,40 +270,43 @@ export function TrackMenu({
       </button>
       <DropdownPortal isOpen={open} onClose={() => setOpen(false)} anchorRef={ref} width={240}>
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             setOpen(false);
             setShowInsight(true);
           }}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 text-accent font-semibold"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 text-accent font-semibold cursor-pointer touch-manipulation min-h-[40px]"
         >
           <Sparkles size={14} /> AI Track Insight
         </button>
         <div className="h-px bg-white/10 my-1" />
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             playNext(track);
             toast("Added to Up Next", "🎵");
             setOpen(false);
           }}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <ListPlus size={14} className="text-accent" /> Play Next
         </button>
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             addToQueue(track);
             toast("Added to Queue", "➕");
             setOpen(false);
           }}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <ListMusic size={14} /> Add to Queue
         </button>
         <div className="h-px bg-white/10 my-1" />
-        <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-textfaint">
+        <div className="px-3 py-1 text-[11px] uppercase tracking-wide text-textfaint font-bold">
           Add to playlist
         </div>
         {loadingPlaylists ? (
@@ -327,6 +322,7 @@ export function TrackMenu({
           <div className="max-h-36 overflow-y-auto no-scrollbar">
             {playlists.map((p) => (
               <button
+                type="button"
                 key={p.id}
                 onClick={async (e) => {
                   e.stopPropagation();
@@ -336,31 +332,35 @@ export function TrackMenu({
                     body: JSON.stringify({ trackId: track.id }),
                   });
                   window.dispatchEvent(new Event("playlists-changed"));
+                  toast(`Added to "${p.name}"`, "✅");
                   setOpen(false);
                 }}
-                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 truncate"
+                className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 truncate cursor-pointer touch-manipulation min-h-[38px]"
               >
-                <Plus size={14} /> <span className="truncate">{p.name}</span>
+                <Plus size={14} className="shrink-0" /> <span className="truncate">{p.name}</span>
               </button>
             ))}
           </div>
         )}
         <div className="h-px bg-white/10 my-1" />
         <button
+          type="button"
           onClick={async (e) => {
             e.stopPropagation();
             setOpen(false);
             toast("Building your radio…", "📻");
             setLoadingRadio(true);
-            const playlistId = await playRadio(track.id);
+            const playlistId = await playRadio({ trackId: track.id, artistName: track.artistName });
             setLoadingRadio(false);
             if (playlistId) {
               toast("Radio playlist ready!", "✅");
               router.push(`/playlist/${playlistId}`);
+            } else {
+              toast("Could not create radio", "⚠️");
             }
           }}
           disabled={loadingRadio}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 flex items-center gap-2 disabled:opacity-50"
+          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 flex items-center gap-2 disabled:opacity-50 cursor-pointer touch-manipulation min-h-[40px]"
         >
           <Radio size={14} /> {loadingRadio ? "Loading radio…" : "Go to song radio"}
         </button>
@@ -371,7 +371,7 @@ export function TrackMenu({
               key={`${artistPart}-${idx}`}
               href={href}
               onClick={() => setOpen(false)}
-              className="block px-3 py-2 rounded-lg hover:bg-white/10 truncate"
+              className="block px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 truncate cursor-pointer touch-manipulation min-h-[40px] flex items-center"
             >
               Go to artist: {artistPart}
             </Link>
@@ -381,7 +381,7 @@ export function TrackMenu({
           <Link
             href={`/album/${track.albumId}`}
             onClick={() => setOpen(false)}
-            className="block px-3 py-2 rounded-lg hover:bg-white/10"
+            className="block px-3 py-2.5 rounded-lg hover:bg-white/10 active:bg-white/20 cursor-pointer touch-manipulation min-h-[40px] flex items-center"
           >
             Go to album
           </Link>

@@ -122,11 +122,20 @@ async function curateWithGemini<T extends { id: number }>(
         isLikedByUser: userInteractedSet.has(item.id),
       }));
 
+      const sectionSpecificRule =
+        sectionName === "Trending now"
+          ? `\nSPECIAL TRENDING NOW GUIDELINES:
+- GLOBAL MUSIC SCENE COVERAGE: Must reflect the real-world music charts across mostly USA, Spain, and Basque Country.
+- UNIVERSAL & GENERAL APPEAL: Keep the songs universally appealing, recognizable, and representative of the actual global music scene.
+- SUBTLE PERSONALIZATION: Tweak the selection slightly based on the genres and artists the user has been listening to lately (${userTaste.recentGenres?.join(", ") || "varied styles"}), but maintain a broadly accessible, energetic, and balanced trending mix across all three regions (USA, Spain, Basque Country).
+- REGIONAL BALANCE: Feature an exciting blend with top tracks from USA, Spain, and Basque Country.\n`
+          : "";
+
       const prompt = `You are an AI Music Curation Agent for EuskalSoinua.
 Your mission is to curate and select EXACTLY 10 items from the CANDIDATE POOL for the section "${sectionName}".
 
 ${formatTastePromptForAI(userTaste)}
-
+${sectionSpecificRule}
 CRITICAL VARIETY & DISCOVERY RULES:
 1. FRESH VARIETY: You MUST choose a DIFFERENT set and ordering of 10 items every time (Seed Nonce: ${randomSeed}). Do NOT repeat the exact same top items as previous runs.
 2. UNLIKED DISCOVERY REQUIREMENT: At least 5 to 7 of your 10 selected items MUST be items that the user HAS NOT explicitly liked/followed yet (where 'isLikedByUser' = false), but closely match their musical taste (matching preferred genres/styles/vibe).
@@ -261,9 +270,73 @@ export async function getHomeSections(syncKey: string = "default", requestedSect
   };
 
   const getTrending = async () => {
-    const rows = await db.select().from(tracks).orderBy(sql`RANDOM()`).limit(80);
-    const mapped = rows.map(mapTrack);
-    const curated = await curateWithGemini(mapped, "Trending now", tasteProfile, liked, seed);
+    // 1. Target trending artists across the global music scene (USA, Spain, and Basque Country)
+    const usaNames = [
+      "taylor swift", "kendrick lamar", "drake", "billie eilish", "sabrina carpenter",
+      "olivia rodrigo", "post malone", "bruno mars", "the weeknd", "travis scott",
+      "dua lipa", "beyoncé", "ariana grande", "sza", "chappell roan", "eminem", "wiz khalifa"
+    ];
+    const spainNames = [
+      "rosalía", "c. tangana", "quevedo", "aitana", "saiko", "bad gyal",
+      "rels b", "morad", "lola indigo", "sen senra", "melendi", "alizzz", "estopa"
+    ];
+    const basqueNames = [
+      "zetak", "gatibu", "ets", "en tol sarmiento", "bulego", "bengo", "izaro",
+      "süne", "la txama", "shinova", "berri txarrak", "tatta", "dupla", "merina gris", "huntza"
+    ];
+
+    // Query candidates across USA, Spain, Basque Country, and global chart hits
+    const [basqueRows, globalTopRows, chartRows] = await Promise.all([
+      db.select().from(tracks).where(or(
+        eq(tracks.region, "eu"),
+        sql`LOWER(${tracks.artistName}) = ANY(ARRAY[${sql.join(basqueNames.map(n => sql`${n}`), sql`, `)}])`
+      )).orderBy(sql`RANDOM()`).limit(45),
+      db.select().from(tracks).where(
+        sql`LOWER(${tracks.artistName}) = ANY(ARRAY[${sql.join([...usaNames, ...spainNames].map(n => sql`${n}`), sql`, `)}])`
+      ).orderBy(sql`RANDOM()`).limit(65),
+      db.select().from(tracks).orderBy(desc(tracks.playCount)).limit(40),
+    ]);
+
+    const combinedTracksMap = new Map<number, Track>();
+    [...basqueRows, ...globalTopRows, ...chartRows].forEach((r) => {
+      combinedTracksMap.set(r.id, mapTrack(r));
+    });
+
+    const candidates = Array.from(combinedTracksMap.values());
+
+    // Tweak scores slightly based on what user has been listening to lately
+    const recentGenres = (tasteProfile.recentGenres || []).map((g) => g.toLowerCase());
+    const recentArtists = (tasteProfile.recentArtists || []).map((a) => a.toLowerCase());
+
+    const scoredCandidates = candidates.map((t) => {
+      let score = 50;
+      const gLow = (t.genre || "").toLowerCase();
+      const aLow = (t.artistName || "").toLowerCase();
+
+      // Recent listening genre tweak (+15)
+      if (recentGenres.some((rg) => gLow.includes(rg) || rg.includes(gLow))) {
+        score += 15;
+      }
+      // Recent listening artist tweak (+20)
+      if (recentArtists.some((ra) => aLow.includes(ra) || ra.includes(aLow))) {
+        score += 20;
+      }
+      // General taste profile preference bonus (+10)
+      if (tasteProfile.preferredGenres.some((pg) => gLow.includes(pg.toLowerCase()))) {
+        score += 10;
+      }
+      // Random jitter for freshness across reloads
+      score += Math.random() * 12;
+
+      return { track: t, score };
+    });
+
+    // Pass the top-scoring candidates to Gemini (tweaked by user taste while maintaining broad appeal)
+    const orderedCandidates = scoredCandidates
+      .sort((a, b) => b.score - a.score)
+      .map((s) => s.track);
+
+    const curated = await curateWithGemini(orderedCandidates, "Trending now", tasteProfile, liked, seed);
     return curated.map((t: any) => ({ ...t, liked: liked.has(t.id) }));
   };
 

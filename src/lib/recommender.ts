@@ -134,13 +134,13 @@ export async function getRecommendations(opts: {
   const followedArtistIds = new Set<number>(follows.map((f: any) => f.artistId as number));
   const savedAlbumIds = new Set<number>(saves.map((s: any) => s.albumId as number));
 
-  // Recent listening signal
+  // Recent listening signal (last month / last 500 events)
   const events = await db
     .select()
     .from(listenEvents)
     .where(eq(listenEvents.syncKey, syncKey))
     .orderBy(desc(listenEvents.createdAt))
-    .limit(400);
+    .limit(500);
 
   let likedTracksDetails: (typeof tracks.$inferSelect)[] = [];
   if (likes.length > 0) {
@@ -154,6 +154,30 @@ export async function getRecommendations(opts: {
   }
 
   const affinity = buildAffinity(events, likedTracksDetails);
+
+  // Compute recency-weighted listening velocity
+  const recentGenreScores = new Map<string, number>();
+  const recentArtistScores = new Map<number, number>();
+  const recentTrackPlayCount = new Map<number, number>();
+
+  const nowMs = Date.now();
+  for (const e of events) {
+    if (e.skipped && e.listenSeconds === 0) continue;
+    const ageDays = Math.max(0, (nowMs - new Date(e.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+    // Linear recency decay: highest weight for recent days
+    const recencyWeight = Math.max(0.4, 1.0 - (ageDays / 30) * 0.6);
+    const eventStrength = (e.completed ? 3.5 : e.listenSeconds > 15 ? 2.0 : 1.0) * recencyWeight;
+
+    recentTrackPlayCount.set(e.trackId, (recentTrackPlayCount.get(e.trackId) || 0) + 1);
+
+    if (e.artistId) {
+      recentArtistScores.set(e.artistId, (recentArtistScores.get(e.artistId) || 0) + eventStrength);
+    }
+    if (e.genre) {
+      const g = e.genre.toLowerCase();
+      recentGenreScores.set(g, (recentGenreScores.get(g) || 0) + eventStrength);
+    }
+  }
 
   // Build sets of known artists and heard tracks for personalization
   const knownArtistIds = new Set<number>();
@@ -188,7 +212,7 @@ export async function getRecommendations(opts: {
     .orderBy(desc(tracks.playCount))
     .limit(400);
 
-  const playedRecently = new Set(events.slice(0, 40).map((e: any) => e.trackId));
+  const playedRecently = new Set(events.slice(0, 30).map((e: any) => e.trackId));
 
   const candidates: Candidate[] = [];
   for (const row of rows) {
@@ -219,7 +243,7 @@ export async function getRecommendations(opts: {
 
     // Boost pinned favorite artists
     if (favoriteArtists.length > 0 && favoriteArtists.some((fa) => artistNameLower.includes(fa) || fa.includes(artistNameLower))) {
-      score += 12.0;
+      score += 14.0;
       reasons.unshift(`from your pinned favorite artists`);
     }
 
@@ -231,7 +255,11 @@ export async function getRecommendations(opts: {
 
       if (t.genre) {
         const lowerGenre = t.genre.toLowerCase();
-        if (affinity.genre[lowerGenre]) {
+        // Weight by recent listening genre score first
+        if (recentGenreScores.has(lowerGenre)) {
+          score += (recentGenreScores.get(lowerGenre) || 0) * 2.0;
+          reasons.unshift(`matches what you've been listening to lately (${t.genre})`);
+        } else if (affinity.genre[lowerGenre]) {
           score += affinity.genre[lowerGenre] * 1.5;
           reasons.push(`matches your genre affinity`);
         }
@@ -258,7 +286,39 @@ export async function getRecommendations(opts: {
         }
       }
     } else {
-      // FOR YOU: Blend top favorites with relevant unheard music
+      // FOR YOU: Blend top favorites, recent listening velocity, and relevant discoveries
+      
+      // 1. LATELY LISTENED RECENT BOOSTS (High velocity signals)
+      if (t.artistId && recentArtistScores.has(t.artistId)) {
+        const aBoost = Math.min((recentArtistScores.get(t.artistId) || 0) * 2.5, 24.0);
+        score += aBoost;
+        reasons.unshift(`Because you recently played ${t.artistName}`);
+      }
+
+      if (t.genre) {
+        const gLow = t.genre.toLowerCase();
+        let matchedGenreBoost = 0;
+        for (const [rg, rScore] of recentGenreScores.entries()) {
+          if (gLow.includes(rg) || rg.includes(gLow)) {
+            matchedGenreBoost = Math.max(matchedGenreBoost, Math.min(rScore * 1.8, 18.0));
+          }
+        }
+        if (matchedGenreBoost > 0) {
+          score += matchedGenreBoost;
+          if (!reasons.some(r => r.includes("recently"))) {
+            reasons.unshift(`Matches what you've been listening to lately (${t.genre})`);
+          }
+        }
+      }
+
+      // Track on heavy rotation in recent plays
+      const trackPlayCount = recentTrackPlayCount.get(t.id) || 0;
+      if (trackPlayCount >= 2) {
+        score += 16.0;
+        reasons.unshift("On heavy rotation in your recent plays");
+      }
+
+      // 2. LONG-TERM TASTE & LIBRARY SIGNALS
       if (affinity.genre[t.genre ?? "unknown"]) {
         score += affinity.genre[t.genre ?? "unknown"];
         reasons.push(`because you play ${t.genre ?? "this style"}`);

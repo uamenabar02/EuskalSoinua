@@ -27,6 +27,8 @@ export interface UserTasteProfile {
   swipeLikesCount: number;
   swipeDislikesCount: number;
   recentListenedTrackIds: Set<number>;
+  recentArtists?: string[];
+  recentGenres?: string[];
 }
 
 export interface GenreOption {
