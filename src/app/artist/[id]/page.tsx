@@ -10,7 +10,8 @@ import { AlbumCard, BasqueBadge } from "@/components/cards";
 import { CoverArt } from "@/components/cover";
 import { Section, SectionCard } from "@/components/sections";
 import type { Track, Artist, Album } from "@/lib/types";
-import { Radio, Loader2 } from "lucide-react";
+import { Radio, Loader2, ShieldCheck } from "lucide-react";
+import { ArtistAuditModal } from "@/components/artist-audit-modal";
 import { usePlayer } from "@/lib/player-context";
 import { useToast } from "@/lib/toast";
 import { useTranslation } from "@/lib/i18n";
@@ -76,6 +77,7 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
   const [error, setError] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingRadio, setLoadingRadio] = useState(false);
+  const [showAuditModal, setShowAuditModal] = useState(false);
 
   useEffect(() => {
     params.then((p) => setArtistParam(p.id));
@@ -187,6 +189,14 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
               {loadingRadio ? <Loader2 size={16} className="animate-spin" /> : <Radio size={16} className="text-accent" />}
               <span>{t("artist.artistRadio")}</span>
             </button>
+            <button
+              onClick={() => setShowAuditModal(true)}
+              title={t("artist.checkDiscography")}
+              className="flex items-center gap-1.5 h-11 px-4 rounded-full bg-accent/15 hover:bg-accent/25 border border-accent/30 text-white font-semibold text-xs transition cursor-pointer"
+            >
+              <ShieldCheck size={16} className="text-accent" />
+              <span>{t("artist.checkDiscography")}</span>
+            </button>
             <ToggleButton
               endpoint="follow"
               id={artist.id}
@@ -200,7 +210,14 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
       />
 
       <div className="px-4 sm:px-6 max-w-[1600px] mx-auto pb-10">
-        <div className="flex items-center justify-end mb-4">
+        <div className="flex items-center justify-end gap-2 mb-4">
+          <button
+            onClick={() => setShowAuditModal(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-accent/20 hover:bg-accent/30 border border-accent/40 px-3 py-1.5 rounded-full transition cursor-pointer"
+          >
+            <ShieldCheck size={13} className="text-accent" />
+            <span>{t("artist.checkDiscography")}</span>
+          </button>
           <button
             onClick={loadFullDiscography}
             disabled={loadingMore}
@@ -303,6 +320,22 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
           </>
         )}
       </div>
+
+      {showAuditModal && artist && (
+        <ArtistAuditModal
+          isOpen={showAuditModal}
+          onClose={() => setShowAuditModal(false)}
+          artistId={artist.id}
+          artistName={artist.name}
+          onApplied={() => {
+            const targetId = artist.id ?? artistParam;
+            fetch(`/api/artist/${encodeURIComponent(targetId)}`)
+              .then((r) => r.json())
+              .then(setData)
+              .catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }

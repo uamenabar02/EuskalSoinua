@@ -744,14 +744,9 @@ export async function getArtist(idOrName: number | string) {
     )
     .orderBy(desc(tracks.playCount));
 
-  const validTrackRows: any[] = [];
-  for (const t of trackRows) {
-    if (isValidMatchForArtist(row.name, { title: t.title, album: t.albumName, genre: t.genre })) {
-      validTrackRows.push(t);
-    } else {
-      await db.update(tracks).set({ artistId: null }).where(eq(tracks.id, t.id)).catch(() => {});
-    }
-  }
+  const validTrackRows = trackRows.filter((t: any) =>
+    isValidMatchForArtist(row.name, { title: t.title, album: t.albumName, genre: t.genre })
+  );
 
   const likedSet = await likedIds();
 
@@ -766,14 +761,9 @@ export async function getArtist(idOrName: number | string) {
     )
     .orderBy(desc(albums.year));
 
-  const validAlbumRows: any[] = [];
-  for (const a of albumRows) {
-    if (isValidMatchForArtist(row.name, { title: a.title, album: a.title, genre: a.genre })) {
-      validAlbumRows.push(a);
-    } else {
-      await db.update(albums).set({ artistId: null }).where(eq(albums.id, a.id)).catch(() => {});
-    }
-  }
+  const validAlbumRows = albumRows.filter((a: any) =>
+    isValidMatchForArtist(row.name, { title: a.title, album: a.title, genre: a.genre })
+  );
 
   const savedSet = await savedAlbumIds();
   return {

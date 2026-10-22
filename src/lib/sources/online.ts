@@ -172,6 +172,54 @@ export const BASQUE_DISAMBIGUATION: Record<string, ArtistDisambiguation> = {
     searchQueries: ["Streetwise Txantxangorria", "Streetwise Izatea Baino"],
     knownMatches: ["txantxangorria", "izatea baino"],
     rejectedKeywords: []
+  },
+  añube: {
+    searchQuery: "Añube",
+    itunesArtistId: undefined,
+    deezerArtistId: 111009692,
+    searchQueries: [
+      "Añube Errautsetatik Loratzen",
+      "Añube Ezezagunak",
+      "Añube Auzo zaharra",
+      "Añube Zentzu Bila",
+      "Añube Sutan"
+    ],
+    knownMatches: [
+      "errautsetatik loratzen", "erakusleihoak", "sutan", "desegin", "bizarra lepoan",
+      "indarberritzen", "entre paredes", "zutik", "garai berriak", "itsututa",
+      "zentzu bila", "kanpazar 1975", "auzo zaharra", "intro", "kontzientziak",
+      "ihes", "luz y sal", "ezezagunak", "aurpegi biluziak", "tiempos de armonía",
+      "desesperantza", "radio rebelde"
+    ],
+    rejectedKeywords: [
+      "anu: dé", "anu: de", "anu dé", "anu de", "blissful sleep", "blackman's prayer",
+      "blackmans prayer", "dealer", "twisted blue", "gotta go far", "no air", "cheers",
+      "budd webb", "nova johnson", "sleepy da truth", "bokete", "latin global",
+      "hip-hop", "rap", "trap", "drill", "urbano latino"
+    ]
+  },
+  anube: {
+    searchQuery: "Añube",
+    itunesArtistId: undefined,
+    deezerArtistId: 111009692,
+    searchQueries: [
+      "Añube Errautsetatik Loratzen",
+      "Añube Ezezagunak",
+      "Añube Auzo zaharra"
+    ],
+    knownMatches: [
+      "errautsetatik loratzen", "erakusleihoak", "sutan", "desegin", "bizarra lepoan",
+      "indarberritzen", "entre paredes", "zutik", "garai berriak", "itsututa",
+      "zentzu bila", "kanpazar 1975", "auzo zaharra", "intro", "kontzientziak",
+      "ihes", "luz y sal", "ezezagunak", "aurpegi biluziak", "tiempos de armonía",
+      "desesperantza", "radio rebelde"
+    ],
+    rejectedKeywords: [
+      "anu: dé", "anu: de", "anu dé", "anu de", "blissful sleep", "blackman's prayer",
+      "blackmans prayer", "dealer", "twisted blue", "gotta go far", "no air", "cheers",
+      "budd webb", "nova johnson", "sleepy da truth", "bokete", "latin global",
+      "hip-hop", "rap", "trap", "drill", "urbano latino"
+    ]
   }
 };
 
@@ -180,7 +228,15 @@ export function isValidMatchForArtist(
   m: { title: string; album?: string | null; genre?: string | null }
 ): boolean {
   const key = artistName.trim().toLowerCase();
-  const disam = BASQUE_DISAMBIGUATION[key];
+  let disam = BASQUE_DISAMBIGUATION[key];
+  if (!disam) {
+    for (const [dKey, dVal] of Object.entries(BASQUE_DISAMBIGUATION)) {
+      if (key === dKey || key.startsWith(`${dKey} `) || key.endsWith(` ${dKey}`) || key.includes(` ${dKey} `)) {
+        disam = dVal;
+        break;
+      }
+    }
+  }
   if (!disam) return true;
 
   const targetText = `${m.title} ${m.album ?? ""} ${m.genre ?? ""}`.toLowerCase();
@@ -695,6 +751,7 @@ async function getCatalogTracksForArtist(artistName: string, limit = 8): Promise
   if (!normName) return [];
 
   try {
+    const fetchPoolSize = Math.max(limit * 4, 30);
     const dbRows = await db
       .select()
       .from(tracks)
@@ -704,24 +761,27 @@ async function getCatalogTracksForArtist(artistName: string, limit = 8): Promise
           ilike(tracks.artistName, `%${normName}%`)
         )
       )
-      .limit(limit);
+      .limit(fetchPoolSize);
 
     if (dbRows.length >= Math.min(2, limit)) {
-      return dbRows.map(mapTrack);
+      // Shuffle the pool for dynamic variety across radio generations
+      const shuffled = dbRows.sort(() => Math.random() - 0.5);
+      return shuffled.slice(0, limit).map(mapTrack);
     }
 
     // Fast lightweight search fallback if 0 or 1 tracks in DB
     try {
       const matches = await searchOnline(normName);
       const persisted: Track[] = [];
-      for (const m of matches.slice(0, 3)) {
+      for (const m of matches.slice(0, 5)) {
         const res = await persistMatch(m);
         persisted.push(...res);
       }
       const combined = [...dbRows.map(mapTrack), ...persisted];
-      return Array.from(new Map(combined.map((t) => [t.id, t])).values());
+      const deduped = Array.from(new Map(combined.map((t) => [t.id, t])).values());
+      return deduped.sort(() => Math.random() - 0.5).slice(0, limit);
     } catch {
-      return dbRows.map(mapTrack);
+      return dbRows.sort(() => Math.random() - 0.5).slice(0, limit).map(mapTrack);
     }
   } catch {
     return [];
@@ -753,11 +813,12 @@ async function buildRadioQueueCore(opts: {
   const relatedNames = await getRelatedArtists(opts.primaryArtist);
   const filteredRelated = relatedNames
     .filter((r) => r.toLowerCase().trim() !== normAuthor)
-    .slice(0, 6);
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 7);
 
   const [authorDiscography, ...relatedTrackArrays] = await Promise.all([
-    getCatalogTracksForArtist(opts.primaryArtist, 12),
-    ...filteredRelated.map((rName) => getCatalogTracksForArtist(rName, 4)),
+    getCatalogTracksForArtist(opts.primaryArtist, 25),
+    ...filteredRelated.map((rName) => getCatalogTracksForArtist(rName, 8)),
   ]);
 
   const authorCandidates = (authorDiscography || [])
@@ -770,12 +831,12 @@ async function buildRadioQueueCore(opts: {
     authorTracks.push(t);
   }
 
-  // 3. Populate related tracks from the parallel related artist results
+  // 3. Populate related tracks from the parallel related artist results with fresh random picks
   for (const rTracks of relatedTrackArrays) {
     const picks = (rTracks || [])
       .filter((t) => !seenIds.has(t.id))
-      .sort((a, b) => b.playCount - a.playCount || Math.random() - 0.5)
-      .slice(0, 2); // 2 songs per related artist for great variety
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3); // 2-3 songs per related artist
     for (const t of picks) {
       seenIds.add(t.id);
       relatedTracks.push(t);
@@ -928,7 +989,7 @@ async function resolveAlbumId(
 const inFlightPersists = new Map<string, Promise<Track[]>>();
 
 /** Persist a single OnlineMatch as a catalog track (dedup by ISRC/title+artist). */
-async function persistMatch(m: OnlineMatch): Promise<Track[]> {
+export async function persistMatch(m: OnlineMatch): Promise<Track[]> {
   if (!isValidMatchForArtist(m.artist, m)) {
     return [];
   }

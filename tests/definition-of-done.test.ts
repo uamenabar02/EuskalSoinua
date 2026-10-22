@@ -36,4 +36,20 @@ describe("Definition of Done — Basque Music Artists & Ground Truth", () => {
       expect.arrayContaining(["Streetwise", "Bizardunak", "Anari", "Belako"])
     );
   });
+
+  it("correctly disambiguates Añube, accepting authentic Basque songs and rejecting foreign tracks", async () => {
+    const { isValidMatchForArtist } = await import("../src/lib/sources/online");
+
+    // Authentic Basque songs by Añube
+    expect(isValidMatchForArtist("Añube", { title: "Zentzu Bila", album: "Errautsetatik Loratzen" })).toBe(true);
+    expect(isValidMatchForArtist("Añube", { title: "Sutan", album: "Errautsetatik Loratzen" })).toBe(true);
+    expect(isValidMatchForArtist("Añube", { title: "Ezezagunak", album: "Añube" })).toBe(true);
+    expect(isValidMatchForArtist("Añube", { title: "Auzo zaharra", album: "Auzo zaharra" })).toBe(true);
+
+    // Foreign songs from American hip-hop artist Anübé
+    expect(isValidMatchForArtist("Añube", { title: "Blissful Sleep", album: "Anu: Dé", genre: "Hip-Hop/Rap" })).toBe(false);
+    expect(isValidMatchForArtist("Añube", { title: "Blackman's Prayer", album: "Anu: Dé" })).toBe(false);
+    expect(isValidMatchForArtist("Añube", { title: "Dealer", album: "Disappointed But Not Surprised" })).toBe(false);
+    expect(isValidMatchForArtist("Añube", { title: "Cheers (feat. Nova Johnson)", genre: "Hip-Hop/Rap" })).toBe(false);
+  });
 });

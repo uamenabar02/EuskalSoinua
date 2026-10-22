@@ -235,8 +235,14 @@ export default function HomePage() {
 
   const loadDailyMixes = useCallback((showLoading = false, explicitSeed?: string) => {
     if (showLoading) setLoadingDailyMixes(true);
-    const url = explicitSeed
-      ? `/api/user/daily-mixes?seed=${encodeURIComponent(explicitSeed)}`
+    if (explicitSeed && typeof window !== "undefined") {
+      try {
+        localStorage.setItem("euskalsoinua_daily_mix_seed", explicitSeed);
+      } catch {}
+    }
+    const seedToUse = explicitSeed || (typeof window !== "undefined" ? localStorage.getItem("euskalsoinua_daily_mix_seed") || undefined : undefined);
+    const url = seedToUse
+      ? `/api/user/daily-mixes?seed=${encodeURIComponent(seedToUse)}`
       : "/api/user/daily-mixes";
     fetch(url, { cache: explicitSeed ? "no-store" : "default" })
       .then((r) => r.json())
@@ -250,7 +256,24 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/user/daily-mixes")
+    // Automatically refresh Daily Mixes the first time user enters each day
+    let daySeed: string | undefined;
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const lastDate = localStorage.getItem("euskalsoinua_daily_mix_date");
+      if (lastDate !== today) {
+        daySeed = `day_${today}_${Math.floor(Math.random() * 100000)}`;
+        localStorage.setItem("euskalsoinua_daily_mix_date", today);
+        localStorage.setItem("euskalsoinua_daily_mix_seed", daySeed);
+      } else {
+        daySeed = localStorage.getItem("euskalsoinua_daily_mix_seed") || undefined;
+      }
+    } catch {
+      daySeed = undefined;
+    }
+
+    const url = daySeed ? `/api/user/daily-mixes?seed=${encodeURIComponent(daySeed)}` : "/api/user/daily-mixes";
+    fetch(url)
       .then((r) => r.json())
       .then((d) => {
         if (d.mixes) setDailyMixes(d.mixes);
@@ -377,7 +400,11 @@ export default function HomePage() {
                   <DailyMixCard
                     mix={mix}
                     onPlay={() => p.playQueue(mix.tracks, 0)}
-                    onOpen={() => router.push(`/playlist/${mix.id}`)}
+                    onOpen={() => {
+                      const activeSeed = typeof window !== "undefined" ? localStorage.getItem("euskalsoinua_daily_mix_seed") : null;
+                      const targetUrl = activeSeed ? `/playlist/${mix.id}?seed=${encodeURIComponent(activeSeed)}` : `/playlist/${mix.id}`;
+                      router.push(targetUrl);
+                    }}
                   />
                 </SectionCard>
               ))}

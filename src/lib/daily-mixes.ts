@@ -40,7 +40,7 @@ const BASQUE_ARTIST_NAMES = [
   "Zea Mays", "Su Ta Gar", "Esne Beltza", "Vendetta", "Gose", "Hesian",
   "Kepa Junkera", "Oreka TX", "Kortatu", "Hertzainak", "Negu Gorriak",
   "Streetwise", "Bizardunak", "Olaia Inziarte", "Tatta", "Belako",
-  "La Txama", "Anari", "Mikel Laboa", "Benito Lertxundi", "Skakeitan",
+  "La Txama", "Anari", "Añube", "Mikel Laboa", "Benito Lertxundi", "Skakeitan",
   "Glaukoma", "Doctor Deseo", "Itoiz", "Shinova", "Idoia", "Eñaut Elorrieta",
   "Olatz Salvador", "Brigade Loco", "Rotten XIII", "Lukiek", "Süne",
 ];
@@ -358,74 +358,115 @@ export async function generateDailyMixes(
       });
     }
 
-    // Score tracks in candidate pool
-    const scored = candidatePool.map((t) => {
-      let score = 0;
+    // Deterministic pseudo-random float generator based on track.id, seedNum, and mixIdx
+    const getTrackSeedHash = (trackId: number, salt: number = 0) => {
+      let h = (trackId ^ (seedNum * 1337 + mixIdx * 997 + salt * 41)) >>> 0;
+      h = Math.imul(h ^ (h >>> 16), 2246822507);
+      h = Math.imul(h ^ (h >>> 13), 3266489909);
+      return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+    };
+
+    // Separate candidate tracks into:
+    // 1) familiarPool (recently played by user, liked, or from top user-played artists in this theme)
+    // 2) discoveryPool (all other matching candidates in this theme)
+    const familiarCandidates: { track: Track; score: number }[] = [];
+    const discoveryCandidates: { track: Track; score: number }[] = [];
+
+    for (const t of candidatePool) {
       const normArtist = t.artistName.toLowerCase().trim();
       const normGenre = (t.genre || "").toLowerCase();
-
-      // Highest boost: Track was literally listened to by user in last month (+80)
       const isRecentlyListened = cluster.recentTracks.some((rt) => rt.id === t.id);
-      if (isRecentlyListened) {
-        score += 80;
+      const isLiked = likedTrackIds.has(t.id);
+      const artistPlayCount = cluster.artistFrequency.get(t.artistName.trim()) || 0;
+
+      // Base thematic score
+      let themeScore = 20;
+      if (def.keywords.some((k) => normGenre.includes(k))) themeScore += 25;
+      if (def.artistHints.some((ah) => normArtist.includes(ah.toLowerCase()))) themeScore += 20;
+      if (t.artistId && followedArtistIds.has(t.artistId)) themeScore += 15;
+
+      // Seed-based dynamic jitter (0 to 65) ensures track rotation whenever seed or day changes!
+      const randomJitter = getTrackSeedHash(t.id) * 65;
+
+      if (isRecentlyListened || isLiked || artistPlayCount > 0) {
+        let familiarityBonus = 0;
+        if (isRecentlyListened) familiarityBonus += 35;
+        if (isLiked) familiarityBonus += 25;
+        if (artistPlayCount > 0) familiarityBonus += Math.min(artistPlayCount * 5, 20);
+
+        familiarCandidates.push({
+          track: t,
+          score: themeScore + familiarityBonus + randomJitter,
+        });
+      } else {
+        discoveryCandidates.push({
+          track: t,
+          score: themeScore + randomJitter,
+        });
       }
+    }
 
-      // High boost: Artist was played by user in this cluster recently (+55)
-      const userPlayedArtistCount = cluster.artistFrequency.get(t.artistName.trim()) || 0;
-      if (userPlayedArtistCount > 0) {
-        score += 55 + Math.min(userPlayedArtistCount * 5, 25);
-      }
+    // Sort both pools by their seed-jittered scores
+    familiarCandidates.sort((a, b) => b.score - a.score);
+    discoveryCandidates.sort((a, b) => b.score - a.score);
 
-      // Keyword / genre match bonus (+30)
-      if (def.keywords.some((k) => normGenre.includes(k))) {
-        score += 30;
-      }
-
-      // Hint artist match bonus (+25)
-      if (def.artistHints.some((ah) => normArtist.includes(ah.toLowerCase()))) {
-        score += 25;
-      }
-
-      // User library signals
-      if (likedTrackIds.has(t.id)) score += 35;
-      if (t.artistId && followedArtistIds.has(t.artistId)) score += 25;
-
-      // Seed-based dynamic pseudo-random offset for day-to-day fresh variety
-      const dynamicOffset = ((t.id * 31 + seedNum * 17 + mixIdx * 89) % 37);
-      score += dynamicOffset;
-
-      return { track: t, score, isRecentlyListened };
-    });
-
-    // Sort descending by score
-    const sorted = scored.sort((a, b) => b.score - a.score);
-
-    // Variety cap: Max 2 tracks per artist per mix (relax to 3 if pool is tight)
+    // Pick up to 7 familiar tracks and up to 13 discovery tracks (total 20 tracks),
+    // strictly capping each artist at max 2 tracks for high diversity!
     const MAX_PER_ARTIST = 2;
     const artistCountMap = new Map<string, number>();
-    const selectedTracks: Track[] = [];
+    const selectedFamiliar: Track[] = [];
+    const selectedDiscovery: Track[] = [];
 
-    for (const { track } of sorted) {
+    for (const { track } of familiarCandidates) {
       const artKey = track.artistName.toLowerCase().trim();
       const count = artistCountMap.get(artKey) || 0;
       if (count < MAX_PER_ARTIST) {
-        selectedTracks.push(track);
+        selectedFamiliar.push(track);
         artistCountMap.set(artKey, count + 1);
       }
-      if (selectedTracks.length >= 20) break;
+      if (selectedFamiliar.length >= 7) break;
     }
 
-    // If still under 16 tracks, relax to 3 tracks per artist
-    if (selectedTracks.length < 16) {
-      for (const { track } of sorted) {
-        if (selectedTracks.some((st) => st.id === track.id)) continue;
+    for (const { track } of discoveryCandidates) {
+      const artKey = track.artistName.toLowerCase().trim();
+      const count = artistCountMap.get(artKey) || 0;
+      if (count < MAX_PER_ARTIST) {
+        selectedDiscovery.push(track);
+        artistCountMap.set(artKey, count + 1);
+      }
+      if (selectedFamiliar.length + selectedDiscovery.length >= 20) break;
+    }
+
+    // If still under 16 tracks, fill from remaining candidates
+    if (selectedFamiliar.length + selectedDiscovery.length < 16) {
+      const remaining = [...familiarCandidates, ...discoveryCandidates];
+      for (const { track } of remaining) {
+        if (selectedFamiliar.some((t) => t.id === track.id) || selectedDiscovery.some((t) => t.id === track.id)) continue;
         const artKey = track.artistName.toLowerCase().trim();
         const count = artistCountMap.get(artKey) || 0;
         if (count < 3) {
-          selectedTracks.push(track);
+          selectedDiscovery.push(track);
           artistCountMap.set(artKey, count + 1);
         }
-        if (selectedTracks.length >= 18) break;
+        if (selectedFamiliar.length + selectedDiscovery.length >= 18) break;
+      }
+    }
+
+    // Interleave familiar and discovery tracks seamlessly:
+    // (Familiar, Discovery, Discovery, Familiar, Discovery, Discovery...)
+    const selectedTracks: Track[] = [];
+    const fQueue = [...selectedFamiliar];
+    const dQueue = [...selectedDiscovery];
+
+    while (fQueue.length > 0 || dQueue.length > 0) {
+      if (fQueue.length > 0) {
+        selectedTracks.push(fQueue.shift()!);
+      }
+      if (dQueue.length > 0) {
+        selectedTracks.push(dQueue.shift()!);
+      }
+      if (dQueue.length > 0) {
+        selectedTracks.push(dQueue.shift()!);
       }
     }
 

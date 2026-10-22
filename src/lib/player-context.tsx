@@ -1371,7 +1371,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         }
         if (!query) return null;
 
-        const res = await fetch(`/api/radio?${query}`);
+        const res = await fetch(`/api/radio?${query}&_t=${Date.now()}`, {
+          cache: "no-store",
+        });
         const data = (await res.json()) as {
           tracks: Track[];
           playlistId: number;

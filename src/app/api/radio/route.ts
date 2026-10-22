@@ -122,9 +122,18 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({
-    playlistId: playlist.id,
-    tracks: radioTracks,
-    title: radioTitle,
-  });
+  return NextResponse.json(
+    {
+      playlistId: playlist.id,
+      tracks: radioTracks,
+      title: radioTitle,
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
+      },
+    },
+  );
 }

@@ -19,7 +19,12 @@ export async function GET(
 
   // If this is a Daily Mix ID (e.g. daily-mix-1, daily-mix-2, etc.)
   if (id.startsWith("daily-")) {
-    const mix = await getDailyMixById(id, syncKey);
+    const url = new URL(_request.url);
+    const querySeed = url.searchParams.get("seed");
+    const cookieSeed = cookieStore.get("daily_mix_seed")?.value;
+    const seed = querySeed || cookieSeed || undefined;
+
+    const mix = await getDailyMixById(id, syncKey, seed);
     if (!mix) return NextResponse.json({ error: "not found" }, { status: 404 });
     return NextResponse.json({
       playlist: {
