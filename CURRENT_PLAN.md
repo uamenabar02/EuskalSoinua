@@ -25,6 +25,10 @@
   - Strict `scoreHit` already rejects unrelated hits (`Anuel AA - Loco`) with `-999`.
 - Action: Monitor playback of "Loco" after edit; if wrong video still loads, verify the DB `externalId` for the track and check `loadTrackViaYouTube` routing.
 
+## Artist Disambiguation — Strict Suffix Filter (e.g., Vendetta vs Vendetta FM)
+- [ ] Implement strict suffix filter in `scoreHit`: reject hits where the hit author/title contains extra suffixes (`FM`, `Radio`) not present in the target artist, unless they are verified aliases (e.g., `- Topic`).
+- [ ] Verify that `Vendetta - Loco` resolves to the authentic Basque track and not `Vendetta FM`.
+
 ## New Compulsory Requirements (Both PC & Smartphone)
 - [x] FULL TRACK MODE ON: Always try `loadTrackViaYouTube`. No demo fallback.
 - [x] FULL TRACK MODE ON: If song cannot load, show error and try next song (`handleFullTrackError` → `goNext`).

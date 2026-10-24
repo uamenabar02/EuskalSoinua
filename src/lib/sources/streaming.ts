@@ -784,6 +784,29 @@ export function scoreHit(
   const artistCheck = checkArtistMatch(artist, hit.author, hit.title);
   const isShortCommon = isShortOrCommonTitle(title);
 
+  // STRICT SUFFIX FILTER: Reject hits with extra suffixes not in the target artist
+  // (e.g., "Vendetta FM" is NOT the same as "Vendetta")
+  const normalizedTargetArtist = norm(artist);
+  const normalizedHitAuthor = norm(hit.author);
+  const normalizedHitTitle = norm(hit.title);
+  if (normalizedTargetArtist && normalizedTargetArtist.length >= 2) {
+    // Extract extra words in hit author/title that aren't in the target artist
+    const targetWords = new Set(normalizedTargetArtist.split(/\s+/).filter((w) => w.length > 1));
+    const hitAuthorWords = normalizedHitAuthor.split(/\s+/).filter((w) => w.length > 1);
+    const hitTitleWords = normalizedHitTitle.split(/\s+/).filter((w) => w.length > 1);
+    const extraSuffixes = ["fm", "radio", "tv", "channel", "official", "mix", "remix", "live", "version"];
+    for (const word of [...hitAuthorWords, ...hitTitleWords]) {
+      // If the word is an extra suffix and the target artist doesn't contain it, reject
+      if (extraSuffixes.includes(word) && !targetWords.has(word) && !normalizedTargetArtist.includes(word)) {
+        // However, allow verified official patterns: "- Topic", official label channels
+        const isVerifiedPattern = /topic/i.test(hit.author) || /official/i.test(hit.title) || TRUSTED_BASQUE_LABELS.has(word);
+        if (!isVerifiedPattern && word !== "official" && word !== "audio" && word !== "video") {
+          return -999;
+        }
+      }
+    }
+  }
+
   // STRICT REQUIREMENT 2: For short or common song titles, STRICT ARTIST VERIFICATION IS MANDATORY!
   // If artist is specified and not matched in title or author, reject completely!
   if (a && isShortCommon && !artistCheck.matched) {
