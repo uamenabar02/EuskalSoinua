@@ -1,154 +1,75 @@
-# Granular Artist Discography Auditing, Removal & Disambiguation Engine
+# Robust Track Resolution & Smartphone Offline Playback Plan
 
-Comprehensive architectural plan to enable granular removal of any artist album or track (even those labeled "Verified Authentic") both via the Audit Discography modal and directly on the artist page, backed by a persistent exclusion blacklist and a fine-tuned Basque orthography and genre-conflict disambiguation engine.
+## 1. Problem Diagnosis & Root Causes
 
-## User Review & Critical Decisions
+### A. YouTube IFrame Resolution Failures & False Positive Matches
+1. **Short/Common Title False Positives (e.g., "Vendetta - Loco")**:
+   - In `src/lib/sources/streaming.ts`, `matchesTitle()` accepted plain substring matches `h.includes(t)`. For short single-word titles like "Loco" (or "Su", "Gaua", "Intro", "Hegoak"), any video containing the substring matched with maximum base score (80 points).
+   - In `scoreHit()`, when the artist was absent, only 30 points were deducted (80 - 30 = 50 points), which still exceeded the minimum acceptance threshold ($\ge 45$ points). As a result, viral videos like popular reggaeton songs or movie clips named "Loco" scored 50 and were mistakenly chosen over the authentic Basque ska-punk track by Vendetta.
+2. **Niche Basque Track Resolution Failures**:
+   - `resolveTrackForPlayback()` had an aggressive 3,500ms race timeout, abandoning query retries prematurely on slower mobile networks.
+   - Query generation restricted Basque term additions to tracks with an explicit `track.region === "eu"` tag, missing many catalog tracks where `region` was undefined.
+   - Queries lacked Basque music ecosystem patterns: major Basque labels (*Elkar*, *Gor Discos*, *Baga-Biga*, *Mauka*, *Gaztea*, *Panda Artist*) and official YouTube auto-generated art tracks (*"Artist - Topic"*).
+   - Missing duration validation allowed YouTube Shorts (<45s) or full-album compilations (>30m) to beat authentic 3-4 minute song tracks.
 
-> [!IMPORTANT]
-> The following decisions were confirmed by the user in Phase 1 clarification:
-> - **Removal Surfaces**: Users can remove verified authentic albums and individual songs both **inside the Audit modal** (with per-song checkboxes in expanded album views) and **directly on the artist page** (via quick-delete action triggers with confirmation).
-> - **Re-import Protection**: Manually removed albums and tracks will be **permanently blacklisted** in persistent storage so automated online catalog queries, full discography pulls, or background syncs will never re-import them.
-> - **Audit Disambiguation Fine-Tuning**: Priority is placed on **Basque lyrics and orthography checks** (character cluster scoring: *tx*, *tz*, *ts*, *lh*, *ñ*, *-tegi*, *-keta*, *-tasun*, *-ari*, Basque stopwords) paired with **genre conflict filters** (rejection of Regional Mexican, Sertanejo, Funk Carioca, Brazilian Trap, K-Pop, etc. sharing homonym artist names).
-
----
-
-## 1. Overview & Core Concept
-
-While automated disambiguation heuristics catch the vast majority of homonym mix-ups, real-world music catalog aggregators (such as Deezer, iTunes, and YouTube Music) occasionally cluster completely distinct artists under identical monikers. This feature empowers users to:
-1. Review, select, and remove any album or single track—even when initially evaluated as "Verified Authentic"—without UI locks.
-2. Remove individual tracks from within an album or compilation without deleting the entire release.
-3. Remove unwanted tracks or albums immediately on the artist page via intuitive contextual actions.
-4. Permanently tombstone/blacklist removed titles per artist so subsequent automated catalog pulls never re-pollute the catalog.
-5. Benefit from fine-tuned linguistic analysis (phonotactic Basque cluster analysis and genre conflict rejection) during automatic audits.
+### B. Smartphone Playback Interruption on Mobile Network Drops
+1. Track transitions currently trigger on-demand HTTP calls to `/api/stream-info` and YouTube. If internet drops or stutters during a walk or in the background, requests abort or timeout, stopping playback entirely.
+2. While `src/lib/downloads.ts` supports manual track downloads to IndexedDB, it is not connected to automatic playback caching for upcoming queue tracks.
 
 ---
 
-## 2. User Experience & Visual Design
+## 2. Proposed Architectural Solution
 
-### Key User Flows
-
-1. **Audit Modal Removal Flow**:
-   - The user opens "Check Discography" (`/artist/[id]`).
-   - The modal lists all albums categorized by status (Authentic, Flagged Foreign, Missing Online).
-   - All items have interactive multi-select checkboxes.
-   - Expanding an album displays the tracklist, where **each individual song** has its own checkbox and status indicator.
-   - The user can select individual songs or full albums to remove, whether flagged or authentic.
-   - The footer dynamically tallies: `"X songs to remove"`, `"Y albums to remove"`, `"Z to import"`, and the primary "Apply Changes" button remains active whenever any items are selected (even if `hasIssues === false`).
-   - On confirmation, the changes are written to the database, entries are blacklisted, and the artist page refreshes in place.
-
-2. **Direct Artist Page Quick-Removal Flow**:
-   - On `/artist/[id]`, each album header and track row features an accessible context action menu or quick-remove trigger (styled with an unboxed trash/ban icon `hover:text-red-400`).
-   - Clicking triggers an inline confirmation dialog: *"Remove '[Song/Album Title]' from [Artist]? This will also prevent it from being re-imported in future catalog scans."*
-   - On confirmation, the item is removed and added to the artist's permanent blacklist with an immediate toast notification.
-
-3. **Fine-Tuned Audit Insights**:
-   - The audit engine displays clear, human-readable rationales in natural prose (e.g. *"Matches Basque orthography clusters (tx, tz, -tegi)"* vs. *"Flagged: Foreign genre conflict (Música Mexicana / Corridos) on homonym artist"*).
-
-### Visual Identity & Theme
-- **Aesthetic Direction**: Clean, dark-mode audio client conforming to the *Mobile & Touch-First* and *Universal Frontend Design* guidelines. Unboxed text metadata with `·` separators, single-line labels, and high-contrast accessibility.
-- **Palette & Tokens**:
-  - Dominant Neutral: `#0c0d12` (canvas) with `rgba(255, 255, 255, 0.04)` structural cards.
-  - Accent: `#22c55e` (vibrant emerald brand green) for positive status and primary CTAs.
-  - Caution/Conflict: `#f59e0b` (amber) for suspected homonyms.
-  - Destructive: `#ef4444` (crimson red) for verified removals and blacklist markers.
-- **Touch & Ergonomics**:
-  - Touch target hitboxes $\ge 44 \times 44\text{px}$ across all mobile buttons, checkboxes, and row actions.
-  - Expandable tracklists with smooth, GPU-accelerated transitions.
+### Phase 1: Universal YouTube Resolution Engine (`src/lib/sources/streaming.ts` & `src/lib/playback.ts`)
+1. **Strict Artist Verification for Short/Common Titles**:
+   - Define dynamic detection: Titles with $\le 2$ words, $< 6$ characters, or matching common words (e.g., "Loco", "Intro", "Live", "Outro", "Remix", "Gaua", "Su") require **strict artist presence** in either the video title, description, or channel/uploader name.
+   - If artist is not found on a short-title track, reduce score by 75 points or disqualify immediately, preventing unrelated viral hits from ever passing the threshold.
+2. **Basque Music Ecosystem Search Strategy**:
+   - For all Basque catalog tracks or Basque-language queries, generate targeted query variants:
+     - `"${artist}" "${title}"` (exact quotes for high-precision search)
+     - `"${artist} - ${title} (Audio Oficial)"`
+     - `"${artist} - Topic ${title}"` (official YouTube Music auto-generated metadata)
+     - `"${artist} ${title} (Gor Discos OR Elkar OR Baga-Biga OR Mauka OR Gaztea)"`
+3. **Duration Bounds Checking**:
+   - When track duration is known (or estimated at ~3m30s), penalize results whose duration differs by $> 150$ seconds, preventing YouTube Shorts and multi-hour mixes from being selected.
+4. **Resilient Timeout & Multi-Candidate Evaluation**:
+   - Increase timeout ceiling to 6,500ms on mobile.
+   - Rank multiple candidates and keep fallback video IDs ready if the top candidate is region-blocked or fails playback event triggers.
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
-
-- **Blacklist Persistence Strategy**:
-  - *Decision*: Store blacklisted entities in an indexed `artist_exclusions` table (or dedicated persistent settings namespace with atomic operations) containing `artistId`, `artistName`, `entityType` (`album` | `track`), `normalizedTitle`, and `timestamp`.
-  - *Why*: Prevents recurring background syncs, `loadFullDiscography` queries, and search sync from ever re-inserting removed songs.
-  - *Alternative Considered*: In-memory session filters were rejected because page refreshes or external API calls would re-contaminate the database.
-
-- **Song-Level Granularity**:
-  - *Decision*: Allow removing individual songs from albums without deleting the entire album record. If all songs of an album are removed, the album shell is pruned automatically.
-  - *Why*: Many Basque compilations or split releases feature tracks by multiple artists where only 1 or 2 tracks belong to the artist in question.
-
-- **Non-Blocking UI for Authentic Items**:
-  - *Decision*: Decouple the "Apply Changes" button state from `auditData.hasIssues`. Enable the submit button whenever `selectedIds.size > 0` or `selectedTrackIds.size > 0`.
-  - *Why*: Fixes the issue where users couldn't apply changes to artists with 0 flagged issues.
+### Phase 2: Mobile Background Auto-Buffering & Offline Cache (`src/lib/playback-cache.ts` & `src/lib/player-context.tsx`)
+1. **Queue Pre-Resolver & Cache Worker**:
+   - When a track starts playing, automatically pre-resolve YouTube video IDs and pre-fetch audio streams for the **next 2 tracks in the queue**.
+   - Store resolved stream metadata and audio blobs in an LRU IndexedDB/CacheStorage buffer (`PlaybackCache`), keeping up to 10 recently played/upcoming tracks ready for immediate playback.
+2. **Seamless Offline Fallback**:
+   - In Full Track Mode, if network drops:
+     - Check `PlaybackCache` or `DownloadedTracks` for the current or next song.
+     - If local audio is cached, route the HTML5 `<audio>` element to the cached object URL seamlessly and render a subtle "Offline Playing" status badge.
+     - If no cached audio exists and YouTube IFrame reports an error (`code: 100`, `101`, `150`, or network offline), display a clean non-intrusive toast and immediately advance to the next playable track in the queue without crashing or freezing.
+3. **Mobile & Background Playback Optimization**:
+   - Configure `navigator.mediaSession` with full metadata (title, artist, album, artwork, playback state) so playback controls and audio keep running smoothly in lock screen and background states.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
-
-### Architecture & Component Diagram
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        CLIENT / UI LAYER                               │
-├───────────────────────────────────┬────────────────────────────────────┤
-│         Artist Page View          │         ArtistAuditModal           │
-│      (/artist/[id]/page.tsx)      │   (components/artist-audit-modal)  │
-│  - Quick-remove track/album action│   - Multi-select tabs              │
-│  - Optimistic removal state       │   - Per-album & per-song checks    │
-│  - Dynamic toast confirmation     │   - Authentic items selectable     │
-└─────────────────┬─────────────────┴─────────────────┬──────────────────┘
-                  │                                   │
-                  ▼                                   ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        API ROUTE HANDLERS                              │
-├────────────────────────────────────────────────────────────────────────┤
-│  POST /api/artist/[id]/audit-discography                               │
-│  - Accepts: { removeAlbumIds, removeTrackIds, importAlbumTitles }      │
-│  - Records persistent exclusions into artist blacklist table           │
-│  - Cascades track/album deletions from PostgreSQL                      │
-│                                                                        │
-│  POST /api/artist/[id]/exclude (or DELETE /api/tracks/[id])            │
-│  - Quick direct removal and blacklisting of single album or track      │
-└─────────────────────────────────┬──────────────────────────────────────┘
-                                  │
-                                  ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                      SERVICE / ENGINE LAYER                            │
-├─────────────────────────────────┬──────────────────────────────────────┤
-│       artist-audit.ts           │           sources/online.ts          │
-│  - auditArtistDiscography()     │  - isValidMatchForArtist()           │
-│  - applyArtistAuditChanges()    │  - isExcludedByBlacklist() check     │
-│  - getArtistBlacklist()         │  - Basque orthography analyzer       │
-│  - recordExclusions()           │  - Foreign genre conflict matrix     │
-└─────────────────────────────────┴──────────────────────────────────────┘
-                                  │
-                                  ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        DATABASE LAYER (PG)                             │
-├────────────────────────────────────────────────────────────────────────┤
-│  - artists, albums, tracks                                             │
-│  - artist_exclusions (syncKey, artistId, artistName, entityType, title)│
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-### Data Model & Persistence
-1. **Exclusions Schema / Store**:
-   - `artist_exclusions`:
-     - `artistId`: integer (nullable for global name matches)
-     - `artistName`: text (case-insensitive indexed)
-     - `entityType`: text (`album` | `track`)
-     - `title`: text (original title)
-     - `normalizedTitle`: text (lowercase, stripped punctuation, normalized accents)
-     - `createdAt`: timestamp
-2. **Exclusion Check Hook in Ingestion Pipeline**:
-   - Before inserting any track or album in `persistMatch`, `loadFullDiscography`, or `searchOnlineTracks`, query the exclusion registry. If `isExcludedByBlacklist(artistName, itemTitle, type) === true`, the item is discarded immediately.
-
-### Linguistic Disambiguation Fine-Tuning
-- **Basque Orthography Scoring**:
-  - Distinctive Basque phonemes and bigrams: `tx`, `tz`, `ts`, `lh`, `ñ`, `tt`, `dd`.
-  - Common Basque grammatical morphemes/suffixes: `-tegi`, `-keta`, `-tasun`, `-gune`, `-mendi`, `-zale`, `-lari`, `-aren`, `-ekin`, `-etan`, `-gatik`, `-koa`.
-  - High-frequency Basque function words: `eta`, `ez`, `ere`, `bat`, `hau`, `hori`, `hura`, `gu`, `zu`, `dira`, `ditu`, `ziren`, `naiz`, `zen`.
-- **Genre Conflict Matrix**:
-  - Rejection filters for genres incompatible with the Basque catalog for homonym artists: `corridos`, `sierreño`, `norteño`, `banda sinaloense`, `mariachi`, `sertanejo`, `funk carioca`, `pagode`, `forró`, `k-pop`, `trot`, `c-pop`.
-  - Collaborator check: Rejection if featured artist or producer matches known foreign homonym networks without Basque ties.
+### Phase 3: Internationalization & UX Consistency
+1. Update `src/lib/i18n/locales/en.ts`, `eu.ts`, and `es.ts` with localized strings for:
+   - Network offline status & offline playback indicators.
+   - YouTube resolution status messages (e.g., "Playing cached version", "Skipping unplayable track").
+2. Ensure touch targets on mobile player controls maintain $\ge 44\text{px}$ accessibility standards.
 
 ---
 
-## Verification & Acceptance Criteria
-1. User can open the Audit modal on any artist (including those with 0 issues) and freely select any "Verified Authentic" album or individual song for removal.
-2. Clicking "Apply Changes" deletes the selected items from the database and inserts corresponding blacklist records.
-3. Reloading or re-running "Load Full Catalog" does not re-import the blacklisted albums or songs.
-4. Direct removal actions on the artist page allow one-click deletion and blacklisting with instant UI feedback.
-5. All 20 existing test suites continue to pass without regression.
-6. Clean compilation (`next build`) and zero lint errors.
+## 3. Verification & Testing Plan
+
+1. **Automated Unit & Integration Tests**:
+   - `tests/youtube-resolution.test.ts`:
+     - Test short title disambiguation (e.g., "Vendetta - Loco" rejects generic "Loco" hits and accepts authentic "Vendetta - Loco").
+     - Test Basque label query generation and Basque artist ground truth tracks (Bengo, ZETAK, La Txama, Izaro, Anari, Streetwise, Bizardunak, Olaia Inziarte, Tatta, Belako).
+     - Test duration filter rejecting shorts and album mixes.
+   - `tests/playback-cache.test.ts`:
+     - Verify pre-buffering of upcoming queue items.
+     - Verify offline playback retrieval when `navigator.onLine === false`.
+2. **Regression & Quality Checks**:
+   - Run `npm test` across all 7+ test suites to ensure 100% pass rate.
+   - Run `lint_applet` and `compile_applet` to confirm clean builds.

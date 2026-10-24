@@ -628,36 +628,143 @@ export function matchesTitle(targetTitle: string, hitTitle: string): boolean {
   return matchedCount / activeWords.length >= 0.7;
 }
 
-const TRUSTED_BASQUE_LABELS = new Set([
+export const TRUSTED_BASQUE_LABELS = new Set([
   "elkar",
   "baga biga",
   "oso polita",
   "mauka",
+  "mauka musikagintza",
   "gor discos",
   "gor",
   "panda artist",
   "gaztea",
+  "gaztea irratia",
   "eitb",
   "airaka",
   "dabadaba",
   "harrobia",
+  "balio dute",
+  "muturke",
 ]);
 
 /**
- * Score a search hit against the desired track. We heavily reward hits whose
- * uploader matches the artist name and whose title matches the track title —
- * this keeps the result on the *official* channel and away from covers/remixes.
+ * Checks whether a track title is short, single-word, or very common.
+ * For such titles, strict artist matching is mandatory to prevent false-positive
+ * collisions with unrelated viral or mainstream pop songs (e.g. "Loco" matching
+ * unrelated reggaeton rather than Vendetta).
  */
-function scoreHit(hit: SearchHit, artist: string, title: string): number {
+export function isShortOrCommonTitle(title: string): boolean {
+  const c = cleanTitle(title);
+  if (!c) return true;
+  const words = c.split(/\s+/).filter(Boolean);
+  if (words.length <= 2) return true;
+  if (c.length <= 6) return true;
+  const common = new Set([
+    "loco", "loca", "intro", "outro", "interlude", "remix", "live", "acoustic",
+    "amor", "adios", "hola", "gaua", "su", "eguna", "amets", "bakarrik", "bidean",
+    "home", "alone", "dance", "stay", "fire", "free", "run", "one", "time", "love",
+    "musa", "txoria", "hegoak", "bideak", "ilunpean", "aitormena", "eskutitza", "zuri",
+    "ez", "bai", "zeru", "izar", "herria", "askatasuna"
+  ]);
+  return words.some((w) => common.has(w));
+}
+
+/**
+ * Verifies if the artist name (or any member in a multi-artist collaboration)
+ * is present in either the video channel/author or the video title.
+ */
+export function checkArtistMatch(
+  artist: string,
+  hitAuthor: string,
+  hitTitle: string,
+): {
+  matched: boolean;
+  isOfficialLabel: boolean;
+  isTopicChannel: boolean;
+  scoreBonus: number;
+} {
+  const a = norm(artist);
+  const hAuthor = norm(hitAuthor);
+  const hTitle = cleanTitle(hitTitle);
+  const rawHTitle = norm(hitTitle);
+
+  if (!a) {
+    return { matched: true, isOfficialLabel: false, isTopicChannel: false, scoreBonus: 0 };
+  }
+
+  const isTopicChannel =
+    hAuthor.includes("topic") &&
+    (hAuthor.includes(a) || a.includes(hAuthor.replace("topic", "").trim()));
+  const isOfficialLabel = Array.from(TRUSTED_BASQUE_LABELS).some((lbl) => hAuthor.includes(lbl));
+
+  // Multi-artist splitting (e.g. "Fane, LA TXAMA, Tatta & Chickjuarez" or "Bengo & Kixka")
+  const subArtists = a
+    .split(/[,&/]|(?:feat\.?)|(?:ft\.?)/)
+    .map((x) => norm(x))
+    .filter((x) => x.length >= 2);
+  if (!subArtists.includes(a)) subArtists.unshift(a);
+
+  for (const sa of subArtists) {
+    if (!sa) continue;
+    const escaped = sa.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const wordRegex = new RegExp(`(^|\\s|[-_–/])${escaped}(\\s|[-_–/]|$)`, "i");
+
+    if (wordRegex.test(hAuthor) || hAuthor.includes(sa) || sa.includes(hAuthor)) {
+      return {
+        matched: true,
+        isOfficialLabel,
+        isTopicChannel,
+        scoreBonus: isTopicChannel ? 80 : 65,
+      };
+    }
+
+    if (
+      wordRegex.test(hTitle) ||
+      wordRegex.test(rawHTitle) ||
+      hTitle.includes(sa) ||
+      rawHTitle.includes(sa)
+    ) {
+      return {
+        matched: true,
+        isOfficialLabel,
+        isTopicChannel,
+        scoreBonus: isOfficialLabel ? 65 : 50,
+      };
+    }
+  }
+
+  if (isOfficialLabel) {
+    return {
+      matched: false,
+      isOfficialLabel: true,
+      isTopicChannel: false,
+      scoreBonus: 15,
+    };
+  }
+
+  return { matched: false, isOfficialLabel: false, isTopicChannel: false, scoreBonus: 0 };
+}
+
+/**
+ * Score a search hit against the desired track.
+ * Enforces strict artist verification for short or common titles,
+ * checks duration bounds (rejecting YouTube shorts and multi-hour mixes),
+ * and rewards official Basque label and Topic uploads.
+ */
+export function scoreHit(
+  hit: SearchHit,
+  artist: string,
+  title: string,
+  targetDuration?: number,
+): number {
   const a = norm(artist);
   const t = cleanTitle(title);
   const coreT = extractCoreTitle(title);
   const rawT = norm(title);
   const hTitle = cleanTitle(hit.title);
   const rawHTitle = norm(hit.title);
-  const hAuthor = norm(hit.author);
 
-  // STRICT REQUIREMENT: The video title MUST match the track title.
+  // STRICT REQUIREMENT 1: The video title MUST match the track title.
   if (!matchesTitle(title, hit.title)) {
     return -999;
   }
@@ -665,45 +772,77 @@ function scoreHit(hit: SearchHit, artist: string, title: string): number {
   // Reject obvious user covers/reactions/karaoke unless requested in track title
   const isTargetCoverOrRemix = /cover|remix|reaction|karaoke|directo|live/i.test(title);
   if (!isTargetCoverOrRemix) {
-    if (/\b(?:cover|guitar cover|bass cover|drum cover|reaccion|reaction|tutorial|karaoke|instrumental remake)\b/i.test(hit.title)) {
+    if (
+      /\b(?:cover|guitar cover|bass cover|drum cover|reaccion|reaction|tutorial|karaoke|instrumental remake|8d audio)\b/i.test(
+        hit.title,
+      )
+    ) {
+      return -999;
+    }
+  }
+
+  const artistCheck = checkArtistMatch(artist, hit.author, hit.title);
+  const isShortCommon = isShortOrCommonTitle(title);
+
+  // STRICT REQUIREMENT 2: For short or common song titles, STRICT ARTIST VERIFICATION IS MANDATORY!
+  // If artist is specified and not matched in title or author, reject completely!
+  if (a && isShortCommon && !artistCheck.matched) {
+    return -999;
+  }
+
+  // Reject extreme durations (Shorts or full-album compilations)
+  if (hit.duration > 0) {
+    if (hit.duration < 35 && (!targetDuration || targetDuration > 50)) {
+      return -999;
+    }
+    if (hit.duration > 900 && (!targetDuration || targetDuration < 600)) {
       return -999;
     }
   }
 
   let score = 80; // Base score for verified title match
-
-  let artistMatch = false;
-  if (a) {
-    // Split multi-artists (e.g. "Fane, LA TXAMA, Tatta & Chickjuarez")
-    const subArtists = a.split(/[,&]/).map((x) => x.trim()).filter((x) => x.length > 2);
-    const matchesAnyArtist = subArtists.some((sa) => hAuthor.includes(sa) || sa.includes(hAuthor) || hTitle.includes(sa) || rawHTitle.includes(sa));
-
-    if (hAuthor.includes(a) || a.includes(hAuthor)) {
-      score += 65;
-      artistMatch = true;
-    } else if (hTitle.includes(a) || rawHTitle.includes(a) || matchesAnyArtist) {
-      score += 45;
-      artistMatch = true;
-    } else if (Array.from(TRUSTED_BASQUE_LABELS).some((lbl) => hAuthor.includes(lbl))) {
-      // Official Basque record label channel upload
-      score += 50;
-      artistMatch = true;
-    }
-  }
+  score += artistCheck.scoreBonus;
 
   // Exact full title match bonus
-  if ((t && (hTitle.includes(t) || rawHTitle.includes(rawT))) || (coreT && hTitle.includes(coreT))) {
+  if (
+    (t && (hTitle.includes(t) || rawHTitle.includes(rawT))) ||
+    (coreT && hTitle.includes(coreT))
+  ) {
     score += 40;
   }
 
-  // Penalize missing artist if an artist was specified
-  if (a && !artistMatch) {
-    score -= 30;
+  // Penalize missing artist if an artist was specified (for longer titles)
+  if (a && !artistCheck.matched) {
+    score -= 60;
+  }
+
+  // Duration proximity bonus/penalty
+  if (targetDuration && targetDuration > 0 && hit.duration > 0) {
+    const diff = Math.abs(hit.duration - targetDuration);
+    if (diff <= 25) {
+      score += 25;
+    } else if (diff <= 60) {
+      score += 10;
+    } else if (diff > 180) {
+      score -= 40;
+    }
+  }
+
+  // Official audio/video bonuses
+  if (
+    /official\s*(?:video|audio|music\s*video)|audio\s*oficial|bideoklipa|videoclip/i.test(
+      hit.title,
+    )
+  ) {
+    score += 25;
+  }
+  if (/\(audio\)|\(letra\)|\(lyrics\)/i.test(hit.title)) {
+    score += 15;
   }
 
   // Penalize covers/remixes unless that's in the target title
   if (!/live|cover|remix|karaoke|instrumental/.test(rawT)) {
-    if (/cover|remix|karaoke|instrumental/.test(rawHTitle)) score -= 45;
+    if (/cover|remix|karaoke|instrumental/.test(rawHTitle)) score -= 60;
   }
   return score;
 }
@@ -722,37 +861,60 @@ const VIDEO_ID_CACHE = new Map<string, { videoId: string; title: string; author:
 
 /**
  * Resolve a real YouTube videoId for a catalog track.
- * Employs multi-query permutations to reliably find niche Basque and international tracks.
+ * Employs exact-phrase queries, YouTube Music Topic queries, and Basque label
+ * search queries to reliably find niche Basque and international tracks.
  */
 export async function resolveVideoIdForTrack(input: {
   artist: string;
   title: string;
   region?: string | null;
+  duration?: number;
 }): Promise<{ videoId: string; title: string; author: string } | null> {
   const cacheKey = `${input.artist.toLowerCase()}:::${input.title.toLowerCase()}`;
   const cached = VIDEO_ID_CACHE.get(cacheKey);
   if (cached) return cached;
 
-  const rawQuery = `${input.artist} ${input.title}`.trim();
-  if (!rawQuery) return null;
+  const rawArtist = input.artist.trim();
+  const rawTitle = input.title.trim();
+  if (!rawArtist || !rawTitle) return null;
 
-  const cleanedTitle = cleanTitle(input.title);
-  const coreTitle = extractCoreTitle(input.title);
-  const queries = [rawQuery];
+  const cleanedTitle = cleanTitle(rawTitle);
+  const coreTitle = extractCoreTitle(rawTitle);
 
-  if (cleanedTitle && cleanedTitle !== input.title.toLowerCase().trim()) {
-    queries.push(`${input.artist} ${cleanedTitle}`);
+  // Exact phrase search is the #1 highest fidelity query for YouTube search
+  const queries: string[] = [
+    `"${rawArtist}" "${rawTitle}"`,
+    `${rawArtist} ${rawTitle}`,
+  ];
+
+  if (cleanedTitle && cleanedTitle !== rawTitle.toLowerCase()) {
+    queries.push(`"${rawArtist}" "${cleanedTitle}"`);
+    queries.push(`${rawArtist} ${cleanedTitle}`);
   }
-  if (coreTitle && coreTitle !== cleanedTitle && coreTitle !== input.title.toLowerCase().trim()) {
-    queries.push(`${input.artist} ${coreTitle}`);
+  if (coreTitle && coreTitle !== cleanedTitle && coreTitle !== rawTitle.toLowerCase()) {
+    queries.push(`"${rawArtist}" "${coreTitle}"`);
   }
 
-  // Query permutations for high resolution of niche Basque tracks
-  if (input.region === "eu" || /eu|basque/i.test(input.region || "")) {
-    queries.push(`${input.artist} ${coreTitle || input.title} audio`);
-    queries.push(`${input.artist} ${coreTitle || input.title} bideoklipa`);
+  // Official art tracks (YouTube Music Topic channels)
+  queries.push(`"${rawArtist} - Topic" "${coreTitle || cleanedTitle || rawTitle}"`);
+
+  // Basque audio & label queries
+  const isLikelyBasque =
+    input.region === "eu" ||
+    /eu|basque/i.test(input.region || "") ||
+    /bengo|zetak|txama|izaro|anari|streetwise|bizardunak|inziarte|tatta|belako|añube|berri|kortatu|negotu|su ta gar|vendetta|skakeitan|huntza|gatibu|etsak|delirium|esne beltza|glaukoma/i.test(
+      rawArtist,
+    ) ||
+    /tx|tz|ts|[ñ]/i.test(rawArtist) ||
+    /tx|tz|ts|[ñ]|gaua|amets|maite|aske|bihotz|bide|denbora/i.test(rawTitle);
+
+  if (isLikelyBasque) {
+    queries.push(`${rawArtist} ${coreTitle || rawTitle} audio oficial`);
+    queries.push(`${rawArtist} ${coreTitle || rawTitle} bideoklipa`);
+    queries.push(`${rawArtist} ${coreTitle || rawTitle} (Gor Discos OR Elkar OR Baga-Biga OR Mauka OR Gaztea)`);
   } else {
-    queries.push(`${input.artist} ${coreTitle || input.title} official audio`);
+    queries.push(`${rawArtist} ${coreTitle || rawTitle} official audio`);
+    queries.push(`${rawArtist} ${coreTitle || rawTitle} official video`);
   }
 
   let bestHitAcrossQueries: { hit: SearchHit; score: number } | null = null;
@@ -764,7 +926,7 @@ export async function resolveVideoIdForTrack(input: {
       let bestScore = -999;
 
       for (const h of hits.slice(0, 10)) {
-        const s = scoreHit(h, input.artist, input.title);
+        const s = scoreHit(h, input.artist, input.title, input.duration);
         if (s > bestScore) {
           best = h;
           bestScore = s;
@@ -790,7 +952,7 @@ export async function resolveVideoIdForTrack(input: {
       let invBest: SearchHit | null = null;
       let invBestScore = -999;
       for (const h of invHits.slice(0, 8)) {
-        const s = scoreHit(h, input.artist, input.title);
+        const s = scoreHit(h, input.artist, input.title, input.duration);
         if (s > invBestScore) {
           invBest = h;
           invBestScore = s;

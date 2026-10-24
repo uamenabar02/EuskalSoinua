@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for granular discography management (allowing removal of Verified Authentic albums and songs both in the Audit modal and on the artist page directly), permanent blacklist persistence against automated re-imports, and fine-tuned Basque lyrics/orthography and genre disambiguation filters.",
-  "updatedAt":  "2026-10-24T12:55:13.420511810Z",
+  "summary":  "Implementation plan to solve YouTube IFrame track resolution issues (including short-title mismatches like 'Vendetta - Loco' and niche Basque song discovery) and enable smartphone background caching and offline resilience for continuous playlist playback.",
+  "updatedAt":  "2026-10-24T13:37:00.425076485Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

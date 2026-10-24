@@ -11,6 +11,14 @@ import {
 } from "react";
 import type { Track, SponsorSegment, LyricLine } from "@/lib/types";
 import { getDownloadedUrl, getDownloadedUrlSync, isDownloadedSync, preloadDownloadedUrls } from "@/lib/downloads";
+import {
+  preloadPlaybackCache,
+  getBufferedAudioUrlSync,
+  getBufferedAudioUrl,
+  isAudioBufferedSync,
+  prebufferQueue,
+  getBufferedStreamInfo,
+} from "@/lib/playback-cache";
 import { useToast } from "@/lib/toast";
 
 // 5-band equalizer centre frequencies (Hz).
@@ -396,6 +404,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // load persisted prefs and pre-warm offline blob URLs
   useEffect(() => {
     preloadDownloadedUrls().catch(() => {});
+    preloadPlaybackCache().catch(() => {});
     fetch("/api/settings")
       .then((r) => r.json())
       .then((s) => {
@@ -831,10 +840,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       console.warn(`[Player] Full track failed for "${failedTrack.title}":`, reason);
       isTransitioningTrackRef.current = false;
 
-      // 1. Resilient offline rescue: Check if this track is actually stored offline in IndexedDB!
-      const offlineBlobUrl = await getDownloadedUrl(failedTrack.id, failedTrack.title, failedTrack.artistName).catch(() => null);
+      // 1. Resilient offline rescue: Check if this track is actually stored offline in IndexedDB or buffer!
+      const offlineBlobUrl =
+        getBufferedAudioUrlSync(failedTrack.id, failedTrack.title, failedTrack.artistName) ||
+        (await getBufferedAudioUrl(failedTrack.id, failedTrack.title, failedTrack.artistName).catch(() => null));
       if (offlineBlobUrl) {
-        toast(`Playing "${failedTrack.title}" from offline storage`, "💾");
+        toast(`Playing "${failedTrack.title}" from local cache`, "💾");
         setState((p) => ({
           ...p,
           engine: "audio",
@@ -886,9 +897,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     (track: Track, startTime = 0, explicitOfflineUrl?: string) => {
       const offlineUrl =
         explicitOfflineUrl ||
-        getDownloadedUrlSync(track.id, track.title, track.artistName);
+        getBufferedAudioUrlSync(track.id, track.title, track.artistName);
       // In FULL TRACK MODE, we strictly do NOT allow falling back to royalty-free audio!
-      // However, if the track is saved offline in IndexedDB, it IS the authentic full track recording.
+      // However, if the track is saved offline in IndexedDB or playback buffer, it IS the authentic recording.
       if (stateRef.current.fullTrackMode && !offlineUrl) {
         dispatchRef.current.handleFullTrackError(track, "Audio fallback blocked in Full Track Mode");
         return;
@@ -1060,11 +1071,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         (typeof window !== "undefined" && localStorage.getItem("euskalsoinua-offline-only") === "true");
 
       if (isDeviceOffline) {
-        // Check synchronous cache or IndexedDB for downloaded audio blob URL:
-        let offlineBlobUrl = getDownloadedUrlSync(track.id, track.title, track.artistName);
+        // Check synchronous cache or IndexedDB for downloaded audio blob URL or local buffer:
+        let offlineBlobUrl = getBufferedAudioUrlSync(track.id, track.title, track.artistName);
         if (!offlineBlobUrl) {
           ensureSilentAnchor();
-          offlineBlobUrl = await getDownloadedUrl(track.id, track.title, track.artistName).catch(() => null);
+          offlineBlobUrl = await getBufferedAudioUrl(track.id, track.title, track.artistName).catch(() => null);
         }
 
         if (offlineBlobUrl) {
@@ -1133,26 +1144,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // Lyrics and stream info load in background.
       loadTrackMeta(track);
 
-      // Pre-resolve stream info for the NEXT track in queue in background so transitions are instant
+      // Pre-buffer upcoming queue tracks in background for high-speed switching & offline resilience
       setTimeout(() => {
         const q = stateRef.current.queue;
         const currentIdx = q.findIndex((t) => t.id === track.id);
-        if (currentIdx >= 0 && currentIdx + 1 < q.length) {
-          const nextT = q[currentIdx + 1];
-          if (nextT && !streamInfoCacheRef.current.has(nextT.id)) {
-            fetch(`/api/stream-info?trackId=${nextT.id}&mode=${stateRef.current.fullTrackMode ? "full" : "preview"}`)
-              .then((r) => r.json())
-              .then((info) => {
-                if (info?.videoId || !stateRef.current.fullTrackMode) {
-                  streamInfoCacheRef.current.set(nextT.id, info);
-                }
-              })
-              .catch(() => {});
-          }
+        if (currentIdx >= 0) {
+          prebufferQueue(q, currentIdx, stateRef.current.fullTrackMode ? "full" : "preview");
         }
-      }, 600);
+      }, 500);
 
-      const cached = streamInfoCacheRef.current.get(track.id);
+      const bufferedInfo = getBufferedStreamInfo(track.id);
+      const cached = streamInfoCacheRef.current.get(track.id) || bufferedInfo;
       const knownVideoId = (cached?.videoId && /^[\w-]{11}$/.test(cached.videoId) && !failedEmbedVideoIds.has(cached.videoId))
         ? cached.videoId
         : (track.externalId && /^[\w-]{11}$/.test(track.externalId) && !failedEmbedVideoIds.has(track.externalId))
@@ -1207,8 +1209,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               dispatchRef.current.handleFullTrackError(track, "Track unavailable on YouTube");
             }
           })
-          .catch(() => {
+          .catch(async () => {
             if (stateRef.current.current?.id === track.id) {
+              // Resilient offline fallback: check if song is in local audio buffer
+              const fallbackAudioUrl = await getBufferedAudioUrl(track.id, track.title, track.artistName);
+              if (fallbackAudioUrl) {
+                toast(`Playing "${track.title}" from local cache`, "💾");
+                setState((p) => ({
+                  ...p,
+                  engine: "audio",
+                  provider: "offline",
+                  streamingConfigured: true,
+                  buffering: false,
+                  isPlaying: true,
+                }));
+                loadTrackViaAudio(track, 0, fallbackAudioUrl);
+                return;
+              }
               const offlineNow =
                 (typeof navigator !== "undefined" && !navigator.onLine) ||
                 (typeof window !== "undefined" && localStorage.getItem("euskalsoinua-offline-only") === "true");
@@ -1341,6 +1358,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           }, 400);
         }
       }
+      prebufferQueue(tracks, i, stateRef.current.fullTrackMode ? "full" : "preview");
     },
     [ensureSilentAnchor, loadTrack, preWarmAudio],
   );

@@ -312,7 +312,11 @@ function PlayerTab() {
       </div>
 
       <div className="flex items-center justify-center gap-2 mt-3">
-        {p.engine === "youtube" ? (
+        {p.provider === "offline" ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide">
+            <Check size={11} strokeWidth={3} /> Offline Cache · Full Track
+          </span>
+        ) : p.engine === "youtube" ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 text-accent px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide">
             <Radio size={11} /> Full song · YouTube
           </span>

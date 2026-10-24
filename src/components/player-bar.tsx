@@ -88,7 +88,7 @@ export function PlayerBar() {
                 e.stopPropagation();
                 p.togglePlay();
               }}
-              className="grid place-items-center h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 transition"
+              className="grid place-items-center min-h-[44px] min-w-[44px] h-11 w-11 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 transition"
             >
               {p.isPlaying ? (
                 <Pause size={20} fill="currentColor" />
@@ -103,7 +103,7 @@ export function PlayerBar() {
                   p.togglePlayerHidden();
                 }
               }}
-              className="grid place-items-center h-10 w-10 text-textdim hover:text-ink shrink-0 cursor-pointer"
+              className="grid place-items-center min-h-[44px] min-w-[44px] h-11 w-11 text-textdim hover:text-ink shrink-0 cursor-pointer"
               title={t("player.hidePlayer")}
             >
               <EyeOff size={18} />

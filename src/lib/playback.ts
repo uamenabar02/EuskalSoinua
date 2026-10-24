@@ -88,13 +88,14 @@ export async function resolveTrackForPlayback(trackId: number, mode?: "full" | "
   // If we need videoId for full mode and it's missing:
   if (!videoId && isStreamingConfigured()) {
     if (mode === "full") {
-      // In full-track mode, search YouTube directly
+      // In full-track mode, search YouTube directly with generous timeout for mobile connections
       const hitPromise = resolveVideoIdForTrack({
         artist: track.artistName,
         title: track.title,
         region: track.region,
+        duration: track.duration || 0,
       });
-      const timeoutPromise = new Promise<null>((res) => setTimeout(() => res(null), 3500));
+      const timeoutPromise = new Promise<null>((res) => setTimeout(() => res(null), 6500));
       const hit = await Promise.race([hitPromise, timeoutPromise]);
       if (hit?.videoId) {
         videoId = hit.videoId;
@@ -123,6 +124,7 @@ export async function resolveTrackForPlayback(trackId: number, mode?: "full" | "
         artist: track.artistName,
         title: track.title,
         region: track.region,
+        duration: track.duration || 0,
       })
         .then((hit) => {
           if (hit?.videoId) {
