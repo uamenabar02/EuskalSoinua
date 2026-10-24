@@ -20,6 +20,7 @@ import {
   getBufferedStreamInfo,
 } from "@/lib/playback-cache";
 import { useToast } from "@/lib/toast";
+import { clearVideoIdCache } from "@/lib/sources/streaming";
 
 // 5-band equalizer centre frequencies (Hz).
 const EQ_FREQS = [60, 230, 910, 3600, 14000];
@@ -599,6 +600,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           const vid = ytVideoIdRef.current;
           if (vid && (errCode === 101 || errCode === 150 || errCode === 100)) {
             failedEmbedVideoIds.add(vid);
+            // Clear cached resolution for this track so the next attempt searches fresh
+            const t = stateRef.current.current;
+            if (t) clearVideoIdCache(t.artistName, t.title);
           }
           const t = stateRef.current.current;
           if (t) {

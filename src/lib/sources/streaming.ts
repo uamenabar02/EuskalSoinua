@@ -859,6 +859,16 @@ async function searchInvidious(query: string): Promise<SearchHit[]> {
 
 const VIDEO_ID_CACHE = new Map<string, { videoId: string; title: string; author: string }>();
 
+/** Clear a cached video resolution for a specific artist/title pair. */
+export function clearVideoIdCache(artist: string, title: string) {
+  const prefix = `${artist.toLowerCase()}:::${title.toLowerCase()}`;
+  for (const key of VIDEO_ID_CACHE.keys()) {
+    if (key.startsWith(prefix)) {
+      VIDEO_ID_CACHE.delete(key);
+    }
+  }
+}
+
 /**
  * Resolve a real YouTube videoId for a catalog track.
  * Employs exact-phrase queries, YouTube Music Topic queries, and Basque label
@@ -870,7 +880,7 @@ export async function resolveVideoIdForTrack(input: {
   region?: string | null;
   duration?: number;
 }): Promise<{ videoId: string; title: string; author: string } | null> {
-  const cacheKey = `${input.artist.toLowerCase()}:::${input.title.toLowerCase()}`;
+  const cacheKey = `${input.artist.toLowerCase()}:::${input.title.toLowerCase()}::d:${input.duration ?? 0}::r:${(input.region || '').toLowerCase()}`;
   const cached = VIDEO_ID_CACHE.get(cacheKey);
   if (cached) return cached;
 
