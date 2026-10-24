@@ -30,7 +30,7 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const result = await applyArtistAuditChanges(Number(id), {
+    const result = await applyArtistAuditChanges(id, {
       removeAlbumIds: body.removeAlbumIds || [],
       importAlbumTitles: body.importAlbumTitles || [],
       removeTrackIds: body.removeTrackIds || [],

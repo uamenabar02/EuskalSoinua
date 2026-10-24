@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { artists, albums, tracks } from "@/db/schema";
-import { eq, ilike, or, inArray, desc } from "drizzle-orm";
+import { eq, ilike, or, inArray, desc, and } from "drizzle-orm";
 import {
   getFullDiscography,
   isValidMatchForArtist,
@@ -9,9 +9,17 @@ import {
   BASQUE_DISAMBIGUATION,
   type OnlineMatch,
 } from "@/lib/sources/online";
+import { recordArtistExclusions } from "@/lib/artist-exclusions";
 
 export type AlbumAuditStatus = "flagged_foreign" | "authentic" | "missing_online";
 export type SuggestedAction = "remove" | "keep" | "import";
+
+export interface AuditTrackDetail {
+  id: number;
+  title: string;
+  status: "authentic" | "flagged_foreign";
+  reason?: string;
+}
 
 export interface AuditAlbumItem {
   id: number | string;
@@ -22,6 +30,7 @@ export interface AuditAlbumItem {
   trackCount: number;
   tracks: string[];
   trackIds?: number[];
+  trackItems?: AuditTrackDetail[];
   status: AlbumAuditStatus;
   reason: string;
   suggestedAction: SuggestedAction;
@@ -99,7 +108,7 @@ export async function auditArtistDiscography(
     (artistRow.genre && artistRow.genre.toLowerCase().includes("basque")) ||
     Boolean(BASQUE_DISAMBIGUATION[artistName.toLowerCase().trim()]);
 
-  // 1. Fetch all local albums and tracks currently in DB
+  // 1. Fetch all local albums and tracks currently in DB (including homonym candidates)
   const localAlbums = await db
     .select()
     .from(albums)
@@ -107,6 +116,7 @@ export async function auditArtistDiscography(
       or(
         eq(albums.artistId, artistRow.id),
         ilike(albums.artistName, artistName),
+        ilike(albums.artistName, `%${artistName}%`),
       ),
     )
     .orderBy(desc(albums.year));
@@ -118,6 +128,7 @@ export async function auditArtistDiscography(
       or(
         eq(tracks.artistId, artistRow.id),
         ilike(tracks.artistName, artistName),
+        ilike(tracks.artistName, `%${artistName}%`),
       ),
     )
     .orderBy(desc(tracks.playCount));
@@ -142,27 +153,42 @@ export async function auditArtistDiscography(
 
   // 2. Audit each local album
   for (const alb of localAlbums) {
-    localAlbumNormTitles.add(normalize(alb.title));
+    const isExactArtist =
+      alb.artistId === artistRow.id ||
+      (alb.artistName && alb.artistName.toLowerCase().trim() === artistName.toLowerCase().trim());
+
     const albTracks = albumTracksMap.get(alb.id) || [];
     const trackTitles = albTracks.map((t) => t.title);
     const trackIds = albTracks.map((t) => t.id);
 
-    // Run disambiguation check on album
-    const isAlbValid = isValidMatchForArtist(artistName, {
-      title: alb.title,
-      album: alb.title,
-      genre: alb.genre,
+    // Track-level disambiguation check
+    const trackItems: AuditTrackDetail[] = albTracks.map((t) => {
+      const isValid = isValidMatchForArtist(artistName, {
+        title: t.title,
+        album: t.albumName,
+        genre: t.genre,
+        artist: t.artistName,
+      });
+      return {
+        id: t.id,
+        title: t.title,
+        status: isValid ? "authentic" : "flagged_foreign",
+        reason: isValid ? "Verified authentic track" : "Foreign collision / genre mismatch",
+      };
     });
 
+    // Run disambiguation check on album
+    const isAlbValid =
+      isExactArtist &&
+      isValidMatchForArtist(artistName, {
+        title: alb.title,
+        album: alb.title,
+        genre: alb.genre,
+        artist: alb.artistName,
+      });
+
     // Run disambiguation check on each track in album
-    const invalidTracks = albTracks.filter(
-      (t) =>
-        !isValidMatchForArtist(artistName, {
-          title: t.title,
-          album: t.albumName,
-          genre: t.genre,
-        }),
-    );
+    const invalidTracks = trackItems.filter((t) => t.status === "flagged_foreign");
 
     const isFlagged = !isAlbValid || invalidTracks.length > 0;
 
@@ -173,11 +199,15 @@ export async function auditArtistDiscography(
     if (isFlagged) {
       status = "flagged_foreign";
       suggestedAction = "remove";
-      if (!isAlbValid) {
+      if (!isExactArtist) {
+        reason = `Foreign homonym artist collision ('${alb.artistName}').`;
+      } else if (!isAlbValid) {
         reason = `Album title or genre ('${alb.genre || "unrelated"}') matches foreign namesake collision.`;
       } else {
         reason = `Contains ${invalidTracks.length} track(s) matching foreign homonym or genre mismatch (e.g., "${invalidTracks[0]?.title}").`;
       }
+    } else {
+      localAlbumNormTitles.add(normalize(alb.title));
     }
 
     auditedItems.push({
@@ -189,6 +219,7 @@ export async function auditArtistDiscography(
       trackCount: albTracks.length || alb.trackCount || 0,
       tracks: trackTitles,
       trackIds,
+      trackItems,
       status,
       reason,
       suggestedAction,
@@ -196,11 +227,19 @@ export async function auditArtistDiscography(
     });
   }
 
-  // Check unassigned tracks for foreign collisions
+  // Check unassigned tracks for foreign collisions and authentic singles
   if (unassignedTracks.length > 0) {
     const invalidUnassigned = unassignedTracks.filter(
       (t) =>
         !isValidMatchForArtist(artistName, {
+          title: t.title,
+          album: t.albumName,
+          genre: t.genre,
+        }),
+    );
+    const validUnassigned = unassignedTracks.filter(
+      (t) =>
+        isValidMatchForArtist(artistName, {
           title: t.title,
           album: t.albumName,
           genre: t.genre,
@@ -217,9 +256,38 @@ export async function auditArtistDiscography(
         trackCount: invalidUnassigned.length,
         tracks: invalidUnassigned.map((t) => t.title),
         trackIds: invalidUnassigned.map((t) => t.id),
+        trackItems: invalidUnassigned.map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: "flagged_foreign",
+          reason: "Standalone track detected as foreign namesake collision.",
+        })),
         status: "flagged_foreign",
         reason: `${invalidUnassigned.length} standalone track(s) detected as foreign namesake collisions.`,
         suggestedAction: "remove",
+        isLocal: true,
+      });
+    }
+
+    if (validUnassigned.length > 0) {
+      auditedItems.push({
+        id: "unassigned_authentic",
+        title: "Singles & Other Authentic Releases",
+        artistName,
+        thumbnail: null,
+        year: null,
+        trackCount: validUnassigned.length,
+        tracks: validUnassigned.map((t) => t.title),
+        trackIds: validUnassigned.map((t) => t.id),
+        trackItems: validUnassigned.map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: "authentic",
+          reason: "Verified authentic track",
+        })),
+        status: "authentic",
+        reason: `${validUnassigned.length} standalone authentic track(s).`,
+        suggestedAction: "keep",
         isLocal: true,
       });
     }
@@ -298,7 +366,7 @@ export async function auditArtistDiscography(
  * Applies the user-confirmed changes to the artist's discography.
  */
 export async function applyArtistAuditChanges(
-  artistId: number,
+  artistIdOrName: number | string,
   options: {
     removeAlbumIds?: (number | string)[];
     importAlbumTitles?: string[];
@@ -310,11 +378,31 @@ export async function applyArtistAuditChanges(
   importedAlbumsCount: number;
   removedTracksCount: number;
 }> {
-  const [artistRow] = await db
-    .select()
-    .from(artists)
-    .where(eq(artists.id, artistId))
-    .limit(1);
+  let artistRow: any = null;
+  const isNumeric =
+    typeof artistIdOrName === "number" ||
+    (!isNaN(Number(artistIdOrName)) &&
+      !String(artistIdOrName).includes("%") &&
+      String(artistIdOrName).trim() !== "");
+
+  if (isNumeric) {
+    const rows = await db
+      .select()
+      .from(artists)
+      .where(eq(artists.id, Number(artistIdOrName)))
+      .limit(1);
+    artistRow = rows[0];
+  } else {
+    const nameStr = decodeURIComponent(String(artistIdOrName)).trim();
+    if (nameStr) {
+      const rows = await db
+        .select()
+        .from(artists)
+        .where(ilike(artists.name, nameStr))
+        .limit(1);
+      artistRow = rows[0];
+    }
+  }
 
   if (!artistRow) {
     throw new Error("Artist not found");
@@ -324,7 +412,14 @@ export async function applyArtistAuditChanges(
   let removedTracksCount = 0;
   let importedAlbumsCount = 0;
 
-  // 1. Remove selected albums and their tracks
+  const exclusionsToRecord: Array<{
+    entityType: "album" | "track";
+    title: string;
+    artistId?: number | null;
+    reason?: string;
+  }> = [];
+
+  // 1. Remove selected albums and ALL associated tracks
   if (options.removeAlbumIds && options.removeAlbumIds.length > 0) {
     const numericAlbumIds = options.removeAlbumIds
       .filter(
@@ -335,29 +430,121 @@ export async function applyArtistAuditChanges(
       .map(Number);
 
     if (numericAlbumIds.length > 0) {
-      // Delete all tracks associated with these albums
-      const deletedTracks = await db
+      // Find albums to get their titles and artist names before deletion
+      const albsToDelete = await db
+        .select()
+        .from(albums)
+        .where(inArray(albums.id, numericAlbumIds));
+
+      const albTitles = albsToDelete
+        .map((a: { title?: string | null }) => a.title)
+        .filter((t: string | null | undefined): t is string => Boolean(t));
+      const foreignArtistNames = albsToDelete
+        .map((a: { artistName?: string | null }) => a.artistName)
+        .filter(
+          (name: string | null | undefined): name is string =>
+            Boolean(name && name.toLowerCase().trim() !== artistRow.name.toLowerCase().trim()),
+        );
+
+      // Record albums in blacklist
+      for (const a of albsToDelete) {
+        if (a.title) {
+          exclusionsToRecord.push({
+            entityType: "album",
+            title: a.title,
+            artistId: artistRow.id,
+            reason: "manual_audit_removal",
+          });
+        }
+      }
+
+      // Record tracks inside those albums in blacklist so they won't re-ingest as orphan singles
+      const tracksInAlbs = await db
+        .select({ title: tracks.title })
+        .from(tracks)
+        .where(inArray(tracks.albumId, numericAlbumIds));
+      for (const tr of tracksInAlbs) {
+        if (tr.title) {
+          exclusionsToRecord.push({
+            entityType: "track",
+            title: tr.title,
+            artistId: artistRow.id,
+            reason: "manual_audit_album_removal",
+          });
+        }
+      }
+
+      // A) Delete tracks by albumId
+      const del1 = await db
         .delete(tracks)
         .where(inArray(tracks.albumId, numericAlbumIds))
         .returning({ id: tracks.id });
-      removedTracksCount += deletedTracks.length;
+      removedTracksCount += del1.length;
 
-      // Delete the albums themselves
-      const deletedAlbums = await db
+      // B) Delete tracks by albumName if any were unlinked or had null albumId
+      if (albTitles.length > 0) {
+        const del2 = await db
+          .delete(tracks)
+          .where(
+            and(
+              inArray(tracks.albumName, albTitles),
+              or(
+                eq(tracks.artistId, artistRow.id),
+                ilike(tracks.artistName, artistRow.name),
+                ilike(tracks.artistName, `%${artistRow.name}%`),
+              ),
+            ),
+          )
+          .returning({ id: tracks.id });
+        removedTracksCount += del2.length;
+      }
+
+      // C) If albums were by a foreign homonym (e.g. "Dupla Real", "DUPLA 02"), delete their tracks too
+      for (const fName of foreignArtistNames) {
+        const del3 = await db
+          .delete(tracks)
+          .where(ilike(tracks.artistName, fName))
+          .returning({ id: tracks.id });
+        removedTracksCount += del3.length;
+      }
+
+      // D) Delete the album records themselves
+      const delAlbums = await db
         .delete(albums)
         .where(inArray(albums.id, numericAlbumIds))
         .returning({ id: albums.id });
-      removedAlbumsCount += deletedAlbums.length;
+      removedAlbumsCount += delAlbums.length;
     }
   }
 
-  // 2. Remove any individual tracks explicitly selected (e.g., from unassigned tracks)
+  // 2. Remove any individual tracks explicitly selected (e.g., from unassigned tracks or single songs in albums)
   if (options.removeTrackIds && options.removeTrackIds.length > 0) {
+    const tracksToDelete = await db
+      .select({ id: tracks.id, title: tracks.title })
+      .from(tracks)
+      .where(inArray(tracks.id, options.removeTrackIds));
+
+    for (const tr of tracksToDelete) {
+      if (tr.title) {
+        exclusionsToRecord.push({
+          entityType: "track",
+          title: tr.title,
+          artistId: artistRow.id,
+          reason: "manual_individual_track_removal",
+        });
+      }
+    }
+
     const deletedTracks = await db
       .delete(tracks)
       .where(inArray(tracks.id, options.removeTrackIds))
       .returning({ id: tracks.id });
     removedTracksCount += deletedTracks.length;
+  }
+
+  // Persist all exclusions to blacklist permanently
+  if (exclusionsToRecord.length > 0) {
+    await recordArtistExclusions(artistRow.name, exclusionsToRecord);
   }
 
   // 3. Import selected missing albums from online sources

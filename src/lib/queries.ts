@@ -739,13 +739,19 @@ export async function getArtist(idOrName: number | string) {
     .where(
       or(
         eq(tracks.artistId, id),
-        ilike(tracks.artistName, `%${row.name}%`)
+        ilike(tracks.artistName, row.name),
+        ilike(tracks.artistName, `${row.name} & %`),
+        ilike(tracks.artistName, `% & ${row.name}`),
+        ilike(tracks.artistName, `${row.name} feat%`),
+        ilike(tracks.artistName, `${row.name} ft%`),
+        ilike(tracks.artistName, `${row.name}, %`),
+        ilike(tracks.artistName, `%, ${row.name}`)
       )
     )
     .orderBy(desc(tracks.playCount));
 
   const validTrackRows = trackRows.filter((t: any) =>
-    isValidMatchForArtist(row.name, { title: t.title, album: t.albumName, genre: t.genre })
+    isValidMatchForArtist(row.name, { title: t.title, album: t.albumName, genre: t.genre, artist: t.artistName })
   );
 
   const likedSet = await likedIds();
@@ -756,13 +762,13 @@ export async function getArtist(idOrName: number | string) {
     .where(
       or(
         eq(albums.artistId, id),
-        ilike(albums.artistName, `%${row.name}%`)
+        ilike(albums.artistName, row.name)
       )
     )
     .orderBy(desc(albums.year));
 
   const validAlbumRows = albumRows.filter((a: any) =>
-    isValidMatchForArtist(row.name, { title: a.title, album: a.title, genre: a.genre })
+    isValidMatchForArtist(row.name, { title: a.title, album: a.title, genre: a.genre, artist: a.artistName })
   );
 
   const savedSet = await savedAlbumIds();

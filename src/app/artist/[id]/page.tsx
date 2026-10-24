@@ -10,7 +10,7 @@ import { AlbumCard, BasqueBadge } from "@/components/cards";
 import { CoverArt } from "@/components/cover";
 import { Section, SectionCard } from "@/components/sections";
 import type { Track, Artist, Album } from "@/lib/types";
-import { Radio, Loader2, ShieldCheck } from "lucide-react";
+import { Radio, Loader2, ShieldCheck, Trash2 } from "lucide-react";
 import { ArtistAuditModal } from "@/components/artist-audit-modal";
 import { usePlayer } from "@/lib/player-context";
 import { useToast } from "@/lib/toast";
@@ -78,6 +78,80 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingRadio, setLoadingRadio] = useState(false);
   const [showAuditModal, setShowAuditModal] = useState(false);
+  const [confirmItem, setConfirmItem] = useState<{ type: "album" | "track"; id?: number; title: string } | null>(null);
+  const [removing, setRemoving] = useState(false);
+
+  const handleRequestTrackRemove = (track: Track) => {
+    setConfirmItem({
+      type: "track",
+      id: track.id,
+      title: track.title,
+    });
+  };
+
+  const handleRequestAlbumRemove = (albumId: number | null, albumName: string) => {
+    setConfirmItem({
+      type: "album",
+      id: albumId ?? undefined,
+      title: albumName,
+    });
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!confirmItem || !data?.artist) return;
+    setRemoving(true);
+    try {
+      const res = await fetch(`/api/artist/${encodeURIComponent(data.artist.id ?? artistParam ?? data.artist.name)}/exclude`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entityType: confirmItem.type,
+          title: confirmItem.title,
+          itemId: confirmItem.id,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to remove item");
+      }
+
+      toast(
+        confirmItem.type === "album"
+          ? t("artist.albumRemovedToast", { title: confirmItem.title })
+          : t("artist.trackRemovedToast", { title: confirmItem.title }),
+        "🗑️",
+      );
+
+      // Optimistically prune from state
+      setData((prev) => {
+        if (!prev) return prev;
+        if (confirmItem.type === "track") {
+          return {
+            ...prev,
+            tracks: prev.tracks.filter(
+              (t) => t.id !== confirmItem.id && t.title.toLowerCase().trim() !== confirmItem.title.toLowerCase().trim(),
+            ),
+          };
+        } else {
+          return {
+            ...prev,
+            albums: prev.albums.filter(
+              (a) => a.id !== confirmItem.id && a.title.toLowerCase().trim() !== confirmItem.title.toLowerCase().trim(),
+            ),
+            tracks: prev.tracks.filter(
+              (t) => t.albumId !== confirmItem.id && t.albumName?.toLowerCase().trim() !== confirmItem.title.toLowerCase().trim(),
+            ),
+          };
+        }
+      });
+      setConfirmItem(null);
+    } catch (err: any) {
+      toast(err.message || "Failed to remove item", "⚠️");
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   useEffect(() => {
     params.then((p) => setArtistParam(p.id));
@@ -92,8 +166,8 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
       })
       .then((initialData) => {
         setData(initialData);
-        // Automatically pull full catalog from online sources if track count is small
-        if (initialData?.artist?.name && initialData.tracks.length < 20) {
+        // Automatically pull catalog from online sources only if zero tracks are cached yet
+        if (initialData?.artist?.name && initialData.tracks.length === 0) {
           fetch(`/api/discography?artist=${encodeURIComponent(initialData.artist.name)}`)
             .then(() => fetch(`/api/artist/${encodeURIComponent(initialData.artist.id ?? artistParam)}`))
             .then((r) => r.json())
@@ -248,7 +322,7 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
             {popular.length ? (
               <section className="mb-10">
                 <h2 className="text-lg sm:text-xl font-bold mb-3">{t("artist.popular")}</h2>
-                <TrackList tracks={popular} showAlbum={false} />
+                <TrackList tracks={popular} showAlbum={false} onRemove={handleRequestTrackRemove} />
               </section>
             ) : null}
 
@@ -268,28 +342,41 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
               <h2 className="text-lg sm:text-xl font-bold mb-4">{t("artist.songsByAlbum")}</h2>
               {grouped.albums.map((g) => (
                 <div key={g.key} className="mb-8">
-                  <Link
-                    href={`/album/${g.albumId}`}
-                    className="flex items-center gap-4 mb-2 group"
-                  >
-                    <CoverArt
-                      seed={`${g.name}-${artist.name}`}
-                      artwork={g.cover}
-                      label={g.name}
-                      rounded="rounded-lg"
-                      className="h-16 w-16 sm:h-20 sm:w-20 shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <div className="font-bold text-base sm:text-lg group-hover:underline truncate">
-                        {g.name}
+                  <div className="flex items-center justify-between gap-4 mb-2">
+                    <Link
+                      href={`/album/${g.albumId}`}
+                      className="flex items-center gap-4 group min-w-0 flex-1"
+                    >
+                      <CoverArt
+                        seed={`${g.name}-${artist.name}`}
+                        artwork={g.cover}
+                        label={g.name}
+                        rounded="rounded-lg"
+                        className="h-16 w-16 sm:h-20 sm:w-20 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-bold text-base sm:text-lg group-hover:underline truncate">
+                          {g.name}
+                        </div>
+                        <div className="text-xs text-textdim">
+                          {t("common.album")} · {g.tracks.length} {g.tracks.length === 1 ? t("common.songSingular") : t("common.songs")}
+                        </div>
                       </div>
-                      <div className="text-xs text-textdim">
-                        {t("common.album")} · {g.tracks.length} {g.tracks.length === 1 ? t("common.songSingular") : t("common.songs")}
-                      </div>
+                    </Link>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <PlayAllButton tracks={g.tracks} size="sm" />
+                      <button
+                        type="button"
+                        onClick={() => handleRequestAlbumRemove(g.albumId, g.name)}
+                        title={t("artist.removeAlbum")}
+                        aria-label={t("artist.removeAlbum")}
+                        className="h-8 w-8 rounded-full grid place-items-center text-textdim hover:text-red-400 hover:bg-red-500/10 transition cursor-pointer"
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </div>
-                    <PlayAllButton tracks={g.tracks} size="sm" />
-                  </Link>
-                  <TrackList tracks={g.tracks} showAlbum={false} />
+                  </div>
+                  <TrackList tracks={g.tracks} showAlbum={false} onRemove={handleRequestTrackRemove} />
                 </div>
               ))}
 
@@ -297,7 +384,7 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
               {grouped.singles.length ? (
                 <div className="mb-8">
                   <h3 className="font-bold text-base mb-2">{t("artist.singlesAndOther")}</h3>
-                  <TrackList tracks={grouped.singles} showAlbum={false} />
+                  <TrackList tracks={grouped.singles} showAlbum={false} onRemove={handleRequestTrackRemove} />
                 </div>
               ) : null}
             </section>
@@ -314,12 +401,78 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
                 <PlayAllButton tracks={tracks} />
               </div>
               <div className="mt-3">
-                <TrackList tracks={tracks} showAlbum />
+                <TrackList tracks={tracks} showAlbum onRemove={handleRequestTrackRemove} />
               </div>
             </section>
           </>
         )}
       </div>
+
+      {/* Direct Removal & Blacklist Confirmation Modal */}
+      {confirmItem && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => !removing && setConfirmItem(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-[#12131a] border border-white/10 shadow-2xl p-5 sm:p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-500/15 text-red-400 grid place-items-center shrink-0 mt-0.5">
+                <Trash2 size={20} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base sm:text-lg font-bold text-white">
+                  {t("artist.confirmRemoveTitle")}
+                </h3>
+                <p className="text-xs sm:text-sm text-textdim mt-1.5 leading-relaxed">
+                  {confirmItem.type === "album"
+                    ? t("artist.confirmRemoveAlbumDesc", {
+                        title: confirmItem.title,
+                        artist: artist.name,
+                      })
+                    : t("artist.confirmRemoveTrackDesc", {
+                        title: confirmItem.title,
+                        artist: artist.name,
+                      })}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setConfirmItem(null)}
+                disabled={removing}
+                className="px-4 py-2 rounded-full text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition cursor-pointer disabled:opacity-50"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRemove}
+                disabled={removing}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold bg-red-600 hover:bg-red-500 text-white transition cursor-pointer disabled:opacity-50"
+              >
+                {removing ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>{t("common.loading")}</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>{t("artist.removeAndBlacklist")}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAuditModal && artist && (
         <ArtistAuditModal

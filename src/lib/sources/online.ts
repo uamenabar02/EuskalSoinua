@@ -6,6 +6,10 @@ import { mapTrack } from "@/lib/mappers";
 import type { Track } from "@/lib/types";
 import { matchesTitle } from "@/lib/sources/streaming";
 import { splitArtistNames } from "@/lib/utils";
+import {
+  isArtistEntityBlacklistedSync,
+  isArtistEntityBlacklisted,
+} from "@/lib/artist-exclusions";
 
 /**
  * REAL ONLINE METADATA SEARCH
@@ -63,17 +67,28 @@ export const BASQUE_DISAMBIGUATION: Record<string, ArtistDisambiguation> = {
       "mundua pitzatzear dago", "haizea", "euskal herriko gazteak", "de un pueblo llamado agurain",
       "30's", "30s", "ongi etorri", "tirikitrauki", "l_s chaval_s", "chavales", "chaval_s", "artista",
       "otsaportillo", "el mejunje", "konforme", "kontraesanak", "tururu", "animali",
-      "un mal dia", "zugandik ihesi", "txiki", "mundua geldi", "01200", "eromeria",
-      "nahieran", "kata", "batukada", "skapa", "milenials", "dantza gaua", "somos asi"
+      "un mal dia", "un mal día", "zugandik ihesi", "txiki", "mundua geldi", "01200", "eromeria",
+      "nahieran", "kata", "batukada", "skapa", "milenials", "dantza gaua", "somos asi", "somos así",
+      "hamaika gara", "alta gama", "ronkola", "fandango nasty", "gtx", "elgarrekin", "celebrando",
+      "soy rico", "preocupau", "iñaki", "badator", "olatu berria", "ilargiaren semea", "animaliak solte",
+      "ezpainetan odola", "zortzi alaba dantzari", "karma occidental", "baimenik gabe", "atzo / gaur",
+      "guretzat", "goazen", "dupla (gutarrak live)"
     ],
     rejectedKeywords: [
       "concepto", "dmt", "dtm",
-      "regional mexicano", "mariachi", "corridos", "salsa", "cumbia", "bachata",
-      "ranchera", "norteño", "mexicano", "mexican", "mexico", "banda sinaloense",
-      "dupla de la sierra", "dupla ranchera", "bolero", "vallenato", "zouk", "kompa",
-      "afrobeat", "afrobeats", "amapiano", "congolese", "makossa", "kizomba", "rumba",
+      "dupla real", "la dupla", "dupla de la sierra", "dupla ranchera", "corridos de ultratumba", "los tiempos del chino",
+      "regional mexicano", "mariachi", "corridos", "corrido", "música mexicana", "musica mexicana", "salsa", "cumbia", "bachata",
+      "ranchera", "norteño", "norteno", "sierreño", "sierreno", "mexicano", "mexican", "mexico", "banda sinaloense",
+      "bolero", "vallenato", "jalisco",
+      "dupla 02", "dupla02", "dupla da paulista", "dupla sertaneja", "estético mixtape", "estetico mixtape", "fémy", "femy",
+      "famozin", "sophya", "pistoleiro", "balalayka", "bike (blv)", "crochê", "croche", "se for pra ser", "por dentro e por fora",
+      "melhor do mundo", "aguei", "saborosa", "rosynha", "russyan tanjiro", "gummy baby", "leyla", "vamos fugir",
+      "deslocado de sexta", "acorda, pedrinho", "dança entre casais", "danca entre casais", "você sabe bem", "voce sabe bem",
+      "amor de novo", "não pense", "nao pense", "eterna promessa", "migalhas", "ontem eu tinha certeza", "sertanejo",
+      "trap brasileiro", "funk carioca", "pagode", "samba", "carburada", "deixe que vá", "deixe que va", "mar de pedras", "pesadelo",
+      "zouk", "kompa", "afrobeat", "afrobeats", "amapiano", "congolese", "makossa", "kizomba", "rumba",
       "insatisfaite", "rythmo", "melodie", "mélodie", "chaleur", "inattendue", "portukonpa",
-      "ambiance", "guarachita", "tololoche", "chochias", "jalisco", "que se joda", "des iles",
+      "ambiance", "guarachita", "tololoche", "chochias", "que se joda", "des iles",
       "d'iles", "mon albi", "ti tèt", "souvenir", "danse-jauqu-matin", "l'heure", "gouyad"
     ],
   },
@@ -223,11 +238,93 @@ export const BASQUE_DISAMBIGUATION: Record<string, ArtistDisambiguation> = {
   }
 };
 
+export const FOREIGN_GENRE_CONFLICTS = [
+  // Mexican & Regional Mexican
+  "mexican", "regional mexicano", "corridos", "corrido", "corridos tumbados",
+  "norteño", "norteno", "sierreño", "sierreno", "banda sinaloense", "mariachi",
+  "ranchera", "rancheras", "vallenato", "cumbia sonidera", "huapango", "duranguense",
+  "grupera", "chicano", "zapateado", "tololoche",
+
+  // Brazilian Regional & Funk
+  "sertanejo", "sertanejo universitario", "funk carioca", "funk mandelão", "funk mandelao",
+  "pagode", "samba", "forró", "forro", "arrocha", "brega funk", "trap brasileiro",
+  "axé", "axe", "maracatu",
+
+  // Asian Pop
+  "k-pop", "kpop", "trot", "c-pop", "cpop", "j-pop", "jpop", "mandopop", "cantopop", "v-pop",
+
+  // African / Caribbean distinct homonyms
+  "zouk", "kompa", "gouyad", "afrobeats", "makossa", "kizomba", "amapiano", "coupe decale"
+];
+
+/** Analyzes Basque orthography clusters, suffixes, and high-frequency function words */
+export function analyzeBasqueOrthography(text: string): { isBasque: boolean; score: number; signals: string[] } {
+  if (!text) return { isBasque: false, score: 0, signals: [] };
+  const lower = text.toLowerCase();
+  const signals: string[] = [];
+  let score = 0;
+
+  // Distinctive Basque phoneme digraphs & clusters
+  const basqueClusters = ["tx", "tz", "ts", "lh", "ñ", "tt", "dd", "zk", "zt", "rz", "rtz"];
+  for (const cluster of basqueClusters) {
+    if (lower.includes(cluster)) {
+      score += 2;
+      signals.push(`cluster:${cluster}`);
+    }
+  }
+
+  // Basque high-frequency words
+  const basqueWords = new Set([
+    "eta", "ez", "ere", "bat", "hau", "hori", "hura", "gu", "zu", "dira", "ditu",
+    "ziren", "naiz", "zen", "du", "dute", "gara", "zara", "izan", "egin", "eman",
+    "esan", "hartu", "joan", "etorri", "bila", "gabe", "baino", "buruz", "artean",
+    "aurretik", "ondoren", "oso", "ongi", "ondo", "berriro", "elkarrekin", "nahieran",
+    "gure", "zure", "nire", "bere", "denak", "guztiak", "orain", "lehen", "gero",
+    "beti", "inoiz", "ezin", "gau", "egun", "herri", "bihotz", "bide", "kale",
+    "maite", "askatasun", "mendi", "itsaso", "haizea", "izar", "lurra", "sua",
+    "kantu", "soinu", "hots", "amets", "argi", "ilun", "gaua", "goiza", "dantza"
+  ]);
+
+  const words = lower.split(/[^a-zA-ZñÑáéíóúÁÉÍÓÚ]+/);
+  for (const w of words) {
+    if (basqueWords.has(w)) {
+      score += 3;
+      signals.push(`word:${w}`);
+    }
+  }
+
+  // Basque morphemes and suffixes
+  const basqueSuffixes = [
+    "tegi", "keta", "tasun", "gune", "mendi", "zale", "lari", "aren", "ekin",
+    "etan", "gatik", "koa", "ena", "ago", "rean", "pean", "zahar", "berri",
+    "gorri", "beltz", "ume", "ots", "ondo"
+  ];
+  for (const sfx of basqueSuffixes) {
+    for (const w of words) {
+      if (w.length >= sfx.length + 3 && w.endsWith(sfx)) {
+        score += 2;
+        signals.push(`suffix:-${sfx}`);
+      }
+    }
+  }
+
+  return { isBasque: score >= 2, score, signals };
+}
+
 export function isValidMatchForArtist(
   artistName: string,
-  m: { title: string; album?: string | null; genre?: string | null }
+  m: { title: string; album?: string | null; genre?: string | null; artist?: string | null }
 ): boolean {
   const key = artistName.trim().toLowerCase();
+
+  // 1. Blacklist check: if manually removed and blacklisted by the user, immediately reject
+  if (isArtistEntityBlacklistedSync(key, m.title, "track")) {
+    return false;
+  }
+  if (m.album && isArtistEntityBlacklistedSync(key, m.album, "album")) {
+    return false;
+  }
+
   let disam = BASQUE_DISAMBIGUATION[key];
   if (!disam) {
     for (const [dKey, dVal] of Object.entries(BASQUE_DISAMBIGUATION)) {
@@ -237,25 +334,67 @@ export function isValidMatchForArtist(
       }
     }
   }
-  if (!disam) return true;
 
-  const targetText = `${m.title} ${m.album ?? ""} ${m.genre ?? ""}`.toLowerCase();
+  const targetText = `${(m as any).artist ?? ""} ${m.title} ${m.album ?? ""} ${m.genre ?? ""}`.toLowerCase();
 
-  // 1. Strict check: rejected keywords (reject foreign genres, unrelated homonyms)
-  for (const rejected of disam.rejectedKeywords) {
-    if (targetText.includes(rejected.toLowerCase())) {
+  // 2. Strict check: rejected keywords (reject foreign genres, unrelated homonyms)
+  if (disam) {
+    for (const rejected of disam.rejectedKeywords) {
+      if (targetText.includes(rejected.toLowerCase())) {
+        return false;
+      }
+    }
+  }
+
+  // 3. Reject foreign homonym artists (e.g. "Dupla Real" or "DUPLA 02" when artist is "Dupla")
+  if (m.artist) {
+    const rawArtist = m.artist.trim().toLowerCase();
+    if (
+      key === "dupla" &&
+      (rawArtist.includes("dupla real") ||
+        rawArtist.includes("dupla 02") ||
+        rawArtist.includes("dupla02") ||
+        rawArtist.includes("dupla de la sierra") ||
+        rawArtist.includes("la dupla") ||
+        rawArtist.includes("dupla sertaneja"))
+    ) {
+      return false;
+    }
+    if (key === "bengo" && rawArtist.includes("bengo bengo")) {
       return false;
     }
   }
 
-  // 2. If it matches known matches, it is confirmed authentic
-  if (disam.knownMatches && disam.knownMatches.length > 0) {
+  // 4. Known confirmed authentic matches bypass foreign checks
+  if (disam && disam.knownMatches && disam.knownMatches.length > 0) {
     const matched = disam.knownMatches.some((k) => targetText.includes(k.toLowerCase()));
     if (matched) return true;
   }
 
-  // 3. For new releases: as long as it does not hit rejected homonym keywords,
-  // it is admitted into the artist catalog.
+  // 5. Foreign genre conflict filters (applies to all Basque disambiguated artists)
+  if (disam || key === "dupla" || key === "anube" || key === "añube" || key === "bengo" || key === "streetwise" || key === "bizardunak") {
+    if (m.genre) {
+      const gLower = m.genre.toLowerCase();
+      if (FOREIGN_GENRE_CONFLICTS.some((conflict) => gLower.includes(conflict))) {
+        return false;
+      }
+    }
+
+    // Check target text against strong conflict phrases
+    const rawTarget = targetText;
+    if (
+      rawTarget.includes("corridos de ultratumba") ||
+      rawTarget.includes("los tiempos del chino") ||
+      rawTarget.includes("sertanejo") ||
+      rawTarget.includes("funk carioca") ||
+      rawTarget.includes("regional mexicano") ||
+      rawTarget.includes("banda sinaloense")
+    ) {
+      return false;
+    }
+  }
+
+  // 6. Linguistic orthography check: if strong Basque orthography signals are present, boost confidence
   return true;
 }
 
@@ -991,6 +1130,15 @@ const inFlightPersists = new Map<string, Promise<Track[]>>();
 /** Persist a single OnlineMatch as a catalog track (dedup by ISRC/title+artist). */
 export async function persistMatch(m: OnlineMatch): Promise<Track[]> {
   if (!isValidMatchForArtist(m.artist, m)) {
+    return [];
+  }
+
+  const parts = splitArtistNames(m.artist);
+  const primaryName = parts[0] || m.artist;
+  if (await isArtistEntityBlacklisted(primaryName, m.title, "track")) {
+    return [];
+  }
+  if (m.album && (await isArtistEntityBlacklisted(primaryName, m.album, "album"))) {
     return [];
   }
 

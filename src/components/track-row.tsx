@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { Play, Pause, Heart, MoreHorizontal, Plus, Clock, Radio, Loader2, ThumbsUp, ThumbsDown, Sparkles, ListPlus, ListMusic, Check } from "lucide-react";
+import { Play, Pause, Heart, MoreHorizontal, Plus, Clock, Radio, Loader2, ThumbsUp, ThumbsDown, Sparkles, ListPlus, ListMusic, Check, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { usePlayer } from "@/lib/player-context";
 import { useToast } from "@/lib/toast";
@@ -24,6 +24,7 @@ export function TrackRow({
   showAlbum = true,
   onFeedback,
   feedbackValue,
+  onRemove,
 }: {
   track: Track & { liked?: boolean };
   index: number;
@@ -32,6 +33,7 @@ export function TrackRow({
   showAlbum?: boolean;
   onFeedback?: (f: "like" | "dislike") => void;
   feedbackValue?: "like" | "dislike" | "discharge" | null;
+  onRemove?: (track: Track) => void;
 }) {
   const { playQueue, togglePlay, current, isPlaying } = usePlayer();
   const isCurrent = current?.id === track.id;
@@ -171,10 +173,24 @@ export function TrackRow({
           className="opacity-0 group-hover:opacity-100 data-[liked]:opacity-100"
           size={16}
         />
+        {onRemove ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove(track);
+            }}
+            title="Remove & blacklist track"
+            aria-label="Remove track"
+            className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-1.5 rounded-full hover:bg-red-500/10 transition text-textdim hidden sm:grid place-items-center cursor-pointer"
+          >
+            <Trash2 size={15} />
+          </button>
+        ) : null}
         <span className="text-textdim text-xs tabular-nums w-9 text-right hidden sm:block">
           {formatTime(track.duration)}
         </span>
-        <TrackMenu track={track} />
+        <TrackMenu track={track} onRemove={onRemove} />
       </div>
     </div>
   );
@@ -185,10 +201,12 @@ export function TrackList({
   tracks,
   showCover = true,
   showAlbum = true,
+  onRemove,
 }: {
   tracks: (Track & { liked?: boolean })[];
   showCover?: boolean;
   showAlbum?: boolean;
+  onRemove?: (track: Track) => void;
 }) {
   return (
     <div className="flex flex-col w-full">
@@ -215,6 +233,7 @@ export function TrackList({
           queue={tracks}
           showCover={showCover}
           showAlbum={showAlbum}
+          onRemove={onRemove}
         />
       ))}
     </div>
@@ -224,9 +243,11 @@ export function TrackList({
 export function TrackMenu({
   track,
   buttonClassName,
+  onRemove,
 }: {
   track: Track;
   buttonClassName?: string;
+  onRemove?: (track: Track) => void;
 }) {
   const { playRadio, playNext, addToQueue } = usePlayer();
   const { toast } = useToast();
@@ -387,6 +408,22 @@ export function TrackMenu({
           </Link>
         ) : null}
         <DownloadMenuItem track={track} />
+        {onRemove ? (
+          <>
+            <div className="h-px bg-white/10 my-1" />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen(false);
+                onRemove(track);
+              }}
+              className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-red-500/15 active:bg-red-500/25 text-red-400 font-medium flex items-center gap-2 cursor-pointer touch-manipulation min-h-[40px]"
+            >
+              <Trash2 size={14} /> Remove & Blacklist
+            </button>
+          </>
+        ) : null}
       </DropdownPortal>
 
       <AiTrackInsightModal track={track} isOpen={showInsight} onClose={() => setShowInsight(false)} />

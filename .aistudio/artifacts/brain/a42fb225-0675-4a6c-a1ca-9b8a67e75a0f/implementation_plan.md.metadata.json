@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for granular discography management (allowing removal of Verified Authentic albums and songs both in the Audit modal and on the artist page directly), permanent blacklist persistence against automated re-imports, and fine-tuned Basque lyrics/orthography and genre disambiguation filters.",
+  "updatedAt":  "2026-10-24T12:55:13.420511810Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

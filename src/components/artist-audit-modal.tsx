@@ -41,6 +41,7 @@ export function ArtistAuditModal({
   const [applying, setApplying] = useState(false);
   const [auditData, setAuditData] = useState<ArtistAuditResult | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
+  const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number>>(new Set());
   const [expandedIds, setExpandedIds] = useState<Set<string | number>>(new Set());
   const [filterTab, setFilterTab] = useState<"all" | "flagged" | "missing" | "authentic">("all");
 
@@ -57,12 +58,19 @@ export function ArtistAuditModal({
         setAuditData(data);
         // Pre-select all recommended changes (flagged for removal or missing for import)
         const initialSelected = new Set<string | number>();
+        const initialTracks = new Set<number>();
         for (const item of data.albums) {
           if (item.status === "flagged_foreign" || item.status === "missing_online") {
             initialSelected.add(item.id);
+            if (item.trackIds) {
+              for (const tid of item.trackIds) {
+                initialTracks.add(tid);
+              }
+            }
           }
         }
         setSelectedIds(initialSelected);
+        setSelectedTrackIds(initialTracks);
       })
       .catch((err) => {
         if (active) toast(err.message || "Audit failed", "⚠️");
@@ -92,12 +100,41 @@ export function ArtistAuditModal({
   }, [items, filterTab]);
 
   const toggleSelect = (id: string | number) => {
+    const item = items.find((i) => i.id === id);
+    const willSelect = !selectedIds.has(id);
+
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
+      if (willSelect) {
         next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+
+    if (item && item.trackIds) {
+      setSelectedTrackIds((prev) => {
+        const next = new Set(prev);
+        for (const tid of item.trackIds!) {
+          if (willSelect) {
+            next.add(tid);
+          } else {
+            next.delete(tid);
+          }
+        }
+        return next;
+      });
+    }
+  };
+
+  const toggleTrackSelect = (trackId: number, parentAlbumId: string | number) => {
+    setSelectedTrackIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(trackId)) {
+        next.delete(trackId);
+      } else {
+        next.add(trackId);
       }
       return next;
     });
@@ -116,56 +153,87 @@ export function ArtistAuditModal({
   };
 
   const selectAllRecommended = () => {
-    const next = new Set<string | number>();
+    const nextIds = new Set<string | number>();
+    const nextTracks = new Set<number>();
     for (const item of items) {
       if (item.status === "flagged_foreign" || item.status === "missing_online") {
-        next.add(item.id);
+        nextIds.add(item.id);
+        if (item.trackIds) {
+          for (const tid of item.trackIds) {
+            nextTracks.add(tid);
+          }
+        }
       }
     }
-    setSelectedIds(next);
+    setSelectedIds(nextIds);
+    setSelectedTrackIds(nextTracks);
   };
 
   const selectAll = () => {
-    const next = new Set<string | number>();
+    const nextIds = new Set<string | number>();
+    const nextTracks = new Set<number>();
     for (const item of items) {
-      next.add(item.id);
+      nextIds.add(item.id);
+      if (item.trackIds) {
+        for (const tid of item.trackIds) {
+          nextTracks.add(tid);
+        }
+      }
     }
-    setSelectedIds(next);
+    setSelectedIds(nextIds);
+    setSelectedTrackIds(nextTracks);
   };
 
   const deselectAll = () => {
     setSelectedIds(new Set());
+    setSelectedTrackIds(new Set());
   };
 
   // Determine what would be removed and what would be imported
-  const { toRemove, toImport } = useMemo(() => {
-    const rem: AuditAlbumItem[] = [];
+  const { toRemoveAlbums, standaloneTracksToRemove, toImport } = useMemo(() => {
+    const remAlb: AuditAlbumItem[] = [];
     const imp: AuditAlbumItem[] = [];
+    const remAlbIds = new Set<string | number>();
+
     for (const item of items) {
       if (selectedIds.has(item.id)) {
-        if (item.status === "flagged_foreign") {
-          rem.push(item);
+        if (item.status === "flagged_foreign" || item.status === "authentic") {
+          remAlb.push(item);
+          remAlbIds.add(item.id);
         } else if (item.status === "missing_online") {
           imp.push(item);
-        } else if (item.status === "authentic") {
-          // If the user deliberately selected an authentic album, treat as manual removal request
-          rem.push(item);
         }
       }
     }
-    return { toRemove: rem, toImport: imp };
-  }, [items, selectedIds]);
+
+    // Individual tracks to remove whose parent album is NOT already selected for removal
+    const standaloneTrackIds: number[] = [];
+    for (const tid of selectedTrackIds) {
+      const parentAlb = items.find((i) => i.trackIds && i.trackIds.includes(tid));
+      if (!parentAlb || !remAlbIds.has(parentAlb.id)) {
+        standaloneTrackIds.push(tid);
+      }
+    }
+
+    return {
+      toRemoveAlbums: remAlb,
+      standaloneTracksToRemove: standaloneTrackIds,
+      toImport: imp,
+    };
+  }, [items, selectedIds, selectedTrackIds]);
+
+  const hasChanges = toRemoveAlbums.length > 0 || standaloneTracksToRemove.length > 0 || toImport.length > 0;
 
   const handleApply = async () => {
-    if (selectedIds.size === 0) return;
+    if (!hasChanges) return;
     setApplying(true);
 
     const removeAlbumIds: (number | string)[] = [];
-    const removeTrackIds: number[] = [];
+    const removeTrackIds: number[] = [...standaloneTracksToRemove];
     const importAlbumTitles: string[] = [];
 
-    for (const item of toRemove) {
-      if (item.id === "unassigned_flagged") {
+    for (const item of toRemoveAlbums) {
+      if (item.id === "unassigned_flagged" || item.id === "unassigned_authentic") {
         if (item.trackIds) removeTrackIds.push(...item.trackIds);
       } else {
         removeAlbumIds.push(item.id);
@@ -198,7 +266,7 @@ export function ArtistAuditModal({
       const result = await res.json();
       toast(
         t("artist.changesAppliedToast", {
-          removed: result.removedAlbumsCount || removeAlbumIds.length,
+          removed: (result.removedAlbumsCount || removeAlbumIds.length) + (result.removedTracksCount ? 0 : removeTrackIds.length),
           imported: result.importedAlbumsCount || importAlbumTitles.length,
         }),
         "✅",
@@ -389,7 +457,7 @@ export function ArtistAuditModal({
                             ? "bg-red-950/20 border-red-500/40"
                             : item.status === "missing_online"
                             ? "bg-indigo-950/20 border-indigo-500/40"
-                            : "bg-white/10 border-accent/40"
+                            : "bg-red-950/20 border-red-500/40"
                           : "bg-white/[0.03] border-white/10 hover:border-white/20"
                       }`}
                     >
@@ -402,7 +470,7 @@ export function ArtistAuditModal({
                           className="pt-1 text-accent hover:opacity-80 transition cursor-pointer shrink-0"
                         >
                           {isSelected ? (
-                            <CheckSquare size={20} className="text-accent" />
+                            <CheckSquare size={20} className={item.status === "authentic" ? "text-red-400" : "text-accent"} />
                           ) : (
                             <Square size={20} className="text-textdim hover:text-white" />
                           )}
@@ -422,7 +490,9 @@ export function ArtistAuditModal({
                         {/* Info */}
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-bold text-sm truncate">{item.title}</span>
+                            <span className={`font-bold text-sm truncate ${isSelected && item.status !== "missing_online" ? "line-through text-red-200" : ""}`}>
+                              {item.title}
+                            </span>
                             {item.year ? (
                               <span className="text-xs text-textdim font-mono">({item.year})</span>
                             ) : null}
@@ -432,6 +502,12 @@ export function ArtistAuditModal({
                               {badgeIcon}
                               <span>{badgeText}</span>
                             </span>
+                            {item.status === "authentic" && isSelected && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-red-500/20 text-red-300 border-red-500/30">
+                                <AlertTriangle size={10} />
+                                <span>{t("artist.manualRemovalBadge")}</span>
+                              </span>
+                            )}
                           </div>
 
                           <p className="text-xs text-textdim mt-1 leading-snug">
@@ -443,7 +519,7 @@ export function ArtistAuditModal({
                               {item.trackCount} {item.trackCount === 1 ? t("common.songSingular") : t("common.songs")}
                             </span>
 
-                            {item.tracks.length > 0 && (
+                            {(item.tracks.length > 0 || (item.trackItems && item.trackItems.length > 0)) && (
                               <button
                                 type="button"
                                 onClick={() => toggleExpand(item.id)}
@@ -452,7 +528,7 @@ export function ArtistAuditModal({
                                 <span>
                                   {isExpanded
                                     ? t("artist.hideTracks")
-                                    : t("artist.viewTracks", { count: item.tracks.length })}
+                                    : t("artist.viewTracks", { count: item.trackItems?.length || item.tracks.length })}
                                 </span>
                                 {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                               </button>
@@ -461,16 +537,65 @@ export function ArtistAuditModal({
                         </div>
                       </div>
 
-                      {/* Expandable track list */}
-                      {isExpanded && item.tracks.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-white/10 pl-9 pr-2">
-                          <ol className="space-y-1 text-xs text-textdim list-decimal list-inside">
-                            {item.tracks.map((trackTitle, idx) => (
-                              <li key={idx} className="truncate text-white/90">
-                                {trackTitle}
-                              </li>
-                            ))}
-                          </ol>
+                      {/* Expandable track list with per-song checkboxes */}
+                      {isExpanded && (item.trackItems?.length || item.tracks.length) > 0 && (
+                        <div className="mt-3 pt-3 border-t border-white/10 pl-2 sm:pl-9 pr-2 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px] text-textdim pb-1">
+                            <span>{t("artist.individualTracks")}</span>
+                            <span className="text-[10px] opacity-75">{t("artist.blacklistedTooltip")}</span>
+                          </div>
+                          {item.trackItems && item.trackItems.length > 0 ? (
+                            item.trackItems.map((track) => {
+                              const isTrackSelected = selectedTrackIds.has(track.id) || isSelected;
+                              return (
+                                <div
+                                  key={track.id}
+                                  className={`flex items-center justify-between gap-2 p-1.5 rounded-lg text-xs transition ${
+                                    isTrackSelected ? "bg-red-950/30 text-white" : "hover:bg-white/5 text-textdim"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleTrackSelect(track.id, item.id)}
+                                      aria-label={`Toggle track ${track.title}`}
+                                      className="text-accent hover:opacity-80 transition cursor-pointer shrink-0"
+                                    >
+                                      {isTrackSelected ? (
+                                        <CheckSquare size={16} className="text-red-400" />
+                                      ) : (
+                                        <Square size={16} className="text-textdim hover:text-white" />
+                                      )}
+                                    </button>
+                                    <span className={`truncate ${isTrackSelected ? "line-through text-red-200" : "text-white/90"}`}>
+                                      {track.title}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {isTrackSelected && (
+                                      <span className="text-[10px] font-semibold text-red-400">
+                                        {t("artist.manualRemovalBadge")}
+                                      </span>
+                                    )}
+                                    {track.status === "flagged_foreign" && !isTrackSelected && (
+                                      <span className="text-[10px] font-medium text-amber-400 flex items-center gap-1">
+                                        <AlertTriangle size={10} />
+                                        <span>{t("artist.statusFlagged")}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <ol className="space-y-1 text-xs text-textdim list-decimal list-inside">
+                              {item.tracks.map((trackTitle, idx) => (
+                                <li key={idx} className="truncate text-white/90">
+                                  {trackTitle}
+                                </li>
+                              ))}
+                            </ol>
+                          )}
                         </div>
                       )}
                     </div>
@@ -484,16 +609,21 @@ export function ArtistAuditModal({
         {/* Modal Footer with Actions */}
         <div className="p-4 sm:p-5 border-t border-white/10 bg-black/40 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-textdim">
-            {selectedIds.size > 0 ? (
-              <span className="font-medium text-white">
-                {toRemove.length > 0 && (
-                  <span className="text-red-400 mr-2">
-                    {toRemove.length} to remove
+            {hasChanges ? (
+              <span className="font-medium text-white flex flex-wrap items-center gap-2">
+                {toRemoveAlbums.length > 0 && (
+                  <span className="text-red-400">
+                    {t("artist.selectedAlbumsCount", { count: toRemoveAlbums.length })}
+                  </span>
+                )}
+                {standaloneTracksToRemove.length > 0 && (
+                  <span className="text-amber-400">
+                    {t("artist.selectedSongsCount", { count: standaloneTracksToRemove.length })}
                   </span>
                 )}
                 {toImport.length > 0 && (
                   <span className="text-indigo-400">
-                    {toImport.length} to import
+                    {toImport.length} {t("artist.filterMissing")}
                   </span>
                 )}
               </span>
@@ -511,10 +641,10 @@ export function ArtistAuditModal({
               {t("artist.close")}
             </button>
 
-            {auditData?.hasIssues && selectedIds.size > 0 && (
+            {hasChanges && (
               <button
                 onClick={handleApply}
-                disabled={applying || selectedIds.size === 0}
+                disabled={applying || !hasChanges}
                 className="flex items-center gap-1.5 px-5 py-2 rounded-full text-xs font-bold bg-accent text-black hover:scale-105 active:scale-95 transition cursor-pointer disabled:opacity-50 disabled:scale-100"
               >
                 {applying ? (
@@ -525,7 +655,11 @@ export function ArtistAuditModal({
                 ) : (
                   <>
                     <Sparkles size={14} />
-                    <span>{t("artist.applyChanges", { count: selectedIds.size })}</span>
+                    <span>
+                      {t("artist.applyChanges", {
+                        count: toRemoveAlbums.length + standaloneTracksToRemove.length + toImport.length,
+                      })}
+                    </span>
                   </>
                 )}
               </button>

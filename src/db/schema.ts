@@ -270,3 +270,26 @@ export const adminConfig = pgTable("admin_config", {
   value: text("value").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// Artist Discography Exclusions & Permanent Blacklist
+// ---------------------------------------------------------------------------
+
+export const artistExclusions = pgTable(
+  "artist_exclusions",
+  {
+    id: serial("id").primaryKey(),
+    artistId: integer("artist_id").references(() => artists.id, { onDelete: "cascade" }),
+    artistName: text("artist_name").notNull(),
+    entityType: text("entity_type").notNull(), // 'album' | 'track'
+    title: text("title").notNull(),
+    normalizedTitle: text("normalized_title").notNull(),
+    reason: text("reason").default("manual_removal"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("ae_artist_idx").on(t.artistName),
+    index("ae_type_norm_idx").on(t.entityType, t.normalizedTitle),
+  ],
+);
+
