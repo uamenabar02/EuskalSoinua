@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getRecommendations, getTasteProfile } from "@/lib/recommender";
+import {
+  getRecommendations,
+  getRecommendationShelves,
+  getTasteProfile,
+} from "@/lib/recommender";
 import { ensureSeed } from "@/lib/seed";
 import { cookies } from "next/headers";
 
@@ -18,9 +22,20 @@ export async function GET(request: Request) {
     : null;
   const excludeStr = searchParams.get("exclude") ?? "";
   const excludeTrackIds = excludeStr ? excludeStr.split(",").map(Number) : [];
+  // Stable per-day rotation unless the client asks for a fresh seed.
+  const seed = searchParams.get("seed") ?? undefined;
+  const shelves = searchParams.get("shelves") === "1";
+
+  if (shelves) {
+    const [rows, taste] = await Promise.all([
+      getRecommendationShelves({ syncKey, limit, seed, excludeTrackIds }),
+      getTasteProfile(syncKey),
+    ]);
+    return NextResponse.json({ shelves: rows, taste });
+  }
 
   const [recs, taste] = await Promise.all([
-    getRecommendations({ limit, basqueBooster, seedTrackId, excludeTrackIds, syncKey }),
+    getRecommendations({ limit, basqueBooster, seedTrackId, excludeTrackIds, syncKey, seed }),
     getTasteProfile(syncKey),
   ]);
   return NextResponse.json({ recommendations: recs, taste });

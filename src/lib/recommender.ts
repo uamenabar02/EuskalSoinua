@@ -4,6 +4,8 @@ import { tracks, artists, albums, listenEvents, settings, likedTracks, followedA
 import { desc, sql, eq, inArray, and } from "drizzle-orm";
 import type { Recommendation, Track, Artist, UserTasteProfile } from "@/lib/types";
 import { mapTrack, mapArtist } from "@/lib/mappers";
+import { seededFloat, normalizeArtistName, getSimilarArtists, getArtistSimilarityGraph } from "@/lib/playlists/similarity";
+import { generateGeneratedPlaylists } from "@/lib/playlists/generated";
 
 /**
  * ON-DEVICE RECOMMENDATION ENGINE
@@ -86,9 +88,13 @@ export async function getRecommendations(opts: {
   excludeTrackIds?: number[];
   discoverMode?: boolean;
   syncKey?: string;
+  /** Deterministic rotation seed; defaults to the current day. */
+  seed?: string;
 }): Promise<Recommendation[]> {
   const limit = opts.limit ?? 24;
   const syncKey = opts.syncKey || "default";
+  const varietySeed =
+    opts.seed ?? `recs:${syncKey}:${new Date().toISOString().slice(0, 10)}`;
 
   // 1. Load explicit user music preferences from settings
   const preferenceRows = await db
@@ -418,8 +424,8 @@ export async function getRecommendations(opts: {
     // Recency decay
     if (playedRecently.has(t.id)) score *= 0.15;
 
-    // Small variety nonce
-    score += Math.random() * 12.0;
+    // Seeded variety nonce — stable within a refresh window, never Math.random
+    score += seededFloat(`${varietySeed}:${t.id}`, 3) * 12.0;
 
     const confidence = Math.max(10, Math.min(99, Math.round(45 + score * 5)));
 
@@ -591,4 +597,149 @@ export async function fetchRecommendationCandidates(ids: number[]) {
     .from(tracks)
     .leftJoin(artists, eq(tracks.artistId, artists.id))
     .where(inArray(tracks.id, ids));
+}
+
+// ---------------------------------------------------------------------------
+// Recommendation shelves (Spotify-style home rows)
+// ---------------------------------------------------------------------------
+
+export interface RecommendationShelf {
+  id: string;
+  title: string;
+  subtitle: string;
+  format: string;
+  tracks: Recommendation[];
+}
+
+function asRecommendation(track: Track, reason: string, score = 50): Recommendation {
+  return { track, artist: null, score, reason };
+}
+
+/**
+ * Returns named shelves instead of a single flat list:
+ * "Made for you", "On repeat", "Repeat rewind" and "More like <artist>".
+ * Impression de-dup ensures the same track never appears twice.
+ */
+export async function getRecommendationShelves(
+  opts: {
+    syncKey?: string;
+    limit?: number;
+    seed?: string;
+    excludeTrackIds?: number[];
+  } = {},
+): Promise<RecommendationShelf[]> {
+  const syncKey = opts.syncKey || "default";
+  const limit = opts.limit ?? 24;
+  const seed = opts.seed;
+
+  const [madeFor, generated, graph] = await Promise.all([
+    getRecommendations({
+      limit,
+      syncKey,
+      seed,
+      excludeTrackIds: opts.excludeTrackIds,
+    }),
+    generateGeneratedPlaylists(syncKey, seed, ["on-repeat", "repeat-rewind"]),
+    getArtistSimilarityGraph(syncKey),
+  ]);
+
+  const seen = new Set<number>(opts.excludeTrackIds ?? []);
+  const shelves: RecommendationShelf[] = [];
+
+  for (const recommendation of madeFor) seen.add(recommendation.track.id);
+  if (madeFor.length > 0) {
+    shelves.push({
+      id: "made-for-you",
+      title: "Made for you",
+      subtitle: "On-device recommendations tuned to your taste",
+      format: "editorial",
+      tracks: madeFor,
+    });
+  }
+
+  const takeFresh = (playlist: { tracks: Track[] } | undefined, reason: string) => {
+    if (!playlist) return [];
+    const out: Recommendation[] = [];
+    for (const track of playlist.tracks) {
+      if (seen.has(track.id)) continue;
+      seen.add(track.id);
+      out.push(asRecommendation(track, reason));
+      if (out.length >= 20) break;
+    }
+    return out;
+  };
+
+  const onRepeat = takeFresh(
+    generated.find((playlist) => playlist.format === "on-repeat"),
+    "On heavy rotation lately",
+  );
+  if (onRepeat.length > 0) {
+    shelves.push({
+      id: "on-repeat",
+      title: "On Repeat",
+      subtitle: "The songs you have had on repeat lately",
+      format: "on-repeat",
+      tracks: onRepeat,
+    });
+  }
+
+  const rewind = takeFresh(
+    generated.find((playlist) => playlist.format === "repeat-rewind"),
+    "An old favourite worth another spin",
+  );
+  if (rewind.length > 0) {
+    shelves.push({
+      id: "repeat-rewind",
+      title: "Repeat Rewind",
+      subtitle: "Old favourites, another spin",
+      format: "repeat-rewind",
+      tracks: rewind,
+    });
+  }
+
+  // "More like <artist>" — powered by the shared similarity graph.
+  const topEntry = Array.from(graph.plays.entries()).sort((a, b) => b[1] - a[1])[0];
+  const topArtist = topEntry
+    ? graph.profiles.get(topEntry[0])?.name ?? topEntry[0]
+    : madeFor[0]?.track.artistName;
+
+  if (topArtist) {
+    const similar = await getSimilarArtists(topArtist, { syncKey, limit: 12 });
+    const names = new Set<string>([
+      normalizeArtistName(topArtist),
+      ...similar.map((name) => normalizeArtistName(name)),
+    ]);
+
+    const rows = (await db.select().from(tracks).limit(800)) as Array<
+      Parameters<typeof mapTrack>[0]
+    >;
+    const candidates = rows
+      .map(mapTrack)
+      .filter((track) => names.has(normalizeArtistName(track.artistName)) && !seen.has(track.id))
+      .map((track) => ({
+        track,
+        score:
+          Math.log10((track.playCount ?? 0) + 1) * 4 +
+          seededFloat(`${seed ?? syncKey}:${track.id}`, 5) * 10,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 20);
+
+    const moreLike = candidates.map(({ track }) => {
+      seen.add(track.id);
+      return asRecommendation(track, `More like ${topArtist}`);
+    });
+
+    if (moreLike.length > 0) {
+      shelves.push({
+        id: `more-like-${normalizeArtistName(topArtist).replace(/\s+/g, "-")}`,
+        title: `More like ${topArtist}`,
+        subtitle: "Similar artists and adjacent sounds",
+        format: "editorial",
+        tracks: moreLike,
+      });
+    }
+  }
+
+  return shelves.filter((shelf) => shelf.tracks.length > 0);
 }

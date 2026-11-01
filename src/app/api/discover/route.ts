@@ -22,6 +22,7 @@ import {
 } from "@/lib/queries";
 import { cookies } from "next/headers";
 import type { Track } from "@/lib/types";
+import { getRecommendationShelves } from "@/lib/recommender";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -50,6 +51,24 @@ export async function GET(request: Request) {
   const excludeStr = searchParams.get("exclude") ?? "";
   const excludeTrackIds = excludeStr ? excludeStr.split(",").map(Number).filter(Boolean) : [];
   const excludeSet = new Set<number>(excludeTrackIds);
+
+  // 0. Layer 1 (zero-AI) mode: deterministic, on-device recommendation shelves.
+  //    Used by the home feed so discovery never depends on the Gemini quota.
+  if (searchParams.get("algorithmic") === "1" || searchParams.get("shelves") === "1") {
+    const seed = searchParams.get("seed") ?? undefined;
+    const limit = Number(searchParams.get("limit") ?? "24") || 24;
+    const shelves = await getRecommendationShelves({
+      syncKey,
+      limit,
+      seed,
+      excludeTrackIds,
+    });
+    return NextResponse.json({
+      shelves,
+      agent: "algorithmic",
+      generatedBy: "layer-1",
+    });
+  }
 
   // 1. Gather User Preferences across all signal sources + explicit taste preferences + recent 500 listens
   const [

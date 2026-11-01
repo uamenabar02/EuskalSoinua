@@ -107,6 +107,8 @@ export default function HomePage() {
   const [historyTab, setHistoryTab] = useState<"recent" | "mostHeard">("recent");
   const [dailyMixes, setDailyMixes] = useState<DailyMix[]>([]);
   const [loadingDailyMixes, setLoadingDailyMixes] = useState(false);
+  const [generatedPlaylists, setGeneratedPlaylists] = useState<DailyMix[]>([]);
+  const [loadingGenerated, setLoadingGenerated] = useState(false);
 
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [taste, setTaste] = useState<{
@@ -255,6 +257,22 @@ export default function HomePage() {
       });
   }, []);
 
+  const loadGeneratedPlaylists = useCallback((showLoading = false) => {
+    if (showLoading) setLoadingGenerated(true);
+    fetch(
+      "/api/user/generated-playlists?formats=discover-weekly,release-radar,on-repeat,repeat-rewind,topic-mix,artist-seed-mix,car-mix",
+      { cache: showLoading ? "no-store" : "default" },
+    )
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d.playlists)) setGeneratedPlaylists(d.playlists);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (showLoading) setLoadingGenerated(false);
+      });
+  }, []);
+
   useEffect(() => {
     // Automatically refresh Daily Mixes the first time user enters each day
     let daySeed: string | undefined;
@@ -280,6 +298,7 @@ export default function HomePage() {
       })
       .catch(() => {});
 
+    loadGeneratedPlaylists();
     loadHistory();
     const onTrackPlayed = () => {
       try {
@@ -296,7 +315,7 @@ export default function HomePage() {
     };
     window.addEventListener("track-played", onTrackPlayed);
     return () => window.removeEventListener("track-played", onTrackPlayed);
-  }, [loadHistory, loadDailyMixes]);
+  }, [loadHistory, loadDailyMixes, loadGeneratedPlaylists]);
 
   const lastBoosterRef = useRef(p.basqueBooster);
   useEffect(() => {
@@ -405,6 +424,37 @@ export default function HomePage() {
                       const targetUrl = activeSeed ? `/playlist/${mix.id}?seed=${encodeURIComponent(activeSeed)}` : `/playlist/${mix.id}`;
                       router.push(targetUrl);
                     }}
+                  />
+                </SectionCard>
+              ))}
+            </Section>
+          )}
+
+          {/* Made for you — remaining Spotify-style formats */}
+          {generatedPlaylists.length > 0 && (
+            <Section
+              title={t("home.generatedPlaylists")}
+              subtitle={t("home.generatedPlaylistsSubtitle")}
+              action={
+                <button
+                  onClick={() => {
+                    toast(t("home.tailoringPlaylists"), "🔄");
+                    loadGeneratedPlaylists(true);
+                  }}
+                  title={t("home.refreshPlaylists")}
+                  className="text-xs text-textdim hover:text-white flex items-center gap-1.5 transition px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer"
+                >
+                  <RotateCw size={12} className={clsx(loadingGenerated && "animate-spin")} />
+                  <span>{t("home.refreshPlaylists")}</span>
+                </button>
+              }
+            >
+              {generatedPlaylists.map((mix) => (
+                <SectionCard key={mix.id}>
+                  <DailyMixCard
+                    mix={mix}
+                    onPlay={() => p.playQueue(mix.tracks, 0)}
+                    onOpen={() => router.push(`/playlist/${mix.id}`)}
                   />
                 </SectionCard>
               ))}

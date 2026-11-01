@@ -7,6 +7,7 @@ import { mapTrack } from "@/lib/mappers";
 import { searchOnline, ingestOnlineTracks } from "@/lib/sources/online";
 import { desc, ilike, and, or, eq } from "drizzle-orm";
 import type { Track, UserTasteProfile } from "@/lib/types";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // Ground truth curated song mappings for resilient, high-quality Basque fallback
 const GROUND_TRUTH_CATALOG: Record<string, { artist: string; title: string }[]> = {
@@ -81,6 +82,26 @@ export async function POST(req: NextRequest) {
 
     const cookieStore = await cookies();
     const syncKey = cookieStore.get("sync_key")?.value || "default";
+
+    // AI Curator guardrail: manual-only + a shared per-user cooldown so the
+    // free-tier Gemini/NIM budget is never burned by accident.
+    // Layer 1 (generated playlists) never reaches this route.
+    const rateLimit = checkRateLimit(`ai-playlist:${syncKey}`, 5, 15 * 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: "AI Curator is cooling down",
+          message:
+            "You have reached the AI playlist limit. Try again shortly, or open a generated playlist (Daily Mix, Discover Weekly…) for instant results.",
+          retryAfterSeconds: rateLimit.retryAfterSeconds,
+          generatedBy: "ai",
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+        },
+      );
+    }
 
     // Load user taste preferences from DB
     const preferenceRows = await db
@@ -170,6 +191,7 @@ Please satisfy the user prompt while naturally aligning with their taste profile
     let title = customTitle || "";
     let description = "";
     let curatedSongs: { artist: string; title: string }[] = [];
+    let generatedBy: "ai" | "algorithmic-fallback" = "algorithmic-fallback";
 
     if (apiKey) {
       try {
@@ -230,6 +252,7 @@ Rules:
           curatedSongs = result.tracks.filter(
             (t: any) => t.artist && t.title && !isNoiseOrJunk(`${t.artist} ${t.title}`)
           );
+          if (curatedSongs.length > 0) generatedBy = "ai";
         }
       } catch (geminiError) {
         console.error("Gemini API call failed, activating smart catalog curation:", geminiError);
@@ -413,6 +436,7 @@ Rules:
       name: title,
       description,
       tracks: finalTracks,
+      generatedBy,
     });
   } catch (err: any) {
     console.error("Failed to generate AI playlist:", err);

@@ -129,6 +129,7 @@ export function AiPlaylistGenerator() {
     name: string;
     description: string;
     tracks: Track[];
+    generatedBy?: "ai" | "algorithmic-fallback";
   } | null>(null);
 
   // Load user's liked & followed artists on mount
@@ -243,7 +244,8 @@ export function AiPlaylistGenerator() {
 
       const data = await res.json();
       if (!res.ok || data.error) {
-        throw new Error(data.error || "Failed to generate playlist");
+        // 429 = AI Curator cooldown; surface the friendly retry hint.
+        throw new Error(data.message || data.error || "Failed to generate playlist");
       }
 
       setResult(data);
@@ -713,6 +715,18 @@ export function AiPlaylistGenerator() {
             <div>
               <span className="text-[10px] font-black uppercase tracking-widest text-accent bg-accent/10 px-2.5 py-1 rounded-md border border-accent/20">
                 {t("curator.resultsTitle")}
+              </span>
+              <span
+                className={clsx(
+                  "ml-2 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md border",
+                  result.generatedBy === "algorithmic-fallback"
+                    ? "text-amber-300 bg-amber-400/10 border-amber-400/30"
+                    : "text-emerald-300 bg-emerald-400/10 border-emerald-400/30",
+                )}
+              >
+                {result.generatedBy === "algorithmic-fallback"
+                  ? t("curator.algorithmicFallbackBadge")
+                  : t("curator.aiGeneratedBadge")}
               </span>
               <h4 className="text-xl sm:text-2xl font-black text-white mt-2">
                 {result.name}

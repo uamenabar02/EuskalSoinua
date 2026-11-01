@@ -10,6 +10,7 @@ import type { Track, Playlist } from "@/lib/types";
 import { useToast } from "@/lib/toast";
 import { useTranslation } from "@/lib/i18n";
 import { usePlayer } from "@/lib/player-context";
+import { isGeneratedPlaylistId } from "@/lib/playlists/format-registry";
 
 interface Data {
   playlist: Playlist;
@@ -147,7 +148,20 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
   if (!data) return <CenterLoader />;
 
   const { playlist, tracks } = data;
-  const isDailyMix = playlist.type === ("daily_mix" as any) || String(id || "").startsWith("daily-");
+  const isDailyMix =
+    playlist.type === ("daily_mix" as any) || isGeneratedPlaylistId(String(id || ""));
+  const generatedLabel =
+    playlist.type === "daily_mix"
+      ? t("home.dailyMix")
+      : playlist.type === "discover-weekly"
+        ? t("home.discoverWeekly")
+        : playlist.type === "release-radar"
+          ? t("home.releaseRadar")
+          : playlist.type === "on-repeat"
+            ? t("home.onRepeat")
+            : playlist.type === "repeat-rewind"
+              ? t("home.repeatRewind")
+              : t("home.generatedPlaylists");
   const isRadio =
     !isDailyMix &&
     (playlist.type === "radio" ||
@@ -168,7 +182,7 @@ export default function PlaylistPage({ params }: { params: Promise<{ id: string 
         meta={
           isDailyMix ? (
             <span className="text-xs font-bold uppercase tracking-wider text-accent px-2.5 py-1 rounded-full bg-accent/10 border border-accent/20">
-              {t("home.dailyMix")}
+              {generatedLabel}
             </span>
           ) : isRadio ? (
             <span className="text-xs font-bold uppercase tracking-wider text-accent px-2.5 py-1 rounded-full bg-accent/10 border border-accent/20 flex items-center gap-1">

@@ -10,6 +10,7 @@ import {
   isArtistEntityBlacklistedSync,
   isArtistEntityBlacklisted,
 } from "@/lib/artist-exclusions";
+import { getSimilarArtists } from "@/lib/playlists/similarity";
 
 /**
  * REAL ONLINE METADATA SEARCH
@@ -795,74 +796,17 @@ async function getDeezerArtistId(artistName: string): Promise<number | null> {
   }
 }
 
-const CURATED_RELATED_ARTISTS: Record<string, string[]> = {
-  // Basque Urban / Trap / Pop
-  "bengo": ["Tatta", "Kixka", "ZETAK", "Malakias", "Chill Mafia", "Dupla", "Merina Gris", "Bulego", "ETS"],
-  "tatta": ["Bengo", "Kixka", "Chill Mafia", "Malakias", "Dupla", "ZETAK", "Merina Gris"],
-  "chill mafia": ["Dupla", "Tatta", "Bengo", "Merina Gris", "Hofmann", "ZETAK", "Kixka"],
-  "zetak": ["Bulego", "ETS", "Bengo", "Huntza", "Merina Gris", "Neomak", "Dupla", "Izaro", "Tatta"],
-  "bulego": ["ZETAK", "ETS", "Izaro", "Huntza", "Shinova", "Dupla", "Bengo", "Merina Gris"],
-  "en tol sarmiento": ["Bulego", "ZETAK", "Huntza", "Gatibu", "Esne Beltza", "Vendetta", "Skakeitan", "La Txama"],
-  "ets": ["Bulego", "ZETAK", "Huntza", "Gatibu", "Esne Beltza", "Vendetta", "Skakeitan", "La Txama"],
-  "huntza": ["ETS", "ZETAK", "Bulego", "Izaro", "Neomak", "Gatibu", "Esne Beltza", "La Txama"],
-  "dupla": ["Chill Mafia", "ZETAK", "Bengo", "Tatta", "Merina Gris", "Skakeitan", "Bulego"],
-  "merina gris": ["ZETAK", "Bulego", "Dupla", "Chill Mafia", "Belako", "Bengo"],
-  "neomak": ["Huntza", "ZETAK", "Oreka TX", "Kepa Junkera", "Izaro"],
-  "la txama": ["Huntza", "Skakeitan", "Esne Beltza", "Vendetta", "ETS", "Gose"],
-
-  // Basque Indie / Folk / Acoustic
-  "izaro": ["Olaia Inziarte", "Idoia", "Anari", "Eñaut Elorrieta", "Olatz Salvador", "Bulego", "ZETAK", "Mikel Urdangarin"],
-  "olaia inziarte": ["Izaro", "Idoia", "Anari", "Olatz Salvador", "Eñaut Elorrieta", "Liher", "Merina Gris"],
-  "anari": ["Izaro", "Olaia Inziarte", "Mikel Laboa", "Ruper Ordorika", "Lisabö", "Belako", "Mursego"],
-  "idoia": ["Izaro", "Olaia Inziarte", "Eñaut Elorrieta", "Olatz Salvador", "Mikel Urdangarin"],
-  "eñaut elorrieta": ["Ken Zazpi", "Izaro", "Mikel Urdangarin", "Idoia", "Olatz Salvador", "Anari"],
-  "olatz salvador": ["Izaro", "Olaia Inziarte", "Idoia", "Eñaut Elorrieta", "Skakeitan"],
-  "mikel laboa": ["Benito Lertxundi", "Xabier Lete", "Ruper Ordorika", "Oskorri", "Anari", "Kepa Junkera", "Lourdes Iriondo"],
-  "benito lertxundi": ["Mikel Laboa", "Xabier Lete", "Lourdes Iriondo", "Oskorri", "Imanol", "Ruper Ordorika", "Pantxoa eta Peio"],
-  "oskorri": ["Kepa Junkera", "Mikel Laboa", "Benito Lertxundi", "Oreka TX", "Tapia eta Leturia"],
-  "kepa junkera": ["Oreka TX", "Oskorri", "Mikel Laboa", "Tapia eta Leturia", "Neomak", "Huntza"],
-  "oreka tx": ["Kepa Junkera", "Neomak", "Oskorri", "Mikel Laboa", "Huntza"],
-  "ruper ordorika": ["Mikel Laboa", "Benito Lertxundi", "Anari", "Itoiz", "Hertzainak"],
-
-  // Basque Rock / Punk / Post-Punk / Metal
-  "berri txarrak": ["Zea Mays", "Gatibu", "Su Ta Gar", "Kuraia", "Lisabö", "Belako", "Willis Drummond", "Hertzainak", "Kortatu"],
-  "belako": ["Lukiek", "Vulk", "Willis Drummond", "Berri Txarrak", "Merina Gris", "Zea Mays", "Shinova"],
-  "lukiek": ["Belako", "Vulk", "Willis Drummond", "Berri Txarrak", "Zea Mays"],
-  "gatibu": ["Berri Txarrak", "Zea Mays", "ETS", "Shinova", "Doctor Deseo", "Hesian", "Vendetta"],
-  "zea mays": ["Berri Txarrak", "Gatibu", "Doctor Deseo", "Belako", "Shinova", "Anari", "Su Ta Gar"],
-  "su ta gar": ["Berri Txarrak", "Latzen", "EH Sukarra", "Etsaiak", "Zea Mays"],
-  "streetwise": ["Brigade Loco", "Bizardunak", "Rotten XIII", "Kaleko Urdangak", "Kortatu", "Hertzainak", "Negu Gorriak"],
-  "bizardunak": ["Streetwise", "Brigade Loco", "Rotten XIII", "The Pogues", "Dropkick Murphys", "Kortatu", "Hertzainak", "Skakeitan"],
-  "brigade loco": ["Streetwise", "Rotten XIII", "Kaleko Urdangak", "Bizardunak", "Kortatu"],
-  "rotten xiii": ["Brigade Loco", "Streetwise", "Kaleko Urdangak", "Bizardunak"],
-  "kortatu": ["Negu Gorriak", "Hertzainak", "Barricada", "La Polla Records", "Eskorbuto", "Bizardunak", "Streetwise"],
-  "negu gorriak": ["Kortatu", "Hertzainak", "Dut", "Fermin Muguruza", "Berri Txarrak"],
-  "hertzainak": ["Kortatu", "Negu Gorriak", "Itoiz", "Doctor Deseo", "Zea Mays", "Berri Txarrak"],
-  "doctor deseo": ["Zea Mays", "Gatibu", "Hertzainak", "Itoiz", "Fito & Fitipaldis", "Shinova"],
-  "itoiz": ["Hertzainak", "Mikel Laboa", "Ruper Ordorika", "Doctor Deseo", "Zea Mays"],
-  "shinova": ["Zea Mays", "Doctor Deseo", "Gatibu", "Vetusta Morla", "Izal", "Love of Lesbian", "Berri Txarrak"],
-  "skakeitan": ["Vendetta", "Esne Beltza", "ETS", "Huntza", "La Txama", "Glaukoma", "Dupla"],
-  "esne beltza": ["Vendetta", "Skakeitan", "ETS", "Huntza", "Gose", "Fermin Muguruza", "La Txama"],
-  "vendetta": ["Esne Beltza", "Skakeitan", "ETS", "Huntza", "Gose", "La Txama", "Gatibu"],
-  "glaukoma": ["Skakeitan", "Esne Beltza", "Bad Sound System", "Dupla", "Chill Mafia"],
-
-  // Global Rock / Pop / Indie Folk
-  "arctic monkeys": ["The Strokes", "Franz Ferdinand", "Miles Kane", "The Last Shadow Puppets", "Foals", "Kasabian"],
-  "the strokes": ["Arctic Monkeys", "The White Stripes", "Franz Ferdinand", "Interpol", "Phoenix", "The Killers"],
-  "dua lipa": ["Olivia Rodrigo", "Aitana", "Rosalía", "The Weeknd", "Harry Styles", "Taylor Swift", "Billie Eilish"],
-  "rosalía": ["C. Tangana", "Dua Lipa", "Aitana", "Nathy Peluso", "Bad Bunny", "Fred again.."],
-  "bon iver": ["Ben Howard", "Passenger", "Boygenius", "Fleet Foxes", "Phoebe Bridgers", "Sufjan Stevens", "Khruangbin"],
-  "boygenius": ["Phoebe Bridgers", "Julien Baker", "Lucy Dacus", "Bon Iver", "Big Thief", "Mitski"],
-};
-
 /**
- * Get related/similar artists via curated clusters and Deezer API fallback.
+ * Related artists, resolved through the shared behavioural similarity graph
+ * (session co-play + genre + region), with Deezer as a last-resort fallback.
+ * This replaces the old hard-coded affinity table.
  */
-async function getRelatedArtists(artistName: string): Promise<string[]> {
-  const normKey = artistName.toLowerCase().trim();
-  const curated = CURATED_RELATED_ARTISTS[normKey];
-  if (curated && curated.length > 0) {
-    return [...curated];
+async function getRelatedArtists(artistName: string, syncKey = "default"): Promise<string[]> {
+  try {
+    const similar = await getSimilarArtists(artistName, { limit: 10, syncKey });
+    if (similar.length > 0) return similar;
+  } catch {
+    // fall through to Deezer
   }
 
   // Fallback to Deezer related artists
@@ -933,10 +877,13 @@ async function buildRadioQueueCore(opts: {
   primaryArtist: string;
   genre?: string | null;
   targetCount?: number;
+  /** Tracks already played/queued — used by dynamic refill. */
+  excludeTrackIds?: number[];
+  syncKey?: string;
 }): Promise<Track[]> {
   const targetCount = opts.targetCount ?? 18;
   const maxAuthorTracks = Math.floor(targetCount * 0.5); // Strictly at most 50% by the author!
-  const seenIds = new Set<number>();
+  const seenIds = new Set<number>(opts.excludeTrackIds ?? []);
   const authorTracks: Track[] = [];
   const relatedTracks: Track[] = [];
 
@@ -949,7 +896,7 @@ async function buildRadioQueueCore(opts: {
   }
 
   // 2. Fetch author tracks in parallel with related artist tracks (runs concurrently in < 100ms!)
-  const relatedNames = await getRelatedArtists(opts.primaryArtist);
+  const relatedNames = await getRelatedArtists(opts.primaryArtist, opts.syncKey);
   const filteredRelated = relatedNames
     .filter((r) => r.toLowerCase().trim() !== normAuthor)
     .sort(() => Math.random() - 0.5)
@@ -1032,10 +979,106 @@ async function buildRadioQueueCore(opts: {
 }
 
 /**
+ * DYNAMIC RADIO REFILL — keeps a station going like Spotify's endless radio.
+ * Pulls further related-artist tracks, excluding everything already queued or
+ * recently played, then tops up with genre-matched catalog tracks.
+ */
+export async function buildRadioRefill(opts: {
+  seedArtist: string;
+  genre?: string | null;
+  excludeTrackIds?: number[];
+  count?: number;
+  syncKey?: string;
+}): Promise<Track[]> {
+  const count = Math.max(1, Math.min(opts.count ?? 15, 40));
+  const excludeSet = new Set(opts.excludeTrackIds ?? []);
+  const normSeed = opts.seedArtist.toLowerCase().trim();
+
+  const related = await getRelatedArtists(opts.seedArtist, opts.syncKey ?? "default");
+  const relatedNames = related
+    .filter((name) => name.toLowerCase().trim() !== normSeed)
+    .slice(0, 8);
+
+  const batches = await Promise.all(
+    relatedNames.map((name) => getCatalogTracksForArtist(name, 4)),
+  );
+  const picks: Track[] = batches
+    .flat()
+    .filter((track) => !excludeSet.has(track.id))
+    .sort(() => Math.random() - 0.5)
+    .slice(0, count);
+
+  if (picks.length >= count) return picks;
+
+  // Genre fill for thin catalogs.
+  const usedIds = new Set([...excludeSet, ...picks.map((t) => t.id)]);
+  try {
+    const rows = await db.select().from(tracks).limit(400);
+    for (const row of rows) {
+      if (picks.length >= count) break;
+      const track = mapTrack(row);
+      if (usedIds.has(track.id)) continue;
+      if (track.artistName.toLowerCase().trim() === normSeed) continue;
+      if (opts.genre && track.genre) {
+        const g1 = opts.genre.toLowerCase();
+        const g2 = track.genre.toLowerCase();
+        if (!g1.includes(g2) && !g2.includes(g1)) continue;
+      }
+      usedIds.add(track.id);
+      picks.push(track);
+    }
+  } catch {
+    // catalog unavailable — return what we have
+  }
+
+  return picks;
+}
+
+export interface RadioMeta {
+  format: "inspiredby-mix";
+  title: string;
+  description: string;
+  mediaListConfig: string;
+  relatedArtists: string[];
+}
+
+/**
+ * Spotify-shaped metadata for a radio: "Radio <seed>" + "With A, B, C and more".
+ */
+export async function getRadioMeta(opts: {
+  seed: string;
+  kind: "track" | "artist" | "album" | "playlist";
+  primaryArtist: string;
+  syncKey?: string;
+}): Promise<RadioMeta> {
+  const related = await getRelatedArtists(opts.primaryArtist, opts.syncKey ?? "default");
+  const relatedArtists = related.filter(
+    (name) => name.toLowerCase().trim() !== opts.primaryArtist.toLowerCase().trim(),
+  );
+  const description =
+    relatedArtists.length > 0
+      ? `With ${relatedArtists.slice(0, 3).join(", ")}${
+          relatedArtists.length > 3 ? " and more" : ""
+        }`
+      : "A mix of similar tracks and related artists.";
+
+  return {
+    format: "inspiredby-mix",
+    title: `Radio ${opts.seed}`,
+    description,
+    mediaListConfig:
+      opts.kind === "track"
+        ? "track-radio-inspiredby:default_v29"
+        : "artist-radio-inspiredby:default_v35",
+    relatedArtists,
+  };
+}
+
+/**
  * SONG RADIO — build a Spotify-style radio queue seeded by one track.
  * Enforces: Seed author is at most 50% of total tracks; 50%+ are from related artists.
  */
-export async function buildRadio(seedTrackId: number): Promise<Track[]> {
+export async function buildRadio(seedTrackId: number, syncKey = "default"): Promise<Track[]> {
   const seedRows = await db.select().from(tracks).where(eq(tracks.id, seedTrackId)).limit(1);
   const seed = seedRows[0];
   if (!seed) return [];
@@ -1046,6 +1089,7 @@ export async function buildRadio(seedTrackId: number): Promise<Track[]> {
     primaryArtist: seed.artistName,
     genre: seed.genre,
     targetCount: 18,
+    syncKey,
   });
 }
 
@@ -1053,7 +1097,10 @@ export async function buildRadio(seedTrackId: number): Promise<Track[]> {
  * ARTIST RADIO — build a Spotify-style radio queue seeded by an artist.
  * Enforces: Artist is at most 50% of total tracks; 50%+ are from related artists.
  */
-export async function buildArtistRadio(artistIdOrName: number | string): Promise<Track[]> {
+export async function buildArtistRadio(
+  artistIdOrName: number | string,
+  syncKey = "default",
+): Promise<Track[]> {
   let artistName = String(artistIdOrName);
   let artistGenre: string | null = null;
 
@@ -1073,6 +1120,7 @@ export async function buildArtistRadio(artistIdOrName: number | string): Promise
     primaryArtist: artistName,
     genre: artistGenre,
     targetCount: 18,
+    syncKey,
   });
 }
 
@@ -1080,14 +1128,15 @@ export async function buildArtistRadio(artistIdOrName: number | string): Promise
  * ALBUM RADIO — build a Spotify-style radio queue seeded by an album.
  * Enforces: Album author is at most 50% of total tracks; 50%+ are from related artists fitting the album's vibe.
  */
-export async function buildAlbumRadio(albumId: number): Promise<Track[]> {
+export async function buildAlbumRadio(albumId: number, syncKey = "default"): Promise<Track[]> {
   const [albumRow] = await db.select().from(albums).where(eq(albums.id, albumId)).limit(1);
   if (!albumRow) return [];
 
   return buildRadioQueueCore({
-    primaryArtist: albumRow.artistName,
+    primaryArtist: albumRow.artistName ?? "",
     genre: albumRow.genre,
     targetCount: 18,
+    syncKey,
   });
 }
 

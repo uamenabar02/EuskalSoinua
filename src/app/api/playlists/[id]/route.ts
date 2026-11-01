@@ -4,7 +4,8 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/db";
 import { playlists } from "@/db/schema";
 import { cookies } from "next/headers";
-import { getDailyMixById } from "@/lib/daily-mixes";
+import { getGeneratedPlaylistById } from "@/lib/playlists/generated";
+import { isGeneratedPlaylistId } from "@/lib/playlists/format-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -17,25 +18,31 @@ export async function GET(
 
   const { id } = await params;
 
-  // If this is a Daily Mix ID (e.g. daily-mix-1, daily-mix-2, etc.)
-  if (id.startsWith("daily-")) {
+  // Generated playlists (daily-mix-N, discover-weekly, topic-mix-*, ...)
+  if (isGeneratedPlaylistId(id)) {
     const url = new URL(_request.url);
     const querySeed = url.searchParams.get("seed");
-    const cookieSeed = cookieStore.get("daily_mix_seed")?.value;
+    const cookieSeed = cookieStore.get("playlist_seed")?.value || cookieStore.get("daily_mix_seed")?.value;
     const seed = querySeed || cookieSeed || undefined;
 
-    const mix = await getDailyMixById(id, syncKey, seed);
-    if (!mix) return NextResponse.json({ error: "not found" }, { status: 404 });
+    const generated = await getGeneratedPlaylistById(id, syncKey, seed);
+    if (!generated) return NextResponse.json({ error: "not found" }, { status: 404 });
+
     return NextResponse.json({
       playlist: {
-        id: mix.id,
-        name: mix.title,
-        description: `${mix.genre} • ${mix.description}`,
-        coverSeed: mix.id,
-        type: "daily_mix",
-        trackCount: mix.tracks.length,
+        id: generated.id,
+        name: generated.title,
+        description: `${generated.genre} • ${generated.description}`,
+        coverSeed: generated.id,
+        // `daily_mix` is kept for backwards compatibility with the player UI;
+        // every generated format is read-only and refreshed automatically.
+        type: generated.format === "daily-mix" ? "daily_mix" : generated.format,
+        trackCount: generated.tracks.length,
       },
-      tracks: mix.tracks,
+      tracks: generated.tracks,
+      format: generated.format,
+      accentColor: generated.accentColor,
+      requestId: generated.requestId,
     });
   }
 
@@ -52,8 +59,8 @@ export async function DELETE(
   const syncKey = cookieStore.get("sync_key")?.value || "default";
 
   const { id } = await params;
-  if (id.startsWith("daily-")) {
-    return NextResponse.json({ error: "Cannot delete a Daily Mix" }, { status: 400 });
+  if (isGeneratedPlaylistId(id)) {
+    return NextResponse.json({ error: "Cannot delete a generated playlist" }, { status: 400 });
   }
 
   await db.delete(playlists).where(and(eq(playlists.id, Number(id)), eq(playlists.syncKey, syncKey)));
